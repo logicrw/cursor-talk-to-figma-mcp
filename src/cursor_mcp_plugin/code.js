@@ -229,6 +229,12 @@ async function handleCommand(command, params) {
       return await setDefaultConnector(params);
     case "create_connections":
       return await createConnections(params);
+    case "set_image_fill":
+      return await setImageFill(params);
+    case "set_text_auto_resize":
+      return await setTextAutoResize(params);
+    case "append_card_to_container":
+      return await appendCardToContainer(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -3949,4 +3955,172 @@ async function createConnections(params) {
     count: results.length,
     connections: results
   };
+}
+
+// Set Image Fill - Fill a node with Base64 image data
+async function setImageFill(params) {
+  const { nodeId, imageBase64, scaleMode, opacity } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+  if (!imageBase64) {
+    throw new Error("Missing imageBase64 parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  if (!("fills" in node)) {
+    throw new Error(`Node does not support fills: ${nodeId}`);
+  }
+
+  try {
+    // Handle data URL prefix (data:image/png;base64,xxx or pure base64)
+    let base64Data = imageBase64;
+    if (imageBase64.startsWith('data:')) {
+      const commaIndex = imageBase64.indexOf(',');
+      if (commaIndex !== -1) {
+        base64Data = imageBase64.substring(commaIndex + 1);
+      }
+    }
+
+    // Convert Base64 to Uint8Array
+    const binaryString = atob(base64Data);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    // Create image in Figma
+    const image = figma.createImage(bytes);
+    const imageHash = image.hash;
+
+    // Create image fill
+    const imageFill = {
+      type: "IMAGE",
+      imageHash: imageHash,
+      scaleMode: scaleMode || "FILL",
+      opacity: opacity ?? 1
+    };
+
+    // Apply the fill
+    node.fills = [imageFill];
+
+    return {
+      success: true,
+      nodeId: node.id,
+      nodeName: node.name,
+      scaleMode: scaleMode || "FILL",
+      opacity: opacity ?? 1
+    };
+  } catch (error) {
+    throw new Error(`Failed to set image fill: ${error.message}`);
+  }
+}
+
+// Set Text Auto Resize - Configure text node auto-resize mode
+async function setTextAutoResize(params) {
+  const { nodeId, autoResize } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+  if (!autoResize) {
+    throw new Error("Missing autoResize parameter");
+  }
+
+  // Validate autoResize value
+  const validModes = ['NONE', 'HEIGHT', 'WIDTH_AND_HEIGHT'];
+  if (!validModes.includes(autoResize)) {
+    throw new Error(`Invalid autoResize mode: ${autoResize}. Must be one of: ${validModes.join(', ')}`);
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  if (node.type !== "TEXT") {
+    throw new Error(`Node is not a text node: ${nodeId}`);
+  }
+
+  try {
+    // Load font before making changes (important for text operations)
+    await figma.loadFontAsync(node.fontName);
+
+    // Set the auto-resize mode
+    node.textAutoResize = autoResize;
+
+    return {
+      success: true,
+      nodeId: node.id,
+      nodeName: node.name,
+      autoResize: autoResize
+    };
+  } catch (error) {
+    throw new Error(`Failed to set text auto-resize: ${error.message}`);
+  }
+}
+
+// Append Card to Container - Clone a template and append to auto-layout container
+async function appendCardToContainer(params) {
+  const { containerId, templateId, newName, insertIndex } = params || {};
+
+  if (!containerId) {
+    throw new Error("Missing containerId parameter");
+  }
+  if (!templateId) {
+    throw new Error("Missing templateId parameter");
+  }
+
+  const container = await figma.getNodeByIdAsync(containerId);
+  if (!container) {
+    throw new Error(`Container not found with ID: ${containerId}`);
+  }
+
+  const template = await figma.getNodeByIdAsync(templateId);
+  if (!template) {
+    throw new Error(`Template not found with ID: ${templateId}`);
+  }
+
+  // Strict validation: container must be Auto Layout
+  if (!("layoutMode" in container) || container.layoutMode === 'NONE') {
+    throw new Error(`Container is not an Auto Layout frame: ${containerId}`);
+  }
+
+  try {
+    // Clone the template
+    const newNode = template.clone();
+
+    // Set new name if provided
+    if (newName) {
+      newNode.name = newName;
+    } else {
+      // Generate unique name
+      newNode.name = `${template.name}_copy_${Date.now()}`;
+    }
+
+    // Insert into container
+    const targetIndex = insertIndex ?? -1;
+    if (targetIndex === -1 || targetIndex >= container.children.length) {
+      // Append to end
+      container.appendChild(newNode);
+    } else {
+      // Insert at specific position
+      container.insertChild(Math.max(0, targetIndex), newNode);
+    }
+
+    return {
+      success: true,
+      newNodeId: newNode.id,
+      newNodeName: newNode.name,
+      containerName: container.name,
+      childrenCount: container.children.length
+    };
+  } catch (error) {
+    throw new Error(`Failed to append card to container: ${error.message}`);
+  }
 }

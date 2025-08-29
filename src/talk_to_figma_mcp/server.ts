@@ -2582,7 +2582,10 @@ type FigmaCommand =
   | "set_item_spacing"
   | "get_reactions"
   | "set_default_connector"
-  | "create_connections";
+  | "create_connections"
+  | "set_image_fill"
+  | "set_text_auto_resize"
+  | "append_card_to_container";
 
 type CommandParams = {
   get_document_info: Record<string, never>;
@@ -2724,6 +2727,22 @@ type CommandParams = {
       endNodeId: string;
       text?: string;
     }>;
+  };
+  set_image_fill: {
+    nodeId: string;
+    imageBase64: string;
+    scaleMode?: 'FILL' | 'FIT';
+    opacity?: number;
+  };
+  set_text_auto_resize: {
+    nodeId: string;
+    autoResize: 'NONE' | 'HEIGHT' | 'WIDTH_AND_HEIGHT';
+  };
+  append_card_to_container: {
+    containerId: string;
+    templateId: string;
+    newName?: string;
+    insertIndex?: number;
   };
 
 };
@@ -2998,6 +3017,128 @@ server.tool(
             type: "text",
             text: `Error joining channel: ${error instanceof Error ? error.message : String(error)
               }`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Set Image Fill Tool
+server.tool(
+  "set_image_fill",
+  "Fill a node with an image from Base64 data",
+  {
+    nodeId: z.string().describe("The ID of the node to fill with image (must support fills)"),
+    imageBase64: z.string().describe("Base64 image data (supports data URL format or pure base64)"),
+    scaleMode: z.enum(['FILL', 'FIT']).optional().default('FILL').describe("Image scaling mode"),
+    opacity: z.number().min(0).max(1).optional().default(1).describe("Image opacity (0-1)"),
+  },
+  async ({ nodeId, imageBase64, scaleMode, opacity }: any) => {
+    try {
+      const result = await sendCommandToFigma("set_image_fill", {
+        nodeId,
+        imageBase64,
+        scaleMode: scaleMode || 'FILL',
+        opacity: opacity ?? 1,
+      });
+      const typedResult = result as { success: boolean; nodeName: string };
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Successfully set image fill for node "${typedResult.nodeName}" with scale mode ${scaleMode || 'FILL'}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error setting image fill: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Set Text Auto Resize Tool
+server.tool(
+  "set_text_auto_resize",
+  "Set text node auto-resize mode to prevent text truncation",
+  {
+    nodeId: z.string().describe("The ID of the text node to configure"),
+    autoResize: z.enum(['NONE', 'HEIGHT', 'WIDTH_AND_HEIGHT']).describe("Text auto-resize mode"),
+  },
+  async ({ nodeId, autoResize }: any) => {
+    try {
+      const result = await sendCommandToFigma("set_text_auto_resize", {
+        nodeId,
+        autoResize,
+      });
+      const typedResult = result as { success: boolean; nodeName: string };
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Successfully set text auto-resize to "${autoResize}" for node "${typedResult.nodeName}"`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error setting text auto-resize: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Append Card to Container Tool
+server.tool(
+  "append_card_to_container",
+  "Clone a template card and append it to an auto-layout container",
+  {
+    containerId: z.string().describe("The ID of the auto-layout container"),
+    templateId: z.string().describe("The ID of the template card to clone"),
+    newName: z.string().optional().describe("New name for the cloned card"),
+    insertIndex: z.number().optional().describe("Insert position index (-1 for end)"),
+  },
+  async ({ containerId, templateId, newName, insertIndex }: any) => {
+    try {
+      const result = await sendCommandToFigma("append_card_to_container", {
+        containerId,
+        templateId,
+        newName,
+        insertIndex: insertIndex ?? -1,
+      });
+      const typedResult = result as {
+        success: boolean;
+        newNodeId: string;
+        newNodeName: string;
+        containerName: string;
+        childrenCount: number;
+      };
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Successfully appended card "${typedResult.newNodeName}" to container "${typedResult.containerName}". Container now has ${typedResult.childrenCount} children. New card ID: ${typedResult.newNodeId}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error appending card to container: ${error instanceof Error ? error.message : String(error)}`,
           },
         ],
       };
