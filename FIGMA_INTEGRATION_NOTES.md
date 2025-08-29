@@ -29,12 +29,13 @@
 - [x] Fix Figma API usage issues and validation
 - **Status**: All plugin handlers implemented with proper error handling
 
-### Phase 5: End-to-End Workflow (3-4 rounds)
-- [ ] Design Claude execution script workflow
-- [ ] Create example prompts and execution steps
-- [ ] Test and debug full pipeline
-- [ ] Final optimization
-- **Next prompt**: Test partial workflows, identify issues
+### Phase 5: End-to-End Workflow (3-4 rounds) 🎯 NEXT
+- [ ] Design complete execution workflow from content.json to poster
+- [ ] Implement smart group processing (group_id/group_seq/group_len)
+- [ ] Create template node discovery and mapping logic
+- [ ] Test full pipeline: text replacement → image filling → card cloning → layout adjustment
+- [ ] Performance optimization and error recovery
+- **Status**: Ready to start - all tools implemented and tested
 
 ## Key Requirements
 From docx2json output:
@@ -146,10 +147,32 @@ async function handleCommand(command, params) {
 - 统一的错误返回格式和详细错误信息
 - 与现有工具一致的架构模式
 
-## Next Steps
-**Ready to start Phase 5**: End-to-End Workflow Integration
+## Phase 5 Handoff Information
 
-**Recommended next prompt**:
+### 🎯 **Current Status**
+- **Git Commit**: `75caf40` - Phase 3-4 complete implementation
+- **Work Directory**: `/Users/chenrongwei/Projects/cursor-talk-to-figma-mcp/`
+- **Submodule**: `docx2json/` contains conversion tools and sample data
+
+### 🛠️ **Available Tools** (Ready to Use)
+#### MCP Server Tools:
+- `set_image_fill(nodeId, imageBase64, scaleMode?, opacity?)` - Base64→图片填充
+- `set_text_auto_resize(nodeId, autoResize)` - 文本自动调整 
+- `append_card_to_container(containerId, templateId, newName?, insertIndex?)` - 卡片克隆
+- Plus all existing tools: `set_multiple_text_contents`, `get_node_info`, `resize_node`, etc.
+
+#### Data Sources:
+- `docx2json/content.json` - 规范化内容数据 (paragraph/figure with group metadata)
+- `docx2json/assets/media/` - 提取的图片资源
+- `docx2json/to_ncj.py` - DOCX→JSON转换器
+
+### 📋 **Phase 5 Objectives**
+1. **Node Discovery**: 自动定位Figma模板中的关键节点 (BackgroundFrame, ContentGroup, CardTemplate等)
+2. **Smart Group Processing**: 基于content.json的group_id/group_seq/group_len实现智能图文块处理  
+3. **Complete Pipeline**: 文本批量替换 → 图片填充 → 动态卡片 → 背景调整
+4. **Error Recovery**: 健壮的错误处理和中断恢复机制
+
+### 🚀 **Recommended Phase 5 Startup Prompt**
 ```
-"现在开始设计和测试完整的端到端工作流。请创建一个从content.json到Figma海报的完整执行脚本，包括节点定位、批量文本替换、图片填充、动态卡片克隆和背景调整的完整流程。"
+"我需要继续cursor-talk-to-figma-mcp项目的Phase 5开发。请先阅读项目根目录的FIGMA_INTEGRATION_NOTES.md了解完整背景，然后设计从docx2json/content.json到Figma海报的完整自动化工作流。重点实现基于group metadata的智能图文块处理和模板节点的自动发现机制。"
 ```
