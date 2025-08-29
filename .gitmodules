@@ -1,0 +1,3 @@
+[submodule "docx2json"]
+	path = docx2json
+	url = https://github.com/logicrw/docx2json.git
