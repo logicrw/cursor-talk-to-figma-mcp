@@ -1,0 +1,94 @@
+{
+  "template_discovery": {
+    "status": "completed", 
+    "discovered_at": "2025-08-30T09:51:00.000Z",
+    "user_confirmed": false,
+    "algorithm_version": "v2_visual_container_detection"
+  },
+  "nodes": {
+    "BackgroundFrame": {
+      "id": "6:5403",
+      "name": "O",
+      "type": "FRAME", 
+      "confidence": 100
+    },
+    "ContentGroup": {
+      "id": "6:6377",
+      "name": "Group 1000015016",
+      "type": "GROUP",
+      "confidence": 95,
+      "bbox": {"x": 155, "y": 2331, "width": 1609.2945556640625, "height": 24509}
+    },
+    "doc_title": {
+      "id": "6:6357",
+      "name": "每日晨報",
+      "type": "TEXT",
+      "confidence": 95
+    },
+    "date": {
+      "id": "6:6351", 
+      "name": "24",
+      "type": "TEXT",
+      "confidence": 90
+    },
+    "date_month": {
+      "id": "6:6352",
+      "name": "AUG", 
+      "type": "TEXT",
+      "confidence": 90
+    }
+  },
+  "content_elements": {
+    "images": [
+      {"id": "6:6441", "name": "image 7311", "bbox": {"x": 158, "y": 2331, "width": 1604, "height": 1405}},
+      {"id": "6:6442", "name": "image 7312", "bbox": {"x": 157, "y": 4116, "width": 1604.5435791015625, "height": 1236}},
+      {"id": "6:6443", "name": "image 7313", "bbox": {"x": 158, "y": 8150, "width": 1604, "height": 828}},
+      {"id": "6:6444", "name": "image 7314", "bbox": {"x": 158, "y": 10208, "width": 1604, "height": 264}},
+      {"id": "6:6445", "name": "image 7315", "bbox": {"x": 158, "y": 10795, "width": 1604, "height": 760}},
+      {"id": "6:6378", "name": "image 7302", "bbox": {"x": 158, "y": 23713, "width": 1604, "height": 921}},
+      {"id": "6:6379", "name": "image 7303", "bbox": {"x": 158, "y": 22362, "width": 1604, "height": 1028}},
+      {"id": "6:6380", "name": "image 7304", "bbox": {"x": 157, "y": 21377, "width": 1604.41455078125, "height": 905}},
+      {"id": "6:6381", "name": "image 7305", "bbox": {"x": 158, "y": 18762, "width": 1604, "height": 545}},
+      {"id": "6:6382", "name": "image 7306", "bbox": {"x": 158, "y": 17417, "width": 1604, "height": 1022}},
+      {"id": "6:6383", "name": "image 7307", "bbox": {"x": 155, "y": 15838, "width": 1609, "height": 466}},
+      {"id": "6:6384", "name": "image 7308", "bbox": {"x": 155, "y": 15455, "width": 1609.2945556640625, "height": 303}},
+      {"id": "6:6385", "name": "image 7309", "bbox": {"x": 158, "y": 12988, "width": 1604, "height": 1054}},
+      {"id": "6:6386", "name": "image 7310", "bbox": {"x": 157, "y": 5432, "width": 1605, "height": 1605}}
+    ],
+    "title_groups": [
+      {"id": "6:6394", "name": "2行标题", "bbox": {"x": 158, "y": 3896, "width": 1604, "height": 140}},
+      {"id": "6:6397", "name": "2行标题", "bbox": {"x": 158, "y": 8010, "width": 1604, "height": 140}},
+      {"id": "6:6400", "name": "2行标题", "bbox": {"x": 158, "y": 10068, "width": 1604, "height": 140}},
+      {"id": "6:6403", "name": "2行标题", "bbox": {"x": 158, "y": 10655, "width": 1604, "height": 140}},
+      {"id": "6:6406", "name": "2行标题", "bbox": {"x": 158, "y": 15235, "width": 1604, "height": 140}},
+      {"id": "6:6409", "name": "2行标题", "bbox": {"x": 158, "y": 17277, "width": 1604, "height": 140}},
+      {"id": "6:6412", "name": "2行标题", "bbox": {"x": 158, "y": 18622, "width": 1604, "height": 140}},
+      {"id": "6:6415", "name": "2行标题", "bbox": {"x": 158, "y": 23573, "width": 1604, "height": 140}},
+      {"id": "6:6418", "name": "2行标题", "bbox": {"x": 158, "y": 12748, "width": 1604, "height": 240}},
+      {"id": "6:6422", "name": "2行标题", "bbox": {"x": 158, "y": 21057, "width": 1604, "height": 240}}
+    ],
+    "sources": [
+      {"id": "6:6387", "name": "Source: CS, Citi", "bbox": {"x": 729, "y": 7077, "width": 462, "height": 63}},
+      {"id": "6:6388", "name": "Source: CS, Citi", "bbox": {"x": 729, "y": 10512, "width": 462, "height": 63}},
+      {"id": "6:6389", "name": "Source: CS, Citi", "bbox": {"x": 649, "y": 11595, "width": 622, "height": 63}},
+      {"id": "6:6390", "name": "Source: CS, Citi", "bbox": {"x": 649, "y": 14082, "width": 622, "height": 63}},
+      {"id": "6:6391", "name": "Source: CS, Citi", "bbox": {"x": 561, "y": 16344, "width": 797, "height": 63}},
+      {"id": "6:6392", "name": "Source: CS, Citi", "bbox": {"x": 561, "y": 18479, "width": 797, "height": 63}},
+      {"id": "6:6393", "name": "Source: CS, Citi", "bbox": {"x": 561, "y": 23430, "width": 797, "height": 63}}
+    ],
+    "paragraphs": [
+      {"id": "6:6426", "name": "Last Friday saw a li", "bbox": {"x": 158, "y": 7300, "width": 1604, "height": 550}},
+      {"id": "6:6427", "name": "Last Friday saw a li", "bbox": {"x": 158, "y": 9138, "width": 1604, "height": 770}},
+      {"id": "6:6428", "name": "Last Friday saw a li", "bbox": {"x": 158, "y": 11818, "width": 1604, "height": 770}},
+      {"id": "6:6429", "name": "Last Friday saw a li", "bbox": {"x": 158, "y": 14305, "width": 1604, "height": 770}},
+      {"id": "6:6430", "name": "Last Friday saw a li", "bbox": {"x": 158, "y": 16567, "width": 1604, "height": 550}},
+      {"id": "6:6431", "name": "Last Friday saw a li", "bbox": {"x": 158, "y": 19467, "width": 1604, "height": 1430}},
+      {"id": "6:6432", "name": "Last Friday saw a li", "bbox": {"x": 158, "y": 24794, "width": 1604, "height": 110}}
+    ]
+  },
+  "visual_mapping": {
+    "sorted_by_y": "按视觉顺序(y坐标)排列所有内容元素",
+    "image_title_associations": "基于邻域距离建立图片与标题组的关联关系",
+    "content_flow": "从上到下: 图片->标题组->段落->来源，循环重复"
+  }
+}

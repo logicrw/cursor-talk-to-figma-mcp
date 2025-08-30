@@ -1306,6 +1306,44 @@ function customBase64Encode(bytes) {
   return base64;
 }
 
+function customBase64Decode(base64String) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  
+  // Remove padding characters
+  let cleanBase64 = base64String.replace(/=/g, '');
+  
+  // Create lookup table
+  const lookup = {};
+  for (let i = 0; i < chars.length; i++) {
+    lookup[chars[i]] = i;
+  }
+  
+  const length = cleanBase64.length;
+  let bytes = new Uint8Array(Math.floor((length * 3) / 4));
+  let byteIndex = 0;
+  
+  // Process 4 characters at a time
+  for (let i = 0; i < length; i += 4) {
+    const c1 = lookup[cleanBase64[i]] || 0;
+    const c2 = lookup[cleanBase64[i + 1]] || 0;
+    const c3 = lookup[cleanBase64[i + 2]] || 0;
+    const c4 = lookup[cleanBase64[i + 3]] || 0;
+    
+    const combined = (c1 << 18) | (c2 << 12) | (c3 << 6) | c4;
+    
+    bytes[byteIndex++] = (combined >>> 16) & 0xFF;
+    if (i + 2 < length) {
+      bytes[byteIndex++] = (combined >>> 8) & 0xFF;
+    }
+    if (i + 3 < length) {
+      bytes[byteIndex++] = combined & 0xFF;
+    }
+  }
+  
+  // Trim array to actual size
+  return bytes.slice(0, byteIndex);
+}
+
 async function setCornerRadius(params) {
   const { nodeId, radius, corners } = params || {};
 
@@ -3987,12 +4025,8 @@ async function setImageFill(params) {
       }
     }
 
-    // Convert Base64 to Uint8Array
-    const binaryString = atob(base64Data);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
+    // Convert Base64 to Uint8Array using custom decoder
+    const bytes = customBase64Decode(base64Data);
 
     // Create image in Figma
     const image = figma.createImage(bytes);
