@@ -3,6 +3,22 @@ import { Server, ServerWebSocket } from "bun";
 // Store clients by channel
 const channels = new Map<string, Set<ServerWebSocket<any>>>();
 
+// Sanitize large payloads for logging
+function sanitizePayload(message: string): string {
+  try {
+    const data = JSON.parse(message);
+    if (data.message?.params?.imageBase64) {
+      const base64 = data.message.params.imageBase64;
+      if (base64.length > 128) {
+        data.message.params.imageBase64 = `${base64.substring(0, 64)}...${base64.substring(base64.length - 64)} (${base64.length} chars)`;
+      }
+    }
+    return JSON.stringify(data);
+  } catch {
+    return message.length > 200 ? `${message.substring(0, 200)}... (${message.length} chars)` : message;
+  }
+}
+
 function handleConnection(ws: ServerWebSocket<any>) {
   // Don't add to clients immediately - wait for channel join
   console.log("New client connected");
@@ -74,7 +90,9 @@ const server = Bun.serve({
     open: handleConnection,
     message(ws: ServerWebSocket<any>, message: string | Buffer) {
       try {
-        console.log("Received message from client:", message);
+        // Desensitize large payloads for logging
+        const sanitizedMessage = sanitizePayload(message as string);
+        console.log("Received message from client:", sanitizedMessage);
         const data = JSON.parse(message as string);
 
         if (data.type === "join") {
@@ -150,7 +168,8 @@ const server = Bun.serve({
           // Broadcast to all clients in the channel
           channelClients.forEach((client) => {
             if (client.readyState === WebSocket.OPEN) {
-              console.log("Broadcasting message to client:", data.message);
+              const sanitizedBroadcast = sanitizePayload(JSON.stringify(data.message));
+              console.log("Broadcasting message to client:", sanitizedBroadcast);
               client.send(JSON.stringify({
                 type: "broadcast",
                 message: data.message,

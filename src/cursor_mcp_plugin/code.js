@@ -1309,8 +1309,8 @@ function customBase64Encode(bytes) {
 function customBase64Decode(base64String) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   
-  // Remove padding characters
-  let cleanBase64 = base64String.replace(/=/g, '');
+  // Remove padding characters and whitespace
+  let cleanBase64 = base64String.replace(/[=\s]/g, '');
   
   // Create lookup table
   const lookup = {};
@@ -1319,28 +1319,53 @@ function customBase64Decode(base64String) {
   }
   
   const length = cleanBase64.length;
-  let bytes = new Uint8Array(Math.floor((length * 3) / 4));
+  
+  // Calculate exact buffer size accounting for padding
+  let bufferSize;
+  const remainder = length % 4;
+  if (remainder === 0) {
+    bufferSize = (length * 3) / 4;
+  } else if (remainder === 2) {
+    bufferSize = ((length - 2) * 3) / 4 + 1;
+  } else if (remainder === 3) {
+    bufferSize = ((length - 3) * 3) / 4 + 2;
+  } else {
+    throw new Error('Invalid base64 length');
+  }
+  
+  let bytes = new Uint8Array(Math.floor(bufferSize));
   let byteIndex = 0;
   
   // Process 4 characters at a time
   for (let i = 0; i < length; i += 4) {
-    const c1 = lookup[cleanBase64[i]] || 0;
-    const c2 = lookup[cleanBase64[i + 1]] || 0;
-    const c3 = lookup[cleanBase64[i + 2]] || 0;
-    const c4 = lookup[cleanBase64[i + 3]] || 0;
+    const c1 = lookup[cleanBase64[i]];
+    const c2 = lookup[cleanBase64[i + 1]];
+    const c3 = lookup[cleanBase64[i + 2]];
+    const c4 = lookup[cleanBase64[i + 3]];
     
-    const combined = (c1 << 18) | (c2 << 12) | (c3 << 6) | c4;
+    // Validate characters
+    if (c1 === undefined || c2 === undefined) {
+      throw new Error('Invalid base64 characters');
+    }
     
-    bytes[byteIndex++] = (combined >>> 16) & 0xFF;
-    if (i + 2 < length) {
+    const combined = (c1 << 18) | (c2 << 12) | ((c3 || 0) << 6) | (c4 || 0);
+    
+    // Always write first byte
+    if (byteIndex < bytes.length) {
+      bytes[byteIndex++] = (combined >>> 16) & 0xFF;
+    }
+    
+    // Write second byte if we have at least 3rd character or enough remaining input
+    if ((i + 2 < length || remainder >= 3) && byteIndex < bytes.length) {
       bytes[byteIndex++] = (combined >>> 8) & 0xFF;
     }
-    if (i + 3 < length) {
+    
+    // Write third byte if we have 4th character or enough remaining input  
+    if ((i + 3 < length || remainder === 0) && byteIndex < bytes.length) {
       bytes[byteIndex++] = combined & 0xFF;
     }
   }
   
-  // Trim array to actual size
   return bytes.slice(0, byteIndex);
 }
 
@@ -3995,15 +4020,27 @@ async function createConnections(params) {
   };
 }
 
-// Set Image Fill - Fill a node with Base64 image data
+// Set Image Fill - Fill a node with Base64 image data or URL
 async function setImageFill(params) {
-  const { nodeId, imageBase64, scaleMode, opacity } = params || {};
+  const { nodeId, imageBase64, imageUrl, scaleMode, opacity } = params || {};
 
   if (!nodeId) {
     throw new Error("Missing nodeId parameter");
   }
-  if (!imageBase64) {
-    throw new Error("Missing imageBase64 parameter");
+  if (!imageBase64 && !imageUrl) {
+    throw new Error("Must provide either imageBase64 or imageUrl parameter");
+  }
+  if (imageBase64 && imageUrl) {
+    throw new Error("Cannot specify both imageBase64 and imageUrl parameters");
+  }
+  
+  // Auto-detect URL in imageBase64 parameter (workaround for schema caching)
+  let actualImageUrl = imageUrl;
+  let actualImageBase64 = imageBase64;
+  
+  if (imageBase64 && (imageBase64.startsWith('http://') || imageBase64.startsWith('https://'))) {
+    actualImageUrl = imageBase64;
+    actualImageBase64 = null;
   }
 
   const node = await figma.getNodeByIdAsync(nodeId);
@@ -4016,17 +4053,28 @@ async function setImageFill(params) {
   }
 
   try {
-    // Handle data URL prefix (data:image/png;base64,xxx or pure base64)
-    let base64Data = imageBase64;
-    if (imageBase64.startsWith('data:')) {
-      const commaIndex = imageBase64.indexOf(',');
-      if (commaIndex !== -1) {
-        base64Data = imageBase64.substring(commaIndex + 1);
-      }
-    }
+    let bytes;
 
-    // Convert Base64 to Uint8Array using custom decoder
-    const bytes = customBase64Decode(base64Data);
+    if (actualImageUrl) {
+      // URL mode: fetch image from URL
+      const response = await fetch(actualImageUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      bytes = new Uint8Array(arrayBuffer);
+    } else {
+      // Base64 mode: decode base64 data
+      let base64Data = actualImageBase64;
+      if (actualImageBase64.startsWith('data:')) {
+        const commaIndex = actualImageBase64.indexOf(',');
+        if (commaIndex !== -1) {
+          base64Data = actualImageBase64.substring(commaIndex + 1);
+        }
+      }
+      // Convert Base64 to Uint8Array using custom decoder
+      bytes = customBase64Decode(base64Data);
+    }
 
     // Create image in Figma
     const image = figma.createImage(bytes);

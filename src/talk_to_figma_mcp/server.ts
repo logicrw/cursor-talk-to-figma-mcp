@@ -2730,7 +2730,8 @@ type CommandParams = {
   };
   set_image_fill: {
     nodeId: string;
-    imageBase64: string;
+    imageBase64?: string;
+    imageUrl?: string;
     scaleMode?: 'FILL' | 'FIT';
     opacity?: number;
   };
@@ -3027,18 +3028,20 @@ server.tool(
 // Set Image Fill Tool
 server.tool(
   "set_image_fill",
-  "Fill a node with an image from Base64 data",
+  "Fill a node with an image from Base64 data or URL",
   {
     nodeId: z.string().describe("The ID of the node to fill with image (must support fills)"),
-    imageBase64: z.string().describe("Base64 image data (supports data URL format or pure base64)"),
+    imageBase64: z.string().optional().describe("Base64 image data (supports data URL format or pure base64)"),
+    imageUrl: z.string().optional().describe("URL to fetch image from (alternative to imageBase64)"),
     scaleMode: z.enum(['FILL', 'FIT']).optional().default('FILL').describe("Image scaling mode"),
     opacity: z.number().min(0).max(1).optional().default(1).describe("Image opacity (0-1)"),
   },
-  async ({ nodeId, imageBase64, scaleMode, opacity }: any) => {
+  async ({ nodeId, imageBase64, imageUrl, scaleMode, opacity }: any) => {
     try {
       const result = await sendCommandToFigma("set_image_fill", {
         nodeId,
         imageBase64,
+        imageUrl,
         scaleMode: scaleMode || 'FILL',
         opacity: opacity ?? 1,
       });

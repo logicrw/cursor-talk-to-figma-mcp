@@ -320,10 +320,54 @@ config/
 - **Risk**: Image assets missing or corrupted
   **Mitigation**: Validate assets before processing and provide clear error messages
 
-### 🔄 **Next Steps**
-Ready to implement Phase 5 execution workflow. 
+---
 
-**Recommended continuation prompt**: 
-```
-"现在开始实现Phase 5的端到端工作流。请首先连接Figma并实现模板自发现算法，扫描我当前选中的Frame结构并生成节点映射提案。然后进行Smoke Test验证核心MCP工具功能正常。"
-```
+## 🚨 PHASE 5 EMERGENCY FIX - Current Status
+
+**Date**: 2025-08-30  
+**Status**: 90% complete, emergency fix needed for 3 abnormal image nodes
+
+### **Critical Issue**
+- **Problem**: 3 abnormal image nodes showing incorrectly due to 1x1 test images
+- **Root Cause**: Previous testing used 1x1 placeholder images, causing display anomalies
+- **Solution**: Use URL mode from static server to get real image data
+
+### **System Status**
+- ✅ **WebSocket Service**: Running normally (Port 3055)
+- ✅ **Static File Server**: Running normally (Port 3056, serving image1-14.png)
+- ✅ **Figma Plugin**: Connected to channel `jqpnfv6y`, API working
+- ✅ **URL Auto-Detection**: Implemented, supports URLs in imageBase64 parameter
+- 🔄 **Image Node Fixes**: 3 nodes need immediate repair
+
+### **Abnormal Nodes Requiring Fix**
+1. **Node 6:6441** (image 7311) → `http://localhost:3056/assets/image1.png`
+2. **Node 6:6443** (image 7313) → `http://localhost:3056/assets/image5.png`  
+3. **Node 6:6378** (image 7302) → `http://localhost:3056/assets/image10.png`
+
+### **Technical Implementation**
+- **Tool**: `mcp__talk-to-figma__set_image_fill`
+- **Method**: URL parameter in imageBase64 field (URL detection already working)
+- **Config**: `config/node_name_map.json` contains complete node mapping
+- **Data Mapping**: Static server provides image1-14.png assets
+
+### **Immediate Action Plan**
+1. **Connect** to Figma plugin channel `jqpnfv6y`
+2. **Fix Node 6:6441** using `http://localhost:3056/assets/image1.png`
+3. **Fix Node 6:6443** using `http://localhost:3056/assets/image5.png`
+4. **Fix Node 6:6378** using `http://localhost:3056/assets/image10.png`
+5. **Verify** all fixes working properly in Figma
+
+### **Phase 5 Development History**
+1. ✅ **Phase 1**: System connectivity verification  
+2. ✅ **Phase 2**: Template auto-discovery algorithm
+3. ✅ **Phase 3**: Core MCP tools implementation
+4. ✅ **Phase 4**: End-to-end workflow automation  
+5. 🔄 **Phase 5**: Fix optimization (emergency fix needed)
+
+### **Expert Recommendations Applied**
+- ✅ Emergency救火方案: URL图片传递系统
+- ✅ 根治方案: Complete MCP setup and Figma plugin fixes  
+- 🔄 Final fix: 3 abnormal image nodes repair
+
+### **Next Steps**
+Ready for immediate emergency fix execution.
