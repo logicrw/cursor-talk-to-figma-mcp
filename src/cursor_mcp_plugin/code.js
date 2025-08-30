@@ -4003,7 +4003,7 @@ async function setImageFill(params) {
       type: "IMAGE",
       imageHash: imageHash,
       scaleMode: scaleMode || "FILL",
-      opacity: opacity ?? 1
+      opacity: opacity !== undefined ? opacity : 1
     };
 
     // Apply the fill
@@ -4014,7 +4014,7 @@ async function setImageFill(params) {
       nodeId: node.id,
       nodeName: node.name,
       scaleMode: scaleMode || "FILL",
-      opacity: opacity ?? 1
+      opacity: opacity !== undefined ? opacity : 1
     };
   } catch (error) {
     throw new Error(`Failed to set image fill: ${error.message}`);
@@ -4104,7 +4104,7 @@ async function appendCardToContainer(params) {
     }
 
     // Insert into container
-    const targetIndex = insertIndex ?? -1;
+    const targetIndex = insertIndex !== undefined ? insertIndex : -1;
     if (targetIndex === -1 || targetIndex >= container.children.length) {
       // Append to end
       container.appendChild(newNode);
