@@ -4048,8 +4048,31 @@ async function setImageFill(params) {
     throw new Error(`Node not found with ID: ${nodeId}`);
   }
 
+  // Auto-drill down to find fillable node
+  let targetNode = node;
   if (!("fills" in node)) {
-    throw new Error(`Node does not support fills: ${nodeId}`);
+    // For GROUP/INSTANCE nodes, find first child that supports fills
+    if (node.type === "GROUP" || node.type === "INSTANCE") {
+      const findFillableChild = (parent) => {
+        if ("fills" in parent && parent.visible !== false) {
+          return parent;
+        }
+        if ("children" in parent) {
+          for (const child of parent.children) {
+            const result = findFillableChild(child);
+            if (result) return result;
+          }
+        }
+        return null;
+      };
+      
+      targetNode = findFillableChild(node);
+      if (!targetNode) {
+        throw new Error(`No fillable child found in ${node.type} node: ${nodeId}`);
+      }
+    } else {
+      throw new Error(`Node does not support fills: ${nodeId} (type: ${node.type})`);
+    }
   }
 
   try {
@@ -4089,12 +4112,14 @@ async function setImageFill(params) {
     };
 
     // Apply the fill
-    node.fills = [imageFill];
+    targetNode.fills = [imageFill];
 
     return {
       success: true,
       nodeId: node.id,
+      targetNodeId: targetNode.id,
       nodeName: node.name,
+      targetNodeName: targetNode.name,
       scaleMode: scaleMode || "FILL",
       opacity: opacity !== undefined ? opacity : 1
     };
