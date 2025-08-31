@@ -17,6 +17,16 @@ class SmartMappingAlgorithm {
   }
 
   /**
+   * Calculate adaptive proximity thresholds based on image height
+   */
+  calculateAdaptiveThresholds(imageHeight) {
+    return {
+      titleThreshold: Math.min(180, 0.22 * imageHeight),
+      sourceThreshold: Math.min(220, 0.28 * imageHeight)
+    };
+  }
+
+  /**
    * Enhanced content-to-template mapping based on visual layout
    */
   mapContentToTemplate(contentBlocks, templateNodes) {
@@ -180,6 +190,13 @@ class SmartMappingAlgorithm {
       const templateRatio = templateNode.bbox.width / templateNode.bbox.height;
       const ratioMatch = 1 - Math.abs(figureBlock.layout_hint.aspect_ratio - templateRatio) / 2;
       confidence = (confidence + ratioMatch) / 2;
+    }
+    
+    // Apply adaptive thresholds for proximity matching
+    if (templateNode.bbox?.height) {
+      const thresholds = this.calculateAdaptiveThresholds(templateNode.bbox.height);
+      // Use thresholds for future proximity calculations
+      figureBlock._adaptiveThresholds = thresholds;
     }
     
     return Math.max(0.1, Math.min(1.0, confidence));

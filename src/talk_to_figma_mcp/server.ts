@@ -3035,7 +3035,10 @@ server.tool(
     imageUrl: z.string().optional().describe("URL to fetch image from (alternative to imageBase64)"),
     scaleMode: z.enum(['FILL', 'FIT']).optional().default('FILL').describe("Image scaling mode"),
     opacity: z.number().min(0).max(1).optional().default(1).describe("Image opacity (0-1)"),
-  },
+  }
+  .refine(data => data.imageBase64 || data.imageUrl, {
+    message: "Must provide either imageBase64 or imageUrl parameter"
+  }),
   async ({ nodeId, imageBase64, imageUrl, scaleMode, opacity }: any) => {
     try {
       const result = await sendCommandToFigma("set_image_fill", {
@@ -3045,12 +3048,20 @@ server.tool(
         scaleMode: scaleMode || 'FILL',
         opacity: opacity ?? 1,
       });
-      const typedResult = result as { success: boolean; nodeName: string };
+      const typedResult = result as { 
+        success: boolean; 
+        nodeId: string;
+        targetNodeId: string;
+        nodeName: string;
+        targetNodeName: string;
+        scaleMode: string;
+        opacity: number;
+      };
       return {
         content: [
           {
             type: "text",
-            text: `Successfully set image fill for node "${typedResult.nodeName}" with scale mode ${scaleMode || 'FILL'}`,
+            text: `Successfully set image fill for node "${typedResult.nodeName}" with scale mode ${typedResult.scaleMode}${typedResult.targetNodeId !== typedResult.nodeId ? ` (target: ${typedResult.targetNodeName})` : ''}`,
           },
         ],
       };
