@@ -1,186 +1,173 @@
 #!/usr/bin/env node
 
 /**
- * Figma Channel Manager - 方案B自动跟随机制
+ * Figma Channel Manager - Simplified Connection Handler
  * 
- * 自动检测和管理Figma插件频道，实现稳定的连接控制
+ * Lightweight connector for Figma plugin communication:
+ * - Memory-only channel storage
+ * - Direct connect/health check methods
+ * - Optional environment variable default
  */
 
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const CHANNEL_CONFIG_PATH = path.join(__dirname, '../config/figma_channel.json');
+// No file system imports needed - pure memory approach
 
 class FigmaChannelManager {
-  constructor() {
-    this.currentChannel = null;
-    this.lastWorkingChannel = null;
-    this.channelHistory = [];
-    this.maxRetries = 3;
+  constructor(mcpClient = null) {
+    this.mcpClient = mcpClient;
+    this.currentChannel = process.env.FIGMA_CHANNEL || null;
+    this.maxRetries = 2; // Simplified retry logic
   }
 
+  // DEPRECATED: Config file support removed
   async loadChannelConfig() {
-    try {
-      const config = JSON.parse(await fs.readFile(CHANNEL_CONFIG_PATH, 'utf8'));
-      this.currentChannel = config.default_channel;
-      this.lastWorkingChannel = config.last_working_channel || config.default_channel;
-      this.channelHistory = config.channel_history || [];
-      return config;
-    } catch (error) {
-      console.warn('Channel config not found, using defaults');
-      return {
-        default_channel: null,
-        last_working_channel: null,
-        channel_history: []
-      };
-    }
+    console.warn('DEPRECATED: loadChannelConfig() - config file support removed. Use connect(channelId) instead.');
+    return { deprecated: true };
   }
 
+  // DEPRECATED: Config file support removed  
   async saveChannelConfig(config) {
-    const fullConfig = {
-      ...config,
-      last_updated: new Date().toISOString(),
-      note: "Auto-updated by channel manager",
-      strategy: "auto_follow_plan_b"
-    };
-    
-    await fs.writeFile(CHANNEL_CONFIG_PATH, JSON.stringify(fullConfig, null, 2));
+    console.warn('DEPRECATED: saveChannelConfig() - config file support removed. Channel stored in memory only.');
   }
 
-  async testChannelConnection(channelId, mcpClient) {
+  // Core connection method
+  async connect(channelId) {
+    if (!this.mcpClient) {
+      throw new Error('MCP client not provided. Use: new FigmaChannelManager(mcpClient)');
+    }
+    
     try {
-      console.log(`Testing channel: ${channelId}`);
+      console.log(`Connecting to channel: ${channelId}`);
       
-      // Join channel
-      const joinResult = await mcpClient.call("mcp__talk-to-figma__join_channel", { 
+      // Step 1: Join channel
+      await this.mcpClient.call("mcp__talk-to-figma__join_channel", { 
         channel: channelId 
       });
       
-      if (!joinResult?.content?.[0]?.text?.includes('Successfully joined')) {
-        return false;
-      }
-
-      // Quick test with document info
-      const docResult = await mcpClient.call("mcp__talk-to-figma__get_document_info", {});
+      // Step 2: Set current channel (needed for healthCheck)
+      this.currentChannel = channelId;
       
-      return !docResult?.content?.[0]?.text?.includes('timeout');
+      // Step 3: Health check with get_selection
+      await this.mcpClient.call("mcp__talk-to-figma__get_selection", {});
+      
+      console.log(`✅ Connected to channel: ${channelId}`);
+      return channelId;
     } catch (error) {
-      console.warn(`Channel ${channelId} test failed:`, error.message);
-      return false;
+      // Clear channel on failure
+      this.currentChannel = null;
+      throw new Error(`Failed to connect to channel ${channelId}: ${error.message}`);
+    }
+  }
+  
+  async healthCheck() {
+    if (!this.mcpClient) {
+      throw new Error('MCP client not available');
+    }
+    
+    if (!this.currentChannel) {
+      throw new Error('No active channel. Use connect(channelId) first.');
+    }
+    
+    try {
+      // Use get_selection as lightweight health check
+      const result = await this.mcpClient.call("mcp__talk-to-figma__get_selection", {});
+      console.log(`✅ Health check passed for channel: ${this.currentChannel}`);
+      return true;
+    } catch (error) {
+      throw new Error(`Health check failed: ${error.message}. Check if plugin is running and Frame is selected.`);
     }
   }
 
+  // DEPRECATED: Auto-discovery removed
   async findWorkingChannel(mcpClient) {
-    await this.loadChannelConfig();
-    
-    // Test sequence: current -> last working -> history -> give up
-    const testChannels = [
-      this.currentChannel,
-      this.lastWorkingChannel,
-      ...this.channelHistory.slice(-5).reverse() // Recent 5 channels, newest first
-    ].filter(Boolean);
-
-    // Remove duplicates while preserving order
-    const uniqueChannels = [...new Set(testChannels)];
-    
-    console.log(`Testing ${uniqueChannels.length} known channels...`);
-    
-    for (const channelId of uniqueChannels) {
-      const isWorking = await this.testChannelConnection(channelId, mcpClient);
-      
-      if (isWorking) {
-        console.log(`✅ Found working channel: ${channelId}`);
-        
-        // Update config
-        await this.saveChannelConfig({
-          default_channel: channelId,
-          last_working_channel: channelId,
-          channel_history: this.updateChannelHistory(channelId)
-        });
-        
-        return channelId;
-      }
-    }
-    
-    console.error('❌ No working channels found');
-    return null;
+    console.warn('DEPRECATED: findWorkingChannel() - auto-discovery disabled. Use connect(channelId) instead.');
+    throw new Error('Auto-discovery disabled. Please provide channel ID via connect(channelId) method.');
   }
 
+  // DEPRECATED: Channel history removed
   updateChannelHistory(newChannel) {
-    const history = this.channelHistory.filter(ch => ch !== newChannel);
-    history.push(newChannel);
-    return history.slice(-10); // Keep last 10 channels
+    console.warn('DEPRECATED: updateChannelHistory() - channel history tracking removed.');
+    return [];
   }
 
+  // Simplified channel registration - just connect
   async registerNewChannel(channelId) {
-    await this.loadChannelConfig();
-    
-    await this.saveChannelConfig({
-      default_channel: channelId,
-      last_working_channel: channelId,
-      channel_history: this.updateChannelHistory(channelId)
-    });
-    
-    console.log(`📝 Registered new channel: ${channelId}`);
+    console.warn('DEPRECATED: registerNewChannel() - use connect(channelId) instead.');
+    return await this.connect(channelId);
   }
 
-  // Auto-recovery mechanism
-  async ensureConnection(mcpClient, maxAttempts = 3) {
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      console.log(`Connection attempt ${attempt}/${maxAttempts}`);
-      
-      const workingChannel = await this.findWorkingChannel(mcpClient);
-      
-      if (workingChannel) {
-        return workingChannel;
-      }
-      
-      if (attempt < maxAttempts) {
-        console.log('Waiting 2s before retry...');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
+  // Simplified connection with retry
+  async ensureConnection(channelId, maxAttempts = 2) {
+    if (!channelId && !this.currentChannel) {
+      throw new Error('No channel specified. Use connect(channelId) or provide channelId parameter.');
     }
     
-    throw new Error('Failed to establish Figma connection after all attempts');
+    const targetChannel = channelId || this.currentChannel;
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        console.log(`Connection attempt ${attempt}/${maxAttempts}`);
+        return await this.connect(targetChannel);
+      } catch (error) {
+        if (attempt === maxAttempts) {
+          throw error;
+        }
+        console.log('Retrying in 1s...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+  }
+  
+  // Command interface methods
+  getCurrentChannel() {
+    return this.currentChannel || 'No channel connected';
+  }
+  
+  async reconnect(channelId) {
+    console.log('🔄 Reconnecting...');
+    return await this.connect(channelId);
   }
 }
 
 // Export for use in other modules
 export default FigmaChannelManager;
 
-// CLI usage
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const manager = new FigmaChannelManager();
+// Command interface for interactive usage
+export function parseCommand(input, manager) {
+  const trimmed = input.trim();
   
-  const command = process.argv[2];
-  const channelId = process.argv[3];
-  
-  switch (command) {
-    case 'register':
-      if (!channelId) {
-        console.error('Usage: node figma-channel-manager.js register <channel-id>');
-        process.exit(1);
-      }
-      await manager.registerNewChannel(channelId);
-      break;
-      
-    case 'test':
-      console.log('Channel connection testing requires MCP client integration');
-      break;
-      
-    default:
-      console.log(`
-Figma Channel Manager - 方案B自动跟随机制
-
-Commands:
-  register <channel-id>  Register a new working channel
-  test                   Test current channels (requires integration)
-
-Config file: ${CHANNEL_CONFIG_PATH}
-      `);
+  if (trimmed.startsWith(':connect ')) {
+    const channelId = trimmed.substring(9).trim();
+    if (!channelId) {
+      throw new Error('Usage: :connect <channel-id>');
+    }
+    return { command: 'connect', channelId };
   }
+  
+  if (trimmed === ':health') {
+    return { command: 'health' };
+  }
+  
+  if (trimmed === ':channel') {
+    return { command: 'channel' };
+  }
+  
+  return null; // Not a recognized command
+}
+
+// CLI usage (simplified)
+if (import.meta.url === `file://${process.argv[1]}`) {
+  console.log(`
+Figma Channel Manager - Simplified Connection Handler
+
+For interactive usage, create instance with MCP client:
+  const manager = new FigmaChannelManager(mcpClient);
+  await manager.connect(channelId);
+
+Commands in Claude Code:
+  :connect <channel-id>  Connect to specific channel
+  :health               Check current connection
+  :channel              Show current channel
+
+Environment variable: FIGMA_CHANNEL (optional default)
+  `);
 }

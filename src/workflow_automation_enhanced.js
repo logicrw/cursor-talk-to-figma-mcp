@@ -30,17 +30,25 @@ class EnhancedFigmaWorkflowAutomator {
     this.nodeMapping = null;
     this.runState = null;
     this.processedGroups = 0;
-    this.channelManager = new FigmaChannelManager();
+    this.channelManager = null; // Will be initialized with mcpClient
     this.mcpClient = null; // Will be set by integration
   }
 
-  async initialize(mcpClient) {
+  async initialize(mcpClient, channelId = null) {
     console.log('🚀 Initializing Enhanced Figma Workflow Automator...');
     this.mcpClient = mcpClient;
+    this.channelManager = new FigmaChannelManager(mcpClient);
     
-    // Ensure stable channel connection
-    const workingChannel = await this.channelManager.ensureConnection(mcpClient);
-    console.log(`📡 Connected to channel: ${workingChannel}`);
+    // Connect to channel (requires manual channel ID now)
+    if (channelId) {
+      await this.channelManager.connect(channelId);
+      console.log(`📡 Connected to channel: ${channelId}`);
+    } else if (this.channelManager.currentChannel) {
+      await this.channelManager.healthCheck();
+      console.log(`📡 Using existing channel: ${this.channelManager.currentChannel}`);
+    } else {
+      console.warn('⚠️ No channel specified. Use :connect <channelId> command to establish connection.');
+    }
     
     // Load configuration files
     this.contentData = JSON.parse(await fs.readFile(CONFIG.contentPath, 'utf8'));
