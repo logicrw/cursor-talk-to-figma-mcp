@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const ASSETS_PATH = path.join(__dirname, '../docx2json/assets/media');
+const ASSETS_PATH = path.join(__dirname, '../docx2json/assets/250818_summer_break');
 const PORT = 3056;
 
 const server = http.createServer((req, res) => {

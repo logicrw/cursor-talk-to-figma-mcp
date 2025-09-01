@@ -1,0 +1,42 @@
+{
+  "mapping_correction_analysis": {
+    "issue": "Content groups were mapped to Figma nodes by Y-coordinate order instead of content sequence order",
+    "solution": "Map groups by content.json order to Figma nodes sorted by Y-coordinate ascending"
+  },
+  "correct_content_order": [
+    {"group_id": "grp_0001", "title": "当前市场情绪", "asset": "img_76f7bfb095b6", "filename": "image1.png"},
+    {"group_id": "grp_0002", "title": "通胀指标难以软化至2%目标以下", "asset": "img_167b6884e197", "filename": "image4.png"},
+    {"group_id": "grp_0003", "title": "密西根大学通胀预期：短期与长期指标均意外上行", "asset": "img_09aa1fc6253d", "filename": "image5.png"},
+    {"group_id": "grp_0004", "title": "财长贝森特近期宣称"中性"利率应低约150个基点", "asset": "img_b2b73f4d8b19", "filename": "image6.png"},
+    {"group_id": "grp_0005", "title": "强劲PPI后，市场仅定价9月会议降息一次（25基点）的可能性低于90%", "asset": "img_88ea3fc64567", "filename": "image7.png"},
+    {"group_id": "grp_0006", "title": "过去一周政府的SBR相关头条令市场失望", "asset": "img_baecaaa2d010", "filename": "image8.png"},
+    {"group_id": "grp_0007", "title": null, "asset": "img_78ec0ebdafd6", "filename": "image9.png"},
+    {"group_id": "grp_0008", "title": "BTC & ETH ETF 上周资金流入创纪录", "asset": "img_be731c0a03dc", "filename": "image10.png"},
+    {"group_id": "grp_0009", "title": "主要由ETH流入激增170亿美元推动", "asset": "img_ec6b56b9b1ef", "filename": "image11.png"},
+    {"group_id": "grp_0010", "title": "基金经理现金水准降至周期低点", "asset": "img_95a9764054d1", "filename": "image14.png"}
+  ],
+  "figma_nodes_by_y_coordinate": [
+    {"rank": 1, "node_id": "6:6441", "name": "image 7311", "y": 2331},
+    {"rank": 2, "node_id": "6:6442", "name": "image 7312", "y": 4116},
+    {"rank": 3, "node_id": "6:6386", "name": "image 7310", "y": 5432},
+    {"rank": 4, "node_id": "6:6443", "name": "image 7313", "y": 8150},
+    {"rank": 5, "node_id": "6:6444", "name": "image 7314", "y": 10208},
+    {"rank": 6, "node_id": "6:6445", "name": "image 7315", "y": 10795},
+    {"rank": 7, "node_id": "6:6385", "name": "image 7309", "y": 12988},
+    {"rank": 8, "node_id": "6:6384", "name": "image 7308", "y": 15455},
+    {"rank": 9, "node_id": "6:6383", "name": "image 7307", "y": 15838},
+    {"rank": 10, "node_id": "6:6382", "name": "image 7306", "y": 17417}
+  ],
+  "corrected_mapping": [
+    {"group": "grp_0001", "title": "当前市场情绪", "filename": "image1.png", "node_id": "6:6441", "node_name": "image 7311"},
+    {"group": "grp_0002", "title": "通胀指标难以软化至2%目标以下", "filename": "image4.png", "node_id": "6:6442", "node_name": "image 7312"},
+    {"group": "grp_0003", "title": "密西根大学通胀预期：短期与长期指标均意外上行", "filename": "image5.png", "node_id": "6:6386", "node_name": "image 7310"},
+    {"group": "grp_0004", "title": "财长贝森特近期宣称"中性"利率应低约150个基点", "filename": "image6.png", "node_id": "6:6443", "node_name": "image 7313"},
+    {"group": "grp_0005", "title": "强劲PPI后，市场仅定价9月会议降息一次（25基点）的可能性低于90%", "filename": "image7.png", "node_id": "6:6444", "node_name": "image 7314"},
+    {"group": "grp_0006", "title": "过去一周政府的SBR相关头条令市场失望", "filename": "image8.png", "node_id": "6:6445", "node_name": "image 7315"},
+    {"group": "grp_0007", "title": null, "filename": "image9.png", "node_id": "6:6385", "node_name": "image 7309"},
+    {"group": "grp_0008", "title": "BTC & ETH ETF 上周资金流入创纪录", "filename": "image10.png", "node_id": "6:6384", "node_name": "image 7308"},
+    {"group": "grp_0009", "title": "主要由ETH流入激增170亿美元推动", "filename": "image11.png", "node_id": "6:6383", "node_name": "image 7307"},
+    {"group": "grp_0010", "title": "基金经理现金水准降至周期低点", "filename": "image14.png", "node_id": "6:6382", "node_name": "image 7306"}
+  ]
+}
