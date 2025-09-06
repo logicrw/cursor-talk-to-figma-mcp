@@ -83,7 +83,7 @@ const server = new McpServer({
 const args = process.argv.slice(2);
 const serverArg = args.find(arg => arg.startsWith('--server='));
 const serverUrl = serverArg ? serverArg.split('=')[1] : 'localhost';
-const WS_URL = serverUrl === 'localhost' ? `ws://${serverUrl}` : `wss://${serverUrl}`;
+const WS_URL = serverUrl.includes('localhost') ? 'ws' : 'wss';
 
 // Document Info Tool
 server.tool(
@@ -2784,7 +2784,7 @@ function connectToFigma(port: number = 3055) {
     return;
   }
 
-  const wsUrl = serverUrl === 'localhost' ? `${WS_URL}:${port}` : WS_URL;
+  const wsUrl = serverUrl.includes(':') ? `${WS_URL}://${serverUrl}` : `${WS_URL}://${serverUrl}:${port}`;
   logger.info(`Connecting to Figma socket server at ${wsUrl}...`);
   ws = new WebSocket(wsUrl);
 
@@ -3035,11 +3035,20 @@ server.tool(
     imageUrl: z.string().optional().describe("URL to fetch image from (alternative to imageBase64)"),
     scaleMode: z.enum(['FILL', 'FIT']).optional().default('FILL').describe("Image scaling mode"),
     opacity: z.number().min(0).max(1).optional().default(1).describe("Image opacity (0-1)"),
-  }
-  .refine(data => data.imageBase64 || data.imageUrl, {
-    message: "Must provide either imageBase64 or imageUrl parameter"
-  }),
+  },
   async ({ nodeId, imageBase64, imageUrl, scaleMode, opacity }: any) => {
+    // Validate that at least one image source is provided
+    if (!imageBase64 && !imageUrl) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Error: Must provide either imageBase64 or imageUrl parameter"
+          }
+        ]
+      };
+    }
+    
     try {
       const result = await sendCommandToFigma("set_image_fill", {
         nodeId,
