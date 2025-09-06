@@ -5,6 +5,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import WebSocket from "ws";
 import { v4 as uuidv4 } from "uuid";
+import * as fs from "fs";
+import * as path from "path";
 
 // Define TypeScript interfaces for Figma responses
 interface FigmaResponse {
@@ -53,12 +55,29 @@ interface setInstanceOverridesResult {
 }
 
 // Custom logging functions that write to stderr instead of stdout to avoid being captured
+// Log redaction function for sensitive data
+function redactSensitiveData(message: string): string {
+  return message
+    // Redact base64 data URLs (keep first and last 8 chars)
+    .replace(/data:image\/[^;]+;base64,([A-Za-z0-9+/]{8})[A-Za-z0-9+/=]+([A-Za-z0-9+/=]{8})/g, 
+      'data:image/***;base64,$1***$2 (redacted)')
+    // Redact standalone base64 strings (>16 chars)
+    .replace(/\b([A-Za-z0-9+/]{8})[A-Za-z0-9+/=]{8,}([A-Za-z0-9+/=]{0,8})\b/g, 
+      '$1***$2 (base64 redacted)')
+    // Redact imageBase64 parameter values
+    .replace(/("imageBase64":\s*")([A-Za-z0-9+/]{8})[A-Za-z0-9+/=]+([A-Za-z0-9+/=]{0,8})(")/g, 
+      '$1$2***$3 (redacted)$4')
+    // Redact Authorization headers
+    .replace(/("?[Aa]uthorization"?\s*:\s*"?)([^\s"]{8})[^\s"]*([^\s"]{0,4})("?)/g, 
+      '$1$2***$3 (redacted)$4');
+}
+
 const logger = {
-  info: (message: string) => process.stderr.write(`[INFO] ${message}\n`),
-  debug: (message: string) => process.stderr.write(`[DEBUG] ${message}\n`),
-  warn: (message: string) => process.stderr.write(`[WARN] ${message}\n`),
-  error: (message: string) => process.stderr.write(`[ERROR] ${message}\n`),
-  log: (message: string) => process.stderr.write(`[LOG] ${message}\n`)
+  info: (message: string) => process.stderr.write(`[INFO] ${redactSensitiveData(message)}\n`),
+  debug: (message: string) => process.stderr.write(`[DEBUG] ${redactSensitiveData(message)}\n`),
+  warn: (message: string) => process.stderr.write(`[WARN] ${redactSensitiveData(message)}\n`),
+  error: (message: string) => process.stderr.write(`[ERROR] ${redactSensitiveData(message)}\n`),
+  log: (message: string) => process.stderr.write(`[LOG] ${redactSensitiveData(message)}\n`)
 };
 
 // WebSocket connection and request tracking
@@ -73,17 +92,32 @@ const pendingRequests = new Map<string, {
 // Track which channel each client is in
 let currentChannel: string | null = null;
 
+// Reconnection state
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const BASE_RECONNECT_DELAY = 1000; // 1 second
+
 // Create MCP server
 const server = new McpServer({
   name: "TalkToFigmaMCP",
   version: "1.0.0",
 });
 
+// Load configuration
+const CONFIG_PATH = path.join(process.cwd(), 'config/server-config.json');
+let config: any = {};
+try {
+  config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+} catch (error) {
+  console.warn('Could not load config, using defaults');
+  config = { websocket: { port: 3055, host: 'localhost' } };
+}
+
 // Add command line argument parsing
 const args = process.argv.slice(2);
 const serverArg = args.find(arg => arg.startsWith('--server='));
-const serverUrl = serverArg ? serverArg.split('=')[1] : 'localhost';
-const WS_URL = serverUrl.includes('localhost') ? 'ws' : 'wss';
+const serverUrl = serverArg ? serverArg.split('=')[1] : `${config.websocket.host}:${config.websocket.port}`;
+const WS_URL = serverUrl.includes('localhost') || serverUrl.includes('127.0.0.1') ? 'ws' : 'wss';
 
 // Document Info Tool
 server.tool(
@@ -2790,8 +2824,9 @@ function connectToFigma(port: number = 3055) {
 
   ws.on('open', () => {
     logger.info('Connected to Figma socket server');
-    // Reset channel on new connection
+    // Reset channel and reconnection state on successful connection
     currentChannel = null;
+    reconnectAttempts = 0;
   });
 
   ws.on("message", (data: any) => {
@@ -2893,9 +2928,20 @@ function connectToFigma(port: number = 3055) {
       pendingRequests.delete(id);
     }
 
-    // Attempt to reconnect
-    logger.info('Attempting to reconnect in 2 seconds...');
-    setTimeout(() => connectToFigma(port), 2000);
+    // Attempt to reconnect with exponential backoff
+    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      const delay = BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
+      reconnectAttempts++;
+      logger.info(`Attempting to reconnect in ${delay/1000} seconds... (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+      setTimeout(() => connectToFigma(port), delay);
+    } else {
+      logger.error('Max reconnection attempts reached. Please check WebSocket server status.');
+      // Reset attempts after a longer delay for potential retry
+      setTimeout(() => { 
+        reconnectAttempts = 0; 
+        logger.info('Reconnection attempts reset. Will retry on next command.');
+      }, 30000); // 30 seconds
+    }
   });
 }
 

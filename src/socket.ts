@@ -1,4 +1,10 @@
 import { Server, ServerWebSocket } from "bun";
+import * as fs from "fs";
+import * as path from "path";
+
+// Load configuration
+const CONFIG_PATH = path.join(import.meta.dir, '../config/server-config.json');
+const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
 
 // Store clients by channel
 const channels = new Map<string, Set<ServerWebSocket<any>>>();
@@ -53,9 +59,8 @@ function handleConnection(ws: ServerWebSocket<any>) {
 }
 
 const server = Bun.serve({
-  port: 3055,
-  // uncomment this to allow connections in windows wsl
-  // hostname: "0.0.0.0",
+  port: process.env.WEBSOCKET_PORT || config.websocket.port,
+  hostname: process.env.WEBSOCKET_HOST || config.websocket.host,
   fetch(req: Request, server: Server) {
     // Handle CORS preflight
     if (req.method === "OPTIONS") {
@@ -192,4 +197,5 @@ const server = Bun.serve({
   }
 });
 
-console.log(`WebSocket server running on port ${server.port}`);
+console.log(`WebSocket server running on ${config.websocket.host}:${server.port}`);
+console.log(`Config loaded from: ${CONFIG_PATH}`);

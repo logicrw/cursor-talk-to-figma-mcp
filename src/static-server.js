@@ -8,8 +8,13 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const ASSETS_PATH = path.join(__dirname, '../docx2json/assets/250818_summer_break');
-const PORT = 3056;
+// Load configuration
+const CONFIG_PATH = path.join(__dirname, '../config/server-config.json');
+const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+
+const ASSETS_PATH = path.join(__dirname, config.static_server.assets_path);
+const PORT = process.env.STATIC_PORT || config.static_server.port;
+const HOST = process.env.STATIC_HOST || config.static_server.host;
 
 const server = http.createServer((req, res) => {
   // Enable CORS
@@ -63,7 +68,8 @@ const server = http.createServer((req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`Static file server running on http://localhost:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`Static file server running on http://${HOST}:${PORT}`);
   console.log(`Serving files from: ${ASSETS_PATH}`);
+  console.log(`Config loaded from: ${CONFIG_PATH}`);
 });
