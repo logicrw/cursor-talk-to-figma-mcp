@@ -16,5 +16,9 @@
     "mode": "URL_FIRST",
     "base64_max_size": 10240,
     "base64_rate_limit": 30
+  },
+  "workflow": {
+    "current_content_file": "250818_summer_break.json",
+    "content_directory": "../docx2json"
   }
 }

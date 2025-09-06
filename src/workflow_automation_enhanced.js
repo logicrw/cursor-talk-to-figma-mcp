@@ -11,13 +11,13 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import FigmaChannelManager from './figma-channel-manager.js';
+import { resolveContentPath, parseArgs } from './config-resolver.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Configuration
+// Configuration - contentPath will be resolved dynamically
 const CONFIG = {
-  contentPath: path.join(__dirname, '../docx2json/content.json'),
   nodeMappingPath: path.join(__dirname, '../config/node_name_map.json'),
   runStatePath: path.join(__dirname, '../config/run_state.json'),
   assetsPath: path.join(__dirname, '../docx2json/assets/media'),
@@ -34,7 +34,7 @@ class EnhancedFigmaWorkflowAutomator {
     this.mcpClient = null; // Will be set by integration
   }
 
-  async initialize(mcpClient, channelId = null) {
+  async initialize(mcpClient, channelId = null, contentFile = null) {
     console.log('🚀 Initializing Enhanced Figma Workflow Automator...');
     this.mcpClient = mcpClient;
     this.channelManager = new FigmaChannelManager(mcpClient);
@@ -50,8 +50,16 @@ class EnhancedFigmaWorkflowAutomator {
       console.warn('⚠️ No channel specified. Use :connect <channelId> command to establish connection.');
     }
     
+    // Resolve content file path with priority system
+    const cliArgs = parseArgs();
+    const { contentPath } = resolveContentPath(path.join(__dirname, '..'), {
+      initParam: contentFile,
+      cliArg: cliArgs.content,
+      envVar: process.env.CONTENT_JSON_PATH
+    });
+    
     // Load configuration files
-    this.contentData = JSON.parse(await fs.readFile(CONFIG.contentPath, 'utf8'));
+    this.contentData = JSON.parse(await fs.readFile(contentPath, 'utf8'));
     this.nodeMapping = JSON.parse(await fs.readFile(CONFIG.nodeMappingPath, 'utf8'));
     
     // Initialize or load run state
