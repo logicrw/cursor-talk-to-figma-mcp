@@ -19,6 +19,65 @@
   },
   "workflow": {
     "current_content_file": "250818_summer_break.json",
-    "content_directory": "../docx2json"
+    "content_directory": "../docx2json",
+    "mapping": {
+      "anchors": {
+        "frame": "Odaily特供海报",
+        "container": "ContentContainer",
+        "cards_stack": "Cards",
+        "figure_component": "FigureCard",
+        "body_component": "BodyCard",
+        "slots": {
+          "figure": {
+            "title": "slot:TITLE",
+            "image_grid": "slot:IMAGE_GRID",
+            "source": "slot:SOURCE"
+          },
+          "body": {
+            "body": "slot:BODY"
+          }
+        },
+        "image_slots": ["imgSlot1", "imgSlot2", "imgSlot3", "imgSlot4"]
+      },
+      "grouping": {
+        "group_by": "group_id",
+        "order_by": "group_seq",
+        "paragraph_attach_mode": "standalone"
+      },
+      "images": {
+        "asset_path": "image.asset_id",
+        "count_field": "group_len",
+        "max_images": 4,
+        "height_strategy": "fixed",
+        "fixed_height_px": 260,
+        "visibility_props": {
+          "imgSlot2": "showImg2",
+          "imgSlot3": "showImg3",
+          "imgSlot4": "showImg4"
+        }
+      },
+      "title": {
+        "paths": ["title"],
+        "take": "first_non_empty",
+        "text_prop": "titleText",
+        "visible_prop": "showTitle"
+      },
+      "source": {
+        "paths": ["credit"],
+        "take": "first_non_empty",
+        "text_prop": "sourceText",
+        "visible_prop": "showSource"
+      },
+      "paragraph": {
+        "component": "BodyCard",
+        "text_prop": "bodyText",
+        "text_field": "text"
+      },
+      "fallbacks": {
+        "title_when_missing": "",
+        "source_when_missing": "",
+        "image_when_missing": null
+      }
+    }
   }
 }
