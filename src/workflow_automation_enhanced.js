@@ -328,6 +328,14 @@ class CardBasedFigmaWorkflowAutomator {
           const hasImageGrid = (info.children || []).some(c => c.name === (slots.figure?.image_grid || 'slot:IMAGE_GRID'));
           const actualType = hasBody ? 'standalone_paragraph' : (hasImageGrid ? 'figure_group' : 'unknown');
           
+          // ✅ DEBUG日志 - unknown类型时输出详细信息
+          if (actualType === 'unknown') {
+            console.warn(`🔍 DEBUG Position ${i}: Unknown card type detected`);
+            console.warn(`  Card name: ${actualCard.name}`);
+            console.warn(`  Children:`, (info.children || []).map(c => ({ name: c.name, type: c.type })));
+            console.warn(`  Expected slots: body='${slots.body?.body || 'slot:BODY'}', imageGrid='${slots.figure?.image_grid || 'slot:IMAGE_GRID'}'`);
+          }
+          
           if (actualType !== expectedContent.type) {
             console.warn(`⚠️ Position ${i}: Type mismatch - expected ${expectedContent.type}, found ${actualType}`);
             allValid = false;
@@ -443,31 +451,33 @@ class CardBasedFigmaWorkflowAutomator {
     }
   }
 
+  // ✅ 无限深度DFS搜索 - 不再受层级限制
   async findChildByName(instanceId, childName) {
     try {
       const instanceInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", {
         nodeId: instanceId
       });
       
-      // Search in direct children
-      if (instanceInfo.children) {
-        for (const child of instanceInfo.children) {
-          if (child.name === childName) {
-            return child.id;
-          }
-          
-          // Search in grandchildren for nested structures
-          if (child.children) {
-            for (const grandchild of child.children) {
-              if (grandchild.name === childName) {
-                return grandchild.id;
-              }
+      // DFS递归搜索所有层级
+      const dfsSearch = (node) => {
+        if (node.name === childName) {
+          return node.id;
+        }
+        
+        if (node.children) {
+          for (const child of node.children) {
+            const result = dfsSearch(child);
+            if (result) {
+              return result;
             }
           }
         }
-      }
+        
+        return null;
+      };
       
-      return null;
+      return dfsSearch(instanceInfo);
+      
     } catch (error) {
       console.error(`❌ Failed to find child "${childName}" in instance ${instanceId}:`, error.message);
       return null;
@@ -496,37 +506,34 @@ class CardBasedFigmaWorkflowAutomator {
     const firstTitle = figures.find(f => f.title)?.title || '';
     const firstCredit = figures.find(f => f.credit)?.credit || '';
     
-    // ✅ 改进3: 使用配置化槽位名
-    if (firstTitle) {
-      const titleTextSlot = this.workflowMapping.anchors.slots.figure.title_text || 'titleText';
-      const titleNodeId = await this.findChildByName(instanceId, titleTextSlot);
-      if (titleNodeId) {
-        try {
-          await this.mcpClient.call("mcp__talk-to-figma__set_text_content", {
-            nodeId: titleNodeId,
-            text: firstTitle
-          });
-          console.log(`    ✅ Set title: "${firstTitle}"`);
-        } catch (error) {
-          console.error(`    ❌ Failed to set title:`, error.message);
-        }
+    // ✅ 改进3: 使用配置化槽位名 + 空内容处理
+    const titleTextSlot = this.workflowMapping.anchors.slots.figure.title_text || 'titleText';
+    const titleNodeId = await this.findChildByName(instanceId, titleTextSlot);
+    if (titleNodeId) {
+      try {
+        await this.mcpClient.call("mcp__talk-to-figma__set_text_content", {
+          nodeId: titleNodeId,
+          text: firstTitle || ''  // ✅ 空内容设为空字符串，依赖Auto-layout收缩
+        });
+        console.log(`    ✅ Set title: "${firstTitle || '(empty)'}"`);
+      } catch (error) {
+        console.error(`    ❌ Failed to set title:`, error.message);
       }
     }
-    
-    // Fill source text
-    if (firstCredit) {
-      const sourceTextSlot = this.workflowMapping.anchors.slots.figure.source_text || 'sourceText';
-      const sourceNodeId = await this.findChildByName(instanceId, sourceTextSlot);
-      if (sourceNodeId) {
-        try {
-          await this.mcpClient.call("mcp__talk-to-figma__set_text_content", {
-            nodeId: sourceNodeId,
-            text: `Source: ${firstCredit}`
-          });
-          console.log(`    ✅ Set source: "Source: ${firstCredit}"`);
-        } catch (error) {
-          console.error(`    ❌ Failed to set source:`, error.message);
-        }
+
+    // ✅ 来源处理 + 空内容处理
+    const sourceTextSlot = this.workflowMapping.anchors.slots.figure.source_text || 'sourceText';
+    const sourceNodeId = await this.findChildByName(instanceId, sourceTextSlot);
+    if (sourceNodeId) {
+      try {
+        const sourceText = firstCredit ? `Source: ${firstCredit}` : '';
+        await this.mcpClient.call("mcp__talk-to-figma__set_text_content", {
+          nodeId: sourceNodeId,
+          text: sourceText  // ✅ 空内容设为空字符串
+        });
+        console.log(`    ✅ Set source: "${sourceText || '(empty)'}"`);
+      } catch (error) {
+        console.error(`    ❌ Failed to set source:`, error.message);
       }
     }
     
@@ -537,10 +544,11 @@ class CardBasedFigmaWorkflowAutomator {
       imageCount: images.length
     });
     
-    // Fill images in slots - ✅ 统一槽位来源
+    // Fill images in slots - ✅ 统一槽位来源 + 容错处理
     const slots = this.workflowMapping.anchors.slots || {};
     const imageSlotNames = slots.images || this.workflowMapping.anchors.image_slots || [];
-    for (let i = 0; i < images.length && i < this.workflowMapping.images.max_images && i < imageSlotNames.length; i++) {
+    const max = Math.min(images.length, imageSlotNames.length, this.workflowMapping.images?.max_images ?? imageSlotNames.length);
+    for (let i = 0; i < max; i++) {
       const imageSlotName = imageSlotNames[i];
       const imageNodeId = await this.findChildByName(instanceId, imageSlotName);
       
@@ -575,8 +583,9 @@ class CardBasedFigmaWorkflowAutomator {
       overrides[this.workflowMapping.source.visible_prop] = hasSource;
     }
     
-    // Image slot visibility (img2, img3, img4)
-    for (let i = 2; i <= this.workflowMapping.images.max_images; i++) {
+    // Image slot visibility (img2, img3, img4) - ✅ 容错处理
+    const maxImages = this.workflowMapping.images?.max_images ?? 4;
+    for (let i = 2; i <= maxImages; i++) {
       const visibilityProp = this.workflowMapping.images.visibility_props[`imgSlot${i}`];
       if (visibilityProp) {
         overrides[visibilityProp] = imageCount >= i;
@@ -617,8 +626,9 @@ class CardBasedFigmaWorkflowAutomator {
         await this.hideSlotNode(instanceId, this.workflowMapping.anchors.slots?.figure?.source || 'slot:SOURCE', 'source slot');
       }
       
-      // Hide unused image slots
-      for (let i = 2; i <= this.workflowMapping.images.max_images; i++) {
+      // Hide unused image slots - ✅ 容错处理
+      const maxImages = this.workflowMapping.images?.max_images ?? 4;
+      for (let i = 2; i <= maxImages; i++) {
         if (imageCount < i) {
           await this.hideSlotNode(instanceId, `imgSlot${i}`, `image slot ${i}`);
         }
