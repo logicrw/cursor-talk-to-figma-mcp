@@ -27,6 +27,10 @@ const CONFIG = {
   staticServerUrl: 'http://localhost:3056/assets'
 };
 
+// utils: get value by "a.b.c" path
+const getByPath = (obj, pathStr) =>
+  (pathStr || '').split('.').reduce((o, k) => (o && o[k] != null ? o[k] : undefined), obj);
+
 class CardBasedFigmaWorkflowAutomator {
   constructor() {
     this.contentData = null;
@@ -500,9 +504,13 @@ class CardBasedFigmaWorkflowAutomator {
     
     const instanceId = cardInstance.instanceId;
     
-    // Extract content from figures
+    // Extract content from figures  
     const figures = figureGroup.figures;
-    const images = figures.filter(f => f.image?.asset_id);
+    // 依配置路径采集图片 asset_id
+    const assetPath = this.workflowMapping.images?.asset_path || 'image.asset_id';
+    const images = (figureGroup.figures || [])
+      .map(f => ({ asset_id: getByPath(f, assetPath) }))
+      .filter(x => !!x.asset_id);
     const firstTitle = figures.find(f => f.title)?.title || '';
     const firstCredit = figures.find(f => f.credit)?.credit || '';
     
@@ -546,8 +554,8 @@ class CardBasedFigmaWorkflowAutomator {
     });
     
     // Fill images in slots - ✅ 统一槽位来源 + 容错处理
-    const slots = this.workflowMapping.anchors.slots || {};
-    const imageSlotNames = slots.images || this.workflowMapping.anchors.image_slots || [];
+    const imageSlots = this.workflowMapping.anchors.slots || {};
+    const imageSlotNames = imageSlots.images || this.workflowMapping.anchors.image_slots || [];
     const max = Math.min(images.length, imageSlotNames.length, this.workflowMapping.images?.max_images ?? imageSlotNames.length);
     for (let i = 0; i < max; i++) {
       const imageSlotName = imageSlotNames[i];
@@ -571,125 +579,44 @@ class CardBasedFigmaWorkflowAutomator {
   }
 
   async applyVisibilityControl(instanceId, { hasTitle, hasSource, imageCount }) {
-    // Step 1: Calculate visibility overrides based on configuration
-    const overrides = {};
-    
-    // Title visibility
-    if (this.workflowMapping.title?.visible_prop) {
-      overrides[this.workflowMapping.title.visible_prop] = hasTitle;
-    }
-    
-    // Source visibility  
-    if (this.workflowMapping.source?.visible_prop) {
-      overrides[this.workflowMapping.source.visible_prop] = hasSource;
-    }
-    
-    // Image slot visibility (img2, img3, img4) - ✅ 容错处理
-    const maxImages = this.workflowMapping.images?.max_images ?? 4;
-    for (let i = 2; i <= maxImages; i++) {
-      const visibilityProp = this.workflowMapping.images.visibility_props[`imgSlot${i}`];
-      if (visibilityProp) {
-        overrides[visibilityProp] = imageCount >= i;
-      }
-    }
-    
     console.log(`    🎯 Visibility control: title:${hasTitle}, source:${hasSource}, images:${imageCount}`);
+
+    // 路线A：直接对槽位容器层做 set_node_visible
+    // 1. 控制标题槽位容器
+    const titleSlotName = this.workflowMapping.anchors?.slots?.figure?.title || 'slot:TITLE';
+    await this.setSlotVisibility(instanceId, titleSlotName, hasTitle, 'title slot');
+
+    // 2. 控制来源槽位容器  
+    const sourceSlotName = this.workflowMapping.anchors?.slots?.figure?.source || 'slot:SOURCE';
+    await this.setSlotVisibility(instanceId, sourceSlotName, hasSource, 'source slot');
+
+    // 3. 控制图片槽位容器
+    const imageSlotNames = this.workflowMapping.anchors?.slots?.images || this.workflowMapping.anchors.image_slots || [];
+    const maxImages = this.workflowMapping.images?.max_images ?? 4;
     
-    // Step 2: Try instance overrides first (preferred method)
-    let instanceOverridesApplied = false;
-    try {
-      const overrideEntries = Object.entries(overrides);
-      if (overrideEntries.length > 0) {
-        // MCP requires different parameter format - need to check actual interface
-        await this.mcpClient.call("mcp__talk-to-figma__set_instance_overrides", {
-          sourceInstanceId: instanceId,
-          targetNodeIds: [instanceId],
-          overrides: overrides
-        });
-        instanceOverridesApplied = true;
-        console.log(`    ✅ Instance overrides applied: ${Object.keys(overrides).join(', ')}`);
-      }
-    } catch (error) {
-      console.log(`    ⚠️ Instance overrides not available: ${error.message}`);
-    }
-    
-    // Step 3: Fallback to node-level visibility control
-    if (!instanceOverridesApplied) {
-      console.log(`    🔄 Fallback: Using node-level visibility control`);
-      
-      // Hide title slot if no title
-      if (!hasTitle) {
-        await this.hideSlotNode(instanceId, this.workflowMapping.anchors.slots?.figure?.title || 'slot:TITLE', 'title slot');
-      }
-      
-      // Hide source slot if no source
-      if (!hasSource) {
-        await this.hideSlotNode(instanceId, this.workflowMapping.anchors.slots?.figure?.source || 'slot:SOURCE', 'source slot');
-      }
-      
-      // Hide unused image slots - ✅ 统一槽位来源
-      const slots = this.workflowMapping.anchors.slots || {};
-      const imageSlotNames = slots.images || this.workflowMapping.anchors.image_slots || [];
-      const maxImages = this.workflowMapping.images?.max_images ?? 4;
-      for (let i = 2; i <= maxImages && i-1 < imageSlotNames.length; i++) {
-        if (imageCount < i) {
-          await this.hideSlotNode(instanceId, imageSlotNames[i-1], `image slot ${i}`);
-        }
-      }
+    for (let i = 2; i <= maxImages && i-1 < imageSlotNames.length; i++) {
+      const shouldShow = imageCount >= i;
+      const slotName = imageSlotNames[i-1]; // imgSlot2 is at index 1
+      await this.setSlotVisibility(instanceId, slotName, shouldShow, `image slot ${i}`);
     }
   }
-  
-  async hideSlotNode(instanceId, slotName, description) {
+
+  async setSlotVisibility(instanceId, slotName, visible, description) {
     const slotNodeId = await this.findChildByName(instanceId, slotName);
     if (!slotNodeId) {
-      console.warn(`    ⚠️ ${description} node '${slotName}' not found`);
+      console.warn(`    ⚠️ ${description} container '${slotName}' not found`);
       return;
     }
-    
-    // Try multiple methods in order of preference
-    const hideMethods = [
-      // Method 1: Node visibility (if available)
-      async () => {
-        await this.mcpClient.call("mcp__talk-to-figma__set_node_visible", {
-          nodeId: slotNodeId,
-          visible: false
-        });
-        return 'hidden';
-      },
-      
-      // Method 2: Opacity to 0
-      async () => {
-        await this.mcpClient.call("mcp__talk-to-figma__set_fill_color", {
-          nodeId: slotNodeId,
-          r: 0, g: 0, b: 0, a: 0
-        });
-        return 'transparent';
-      },
-      
-      // Method 3: Resize to minimal height  
-      async () => {
-        const nodeInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", {
-          nodeId: slotNodeId
-        });
-        await this.mcpClient.call("mcp__talk-to-figma__resize_node", {
-          nodeId: slotNodeId,
-          width: nodeInfo.absoluteBoundingBox?.width || 100,
-          height: 1
-        });
-        return 'minimized';
-      }
-    ];
-    
-    for (const [index, method] of hideMethods.entries()) {
-      try {
-        const result = await method();
-        console.log(`    ✅ ${description} ${result} (method ${index + 1})`);
-        return;
-      } catch (error) {
-        if (index === hideMethods.length - 1) {
-          console.warn(`    ⚠️ All hide methods failed for ${description}: ${error.message}`);
-        }
-      }
+
+    try {
+      // 直接设置容器层可见性，Auto-layout会自动调整布局
+      await this.mcpClient.call("mcp__talk-to-figma__set_node_visible", {
+        nodeId: slotNodeId,
+        visible: visible
+      });
+      console.log(`    ✅ ${description} ${visible ? 'shown' : 'hidden'}`);
+    } catch (error) {
+      console.warn(`    ⚠️ Failed to set visibility for ${description}: ${error.message}`);
     }
   }
 
