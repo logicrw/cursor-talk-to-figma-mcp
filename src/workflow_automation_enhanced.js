@@ -154,6 +154,11 @@ class CardBasedFigmaWorkflowAutomator {
       if (!this.dryRun) {
         await this.applyTextAutoResize();
       }
+
+      // ✅ 改进4: 事后验收，确保创建顺序与内容一致
+      if (!this.dryRun) {
+        await this.validateCardsOrder(orderedContent);
+      }
       
       console.log(`\n✅ ${this.dryRun ? 'Dry-run' : 'Production'} processing completed!`);
       this.runState.current_phase = this.dryRun ? 'dry_run_completed' : 'completed';
@@ -245,27 +250,30 @@ class CardBasedFigmaWorkflowAutomator {
       const componentName = item.type === 'figure_group' ? 'FigureCard' : 'BodyCard';
       const seedId = item.type === 'figure_group' ? seedInstances.figureInstanceId : seedInstances.bodyInstanceId;
       
-      // 生成唯一实例名称
+      // ✅ 改进1: 按索引命名，确保与内容流严格对应
       const newName = item.type === 'figure_group' 
-        ? `FigureCard_${item.group_id}` 
-        : `BodyCard_paragraph_${i}`;
+        ? `${String(i+1).padStart(2,'0')}_Figure_${item.group_id}` 
+        : `${String(i+1).padStart(2,'0')}_Body_${i}`;
       
       try {
-        // ✅ 种子实例克隆法：直接从种子追加到 Cards，无野生副本
+        // ✅ 种子实例克隆法：直接从种子追加到 Cards，确保插入顺序
         const appendResult = await this.mcpClient.call("mcp__talk-to-figma__append_card_to_container", {
           containerId: cardsContainerId,
           templateId: seedId,
           newName: newName,
-          insertIndex: -1
+          insertIndex: i  // ← 关键：卡片在 Cards 内的确切位置
         });
         
+        // ✅ 改进2: 增强绑定关系，便于按索引对齐
         this.runState.cards_created.push({
-          index: i,
-          type: item.type,
-          component: componentName,
+          index: i,               // ← 与 orderedContent 的位置一一对应
           instanceId: appendResult.newCardId,
-          group_id: item.group_id || `paragraph_${i}`,
-          name: newName
+          kind: item.type,        // 'figure_group' | 'standalone_paragraph'
+          component: componentName,
+          name: newName,
+          ref: item.type === 'figure_group'
+            ? { group_id: item.group_id }                // grp_0010 / grp_0011…
+            : { original_index: item.original_index }    // 段落在JSON中的原始索引
         });
         
         console.log(`✅ Created ${componentName} instance ${i + 1} (ID: ${appendResult.newCardId})`);
@@ -277,6 +285,60 @@ class CardBasedFigmaWorkflowAutomator {
     }
     
     console.log(`🎉 Successfully created ${this.runState.cards_created.length} instances`);
+  }
+
+  // ✅ 改进4: 验收机制 - 确保Cards顺序与orderedContent一致
+  async validateCardsOrder(orderedContent) {
+    console.log('\n🔍 Validating cards order against content flow...');
+    
+    try {
+      // 获取Cards容器的实际子节点
+      const cardsInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", {
+        nodeId: this.workflowMapping.anchors.cards_stack_id
+      });
+      
+      const actualChildren = cardsInfo.children || [];
+      console.log(`📋 Found ${actualChildren.length} cards in Figma, expected ${orderedContent.length}`);
+      
+      // 验证数量
+      if (actualChildren.length !== orderedContent.length) {
+        console.warn(`⚠️ Cards count mismatch: expected ${orderedContent.length}, found ${actualChildren.length}`);
+        return false;
+      }
+      
+      // 验证顺序和对应关系
+      let allValid = true;
+      for (let i = 0; i < actualChildren.length; i++) {
+        const actualCard = actualChildren[i];
+        const expectedContent = orderedContent[i];
+        const expectedCard = this.runState.cards_created[i];
+        
+        // 检查ID对应
+        if (actualCard.id !== expectedCard.instanceId) {
+          console.warn(`⚠️ Position ${i}: ID mismatch - expected ${expectedCard.instanceId}, found ${actualCard.id}`);
+          allValid = false;
+        }
+        
+        // 检查类型对应
+        const actualType = actualCard.name.includes('Figure') ? 'figure_group' : 'standalone_paragraph';
+        if (actualType !== expectedContent.type) {
+          console.warn(`⚠️ Position ${i}: Type mismatch - expected ${expectedContent.type}, found ${actualType}`);
+          allValid = false;
+        }
+      }
+      
+      if (allValid) {
+        console.log('✅ Cards order validation passed!');
+      } else {
+        console.warn('⚠️ Cards order validation failed - some mismatches detected');
+      }
+      
+      return allValid;
+      
+    } catch (error) {
+      console.error('❌ Failed to validate cards order:', error.message);
+      return false;
+    }
   }
 
   // 🎯 种子实例解析方法
@@ -423,9 +485,10 @@ class CardBasedFigmaWorkflowAutomator {
     const firstTitle = figures.find(f => f.title)?.title || '';
     const firstCredit = figures.find(f => f.credit)?.credit || '';
     
-    // Fill title text
+    // ✅ 改进3: 使用配置化槽位名
     if (firstTitle) {
-      const titleNodeId = await this.findChildByName(instanceId, 'titleText');
+      const titleTextSlot = this.workflowMapping.anchors.slots.figure.title_text || 'titleText';
+      const titleNodeId = await this.findChildByName(instanceId, titleTextSlot);
       if (titleNodeId) {
         try {
           await this.mcpClient.call("mcp__talk-to-figma__set_text_content", {
@@ -441,7 +504,8 @@ class CardBasedFigmaWorkflowAutomator {
     
     // Fill source text
     if (firstCredit) {
-      const sourceNodeId = await this.findChildByName(instanceId, 'sourceText');
+      const sourceTextSlot = this.workflowMapping.anchors.slots.figure.source_text || 'sourceText';
+      const sourceNodeId = await this.findChildByName(instanceId, sourceTextSlot);
       if (sourceNodeId) {
         try {
           await this.mcpClient.call("mcp__talk-to-figma__set_text_content", {

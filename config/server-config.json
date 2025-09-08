@@ -36,8 +36,10 @@
         "slots": {
           "figure": {
             "title": "slot:TITLE",
-            "image_grid": "slot:IMAGE_GRID",
-            "source": "slot:SOURCE"
+            "title_text": "titleText",
+            "image_grid": "slot:IMAGE_GRID", 
+            "source": "slot:SOURCE",
+            "source_text": "sourceText"
           },
           "body": {
             "body": "slot:BODY"
