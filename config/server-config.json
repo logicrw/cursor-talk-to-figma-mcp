@@ -43,7 +43,8 @@
           },
           "body": {
             "body": "slot:BODY"
-          }
+          },
+          "images": ["imgSlot1", "imgSlot2", "imgSlot3", "imgSlot4"]
         },
         "image_slots": ["imgSlot1", "imgSlot2", "imgSlot3", "imgSlot4"]
       },

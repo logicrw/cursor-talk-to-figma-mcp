@@ -269,6 +269,7 @@ class CardBasedFigmaWorkflowAutomator {
           index: i,               // ← 与 orderedContent 的位置一一对应
           instanceId: appendResult.newCardId,
           kind: item.type,        // 'figure_group' | 'standalone_paragraph'
+          type: item.type,        // ← 向后兼容，别删
           component: componentName,
           name: newName,
           ref: item.type === 'figure_group'
@@ -319,10 +320,20 @@ class CardBasedFigmaWorkflowAutomator {
           allValid = false;
         }
         
-        // 检查类型对应
-        const actualType = actualCard.name.includes('Figure') ? 'figure_group' : 'standalone_paragraph';
-        if (actualType !== expectedContent.type) {
-          console.warn(`⚠️ Position ${i}: Type mismatch - expected ${expectedContent.type}, found ${actualType}`);
+        // ✅ 检查类型对应 - 通过子节点槽位而非名称判断
+        try {
+          const info = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", { nodeId: actualCard.id });
+          const slots = this.workflowMapping.anchors.slots || {};
+          const hasBody = (info.children || []).some(c => c.name === (slots.body?.body || 'slot:BODY'));
+          const hasImageGrid = (info.children || []).some(c => c.name === (slots.figure?.image_grid || 'slot:IMAGE_GRID'));
+          const actualType = hasBody ? 'standalone_paragraph' : (hasImageGrid ? 'figure_group' : 'unknown');
+          
+          if (actualType !== expectedContent.type) {
+            console.warn(`⚠️ Position ${i}: Type mismatch - expected ${expectedContent.type}, found ${actualType}`);
+            allValid = false;
+          }
+        } catch (error) {
+          console.warn(`⚠️ Position ${i}: Failed to check node type: ${error.message}`);
           allValid = false;
         }
       }
@@ -526,9 +537,11 @@ class CardBasedFigmaWorkflowAutomator {
       imageCount: images.length
     });
     
-    // Fill images in slots
-    for (let i = 0; i < images.length && i < this.workflowMapping.images.max_images; i++) {
-      const imageSlotName = this.workflowMapping.anchors.image_slots[i];
+    // Fill images in slots - ✅ 统一槽位来源
+    const slots = this.workflowMapping.anchors.slots || {};
+    const imageSlotNames = slots.images || this.workflowMapping.anchors.image_slots || [];
+    for (let i = 0; i < images.length && i < this.workflowMapping.images.max_images && i < imageSlotNames.length; i++) {
+      const imageSlotName = imageSlotNames[i];
       const imageNodeId = await this.findChildByName(instanceId, imageSlotName);
       
       if (imageNodeId && images[i].asset_id) {
