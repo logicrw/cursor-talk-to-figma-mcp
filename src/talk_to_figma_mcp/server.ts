@@ -1304,6 +1304,76 @@ server.tool(
   }
 );
 
+// Get Component Property References Tool
+server.tool(
+  "get_component_property_references",
+  "Get component property references from a Figma instance node, returning PropertyName#ID format strings",
+  {
+    nodeId: z.string().describe("ID of the component instance node")
+  },
+  async ({ nodeId }: any) => {
+    try {
+      const result = await sendCommandToFigma("get_component_property_references", {
+        nodeId: nodeId
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error getting component property references: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Set Instance Properties Tool
+server.tool(
+  "set_instance_properties",
+  "Set component properties on a Figma instance using PropertyName#ID format",
+  {
+    nodeId: z.string().describe("ID of the instance node"),
+    properties: z.record(z.union([z.boolean(), z.string(), z.number()])).describe("Properties object where keys are PropertyName#ID format")
+  },
+  async ({ nodeId, properties }: any) => {
+    try {
+      const result = await sendCommandToFigma("set_instance_properties", {
+        nodeId: nodeId,
+        properties: properties
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error setting instance properties: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
 // Set Instance Overrides Tool
 server.tool(
   "set_instance_overrides",
@@ -2596,6 +2666,8 @@ type FigmaCommand =
   | "get_styles"
   | "get_local_components"
   | "create_component_instance"
+  | "get_component_property_references"
+  | "set_instance_properties"
   | "get_instance_overrides"
   | "set_instance_overrides"
   | "export_node_as_image"
@@ -2693,6 +2765,13 @@ type CommandParams = {
     componentKey: string;
     x: number;
     y: number;
+  };
+  get_component_property_references: {
+    nodeId: string;
+  };
+  set_instance_properties: {
+    nodeId: string;
+    properties: Record<string, boolean | string | number>;
   };
   get_instance_overrides: {
     instanceNodeId: string | null;

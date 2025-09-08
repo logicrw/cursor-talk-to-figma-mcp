@@ -39,6 +39,8 @@ class CardBasedFigmaWorkflowAutomator {
     this.channelManager = null;
     this.mcpClient = null;
     this.dryRun = false;
+    this.boolPropIds = null; // Cache for component boolean property IDs
+    this.seedInstanceIds = null; // Cache for seed instance IDs
   }
 
   async initialize(mcpClient, channelId = null, contentFile = null, dryRun = false) {
@@ -116,6 +118,11 @@ class CardBasedFigmaWorkflowAutomator {
         cards_created: [],
         dry_run_completed: false
       };
+    }
+    
+    // Initialize component property IDs discovery
+    if (this.channelManager && this.channelManager.currentChannel) {
+      await this.discoverComponentPropertyIds();
     }
     
     console.log(`📄 Loaded content with ${this.contentData.blocks.length} blocks`);
@@ -366,6 +373,10 @@ class CardBasedFigmaWorkflowAutomator {
 
   // 🎯 种子实例解析方法
   async resolveSeedInstances() {
+    if (this.seedInstanceIds) {
+      return this.seedInstanceIds;
+    }
+    
     const seedsMapping = this.workflowMapping.anchors.seeds;
     if (!seedsMapping) {
       throw new Error('Seeds configuration not found in mapping.anchors.seeds');
@@ -392,10 +403,92 @@ class CardBasedFigmaWorkflowAutomator {
 
     console.log(`🌱 Seed instances resolved: FigureCard=${figureInstance.id}, BodyCard=${bodyInstance.id}`);
 
-    return {
+    this.seedInstanceIds = {
       figureInstanceId: figureInstance.id,
       bodyInstanceId: bodyInstance.id
     };
+    
+    return this.seedInstanceIds;
+  }
+  
+  // ✨ 新增：自动发现组件属性的 propertyId (使用官方API)
+  async discoverComponentPropertyIds() {
+    console.log('🔍 Discovering component property IDs...');
+    
+    try {
+      const seedInstances = await this.resolveSeedInstances();
+      
+      // 使用新的get_component_property_references API
+      const referencesResult = await this.mcpClient.call("mcp__talk-to-figma__get_component_property_references", {
+        nodeId: seedInstances.figureInstanceId
+      });
+      
+      console.log('📋 Component property references result:', JSON.stringify(referencesResult, null, 2));
+      
+      if (!referencesResult.success || !referencesResult.references) {
+        throw new Error(`Failed to get property references: ${referencesResult.message || 'Unknown error'}`);
+      }
+      
+      // 构建布尔属性映射 - 从配置中获取友好名称到PropertyName#ID的映射
+      const visibilityMapping = this.workflowMapping.images?.visibility_props || {};
+      const titleVisibleProp = this.workflowMapping.title?.visible_prop || 'showTitle';
+      const sourceVisibleProp = this.workflowMapping.source?.visible_prop || 'showSource';
+      
+      this.boolPropIds = { figure: {} };
+      
+      // 从返回的references中查找对应的PropertyName#ID格式
+      const references = referencesResult.references;
+      
+      // 映射标题属性
+      const titleRef = Object.keys(references).find(ref => 
+        ref.toLowerCase().includes('title') || ref.includes(titleVisibleProp.toLowerCase())
+      );
+      if (titleRef) {
+        this.boolPropIds.figure[titleVisibleProp] = titleRef;
+        console.log(`📌 Mapped title property: ${titleVisibleProp} -> ${titleRef}`);
+      }
+      
+      // 映射来源属性
+      const sourceRef = Object.keys(references).find(ref => 
+        ref.toLowerCase().includes('source') || ref.includes(sourceVisibleProp.toLowerCase())
+      );
+      if (sourceRef) {
+        this.boolPropIds.figure[sourceVisibleProp] = sourceRef;
+        console.log(`📌 Mapped source property: ${sourceVisibleProp} -> ${sourceRef}`);
+      }
+      
+      // 映射图片槽位属性
+      Object.entries(visibilityMapping).forEach(([slotName, propName]) => {
+        const imgRef = Object.keys(references).find(ref => 
+          ref.toLowerCase().includes(propName.toLowerCase()) || 
+          ref.toLowerCase().includes(slotName.toLowerCase().replace('slot', ''))
+        );
+        if (imgRef) {
+          this.boolPropIds.figure[propName] = imgRef;
+          console.log(`📌 Mapped image property: ${propName} (${slotName}) -> ${imgRef}`);
+        }
+      });
+      
+      // 验证是否所有必要属性都找到了
+      const requiredProps = [titleVisibleProp, sourceVisibleProp, ...Object.values(visibilityMapping)];
+      const missingProps = requiredProps.filter(prop => !this.boolPropIds.figure[prop]);
+      
+      if (missingProps.length > 0) {
+        console.warn(`⚠️ Some properties not found in component references:`, missingProps);
+        console.warn(`Available references:`, Object.keys(references));
+        
+        // Fail fast as requested - don't use fallbacks
+        throw new Error(`Missing required component properties: ${missingProps.join(', ')}. Available: ${Object.keys(references).join(', ')}`);
+      }
+      
+      console.log('✅ Component property IDs discovered:', this.boolPropIds);
+      
+    } catch (error) {
+      console.error('❌ Failed to discover property IDs:', error.message);
+      
+      // Fail fast - don't use fallback mapping
+      throw new Error(`Property ID discovery failed: ${error.message}. Please check Figma component boolean properties setup.`);
+    }
   }
 
   async clearCardsContainer() {
@@ -581,44 +674,74 @@ class CardBasedFigmaWorkflowAutomator {
   async applyVisibilityControl(instanceId, { hasTitle, hasSource, imageCount }) {
     console.log(`    🎯 Visibility control: title:${hasTitle}, source:${hasSource}, images:${imageCount}`);
 
-    // 路线A：直接对槽位容器层做 set_node_visible
-    // 1. 控制标题槽位容器
-    const titleSlotName = this.workflowMapping.anchors?.slots?.figure?.title || 'slot:TITLE';
-    await this.setSlotVisibility(instanceId, titleSlotName, hasTitle, 'title slot');
-
-    // 2. 控制来源槽位容器  
-    const sourceSlotName = this.workflowMapping.anchors?.slots?.figure?.source || 'slot:SOURCE';
-    await this.setSlotVisibility(instanceId, sourceSlotName, hasSource, 'source slot');
-
-    // 3. 控制图片槽位容器
-    const imageSlotNames = this.workflowMapping.anchors?.slots?.images || this.workflowMapping.anchors.image_slots || [];
-    const maxImages = this.workflowMapping.images?.max_images ?? 4;
-    
-    for (let i = 2; i <= maxImages && i-1 < imageSlotNames.length; i++) {
-      const shouldShow = imageCount >= i;
-      const slotName = imageSlotNames[i-1]; // imgSlot2 is at index 1
-      await this.setSlotVisibility(instanceId, slotName, shouldShow, `image slot ${i}`);
-    }
-  }
-
-  async setSlotVisibility(instanceId, slotName, visible, description) {
-    const slotNodeId = await this.findChildByName(instanceId, slotName);
-    if (!slotNodeId) {
-      console.warn(`    ⚠️ ${description} container '${slotName}' not found`);
-      return;
+    if (!this.boolPropIds?.figure) {
+      const error = 'Boolean property IDs not discovered - cannot apply visibility control';
+      console.error(`    ❌ ${error}`);
+      throw new Error(error);
     }
 
     try {
-      // 直接设置容器层可见性，Auto-layout会自动调整布局
-      await this.mcpClient.call("mcp__talk-to-figma__set_node_visible", {
-        nodeId: slotNodeId,
-        visible: visible
-      });
-      console.log(`    ✅ ${description} ${visible ? 'shown' : 'hidden'}`);
+      // 计算各布尔位的目标值
+      const titleVisibleProp = this.workflowMapping.title?.visible_prop || 'showTitle';
+      const sourceVisibleProp = this.workflowMapping.source?.visible_prop || 'showSource';
+      const visibilityMapping = this.workflowMapping.images?.visibility_props || {};
+      
+      // 构造properties对象 - 使用PropertyName#ID格式的键
+      const properties = {};
+      
+      // 设置标题显示
+      if (this.boolPropIds.figure[titleVisibleProp]) {
+        properties[this.boolPropIds.figure[titleVisibleProp]] = hasTitle;
+        console.log(`    📝 ${titleVisibleProp} -> ${this.boolPropIds.figure[titleVisibleProp]} = ${hasTitle}`);
+      }
+      
+      // 设置来源显示
+      if (this.boolPropIds.figure[sourceVisibleProp]) {
+        properties[this.boolPropIds.figure[sourceVisibleProp]] = hasSource;
+        console.log(`    📝 ${sourceVisibleProp} -> ${this.boolPropIds.figure[sourceVisibleProp]} = ${hasSource}`);
+      }
+      
+      // 设置图片显示 - 动态从配置读取
+      const imageSlotNames = this.workflowMapping.anchors?.slots?.images || this.workflowMapping.anchors.image_slots || [];
+      const maxImages = this.workflowMapping.images?.max_images ?? imageSlotNames.length;
+      
+      for (let i = 2; i <= maxImages && i-1 < imageSlotNames.length; i++) {
+        const slotName = imageSlotNames[i-1]; // imgSlot2 is at index 1
+        const visibilityProp = visibilityMapping[slotName];
+        
+        if (visibilityProp && this.boolPropIds.figure[visibilityProp]) {
+          const shouldShow = imageCount >= i;
+          properties[this.boolPropIds.figure[visibilityProp]] = shouldShow;
+          console.log(`    📝 ${visibilityProp} (${slotName}) -> ${this.boolPropIds.figure[visibilityProp]} = ${shouldShow}`);
+        }
+      }
+      
+      // 使用官方setProperties API直接设置实例属性
+      if (Object.keys(properties).length > 0) {
+        console.log(`    🔧 Applying properties using setProperties:`, properties);
+        
+        const result = await this.mcpClient.call("mcp__talk-to-figma__set_instance_properties", {
+          nodeId: instanceId,
+          properties: properties
+        });
+        
+        if (result.success) {
+          console.log(`    ✅ Applied ${Object.keys(properties).length} properties to instance ${instanceId}`);
+          console.log(`    📋 Applied properties:`, result.applied);
+        } else {
+          throw new Error(`Failed to set properties: ${result.message}`);
+        }
+      } else {
+        console.warn(`    ⚠️ No properties to apply - check component property mapping`);
+      }
+      
     } catch (error) {
-      console.warn(`    ⚠️ Failed to set visibility for ${description}: ${error.message}`);
+      console.error(`    ❌ Failed to apply visibility control:`, error.message);
+      console.error(`    📋 Error details:`, error);
+      throw error; // Re-throw to fail fast as requested
     }
   }
+
 
   async processBodyCard(standaloneItem, cardIndex) {
     const cardInstance = this.runState.cards_created[cardIndex];
