@@ -1174,35 +1174,6 @@ async function getLocalComponents() {
 //   }
 // }
 
-async function createComponentInstance(params) {
-  const { componentKey, x = 0, y = 0 } = params || {};
-
-  if (!componentKey) {
-    throw new Error("Missing componentKey parameter");
-  }
-
-  try {
-    const component = await figma.importComponentByKeyAsync(componentKey);
-    const instance = component.createInstance();
-
-    instance.x = x;
-    instance.y = y;
-
-    figma.currentPage.appendChild(instance);
-
-    return {
-      id: instance.id,
-      name: instance.name,
-      x: instance.x,
-      y: instance.y,
-      width: instance.width,
-      height: instance.height,
-      componentId: instance.componentId,
-    };
-  } catch (error) {
-    throw new Error(`Error creating component instance: ${error.message}`);
-  }
-}
 
 async function exportNodeAsImage(params) {
   const { nodeId, scale = 1 } = params || {};
@@ -3044,7 +3015,7 @@ async function getComponentPropertyReferences(params) {
       return { success: false, message: error };
     }
 
-    const instance = node as InstanceNode;
+    const instance = node;
     console.log(`Getting component property references for instance: ${instance.name}`);
 
     // Get component property references and current values
@@ -3134,7 +3105,7 @@ async function setInstanceProperties(params) {
       return { success: false, message: error };
     }
 
-    const instance = node as InstanceNode;
+    const instance = node;
     console.log(`Setting properties for instance: ${instance.name}`);
     console.log("Properties to set:", params.properties);
 
@@ -3237,7 +3208,7 @@ async function createComponentInstance(params) {
         return { success: false, message: error };
       }
       
-      component = node as ComponentNode;
+      component = node;
       
     } else if (componentKey) {
       console.log(`Importing component by key: ${componentKey}`);
@@ -3266,7 +3237,7 @@ async function createComponentInstance(params) {
     instance.y = y;
 
     // Append to parent
-    (parentNode as any).appendChild(instance);
+    parentNode.appendChild(instance);
 
     console.log(`Instance created successfully: ${instance.name} (ID: ${instance.id})`);
     
