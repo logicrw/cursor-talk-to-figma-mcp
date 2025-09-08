@@ -320,12 +320,12 @@ class CardBasedFigmaWorkflowAutomator {
           allValid = false;
         }
         
-        // ✅ 检查类型对应 - 通过子节点槽位而非名称判断
+        // ✅ 检查类型对应 - 通过子节点槽位而非名称判断 + 安全访问
         try {
           const info = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", { nodeId: actualCard.id });
-          const slots = this.workflowMapping.anchors.slots || {};
-          const hasBody = (info.children || []).some(c => c.name === (slots.body?.body || 'slot:BODY'));
-          const hasImageGrid = (info.children || []).some(c => c.name === (slots.figure?.image_grid || 'slot:IMAGE_GRID'));
+          const slots = this.workflowMapping.anchors?.slots ?? {};
+          const hasBody = (info.children || []).some(c => c.name === (slots.body?.body ?? 'slot:BODY'));
+          const hasImageGrid = (info.children || []).some(c => c.name === (slots.figure?.image_grid ?? 'slot:IMAGE_GRID'));
           const actualType = hasBody ? 'standalone_paragraph' : (hasImageGrid ? 'figure_group' : 'unknown');
           
           // ✅ DEBUG日志 - unknown类型时输出详细信息
@@ -333,7 +333,7 @@ class CardBasedFigmaWorkflowAutomator {
             console.warn(`🔍 DEBUG Position ${i}: Unknown card type detected`);
             console.warn(`  Card name: ${actualCard.name}`);
             console.warn(`  Children:`, (info.children || []).map(c => ({ name: c.name, type: c.type })));
-            console.warn(`  Expected slots: body='${slots.body?.body || 'slot:BODY'}', imageGrid='${slots.figure?.image_grid || 'slot:IMAGE_GRID'}'`);
+            console.warn(`  Expected slots: body='${slots.body?.body ?? 'slot:BODY'}', imageGrid='${slots.figure?.image_grid ?? 'slot:IMAGE_GRID'}'`);
           }
           
           if (actualType !== expectedContent.type) {
@@ -506,8 +506,9 @@ class CardBasedFigmaWorkflowAutomator {
     const firstTitle = figures.find(f => f.title)?.title || '';
     const firstCredit = figures.find(f => f.credit)?.credit || '';
     
-    // ✅ 改进3: 使用配置化槽位名 + 空内容处理
-    const titleTextSlot = this.workflowMapping.anchors.slots.figure.title_text || 'titleText';
+    // ✅ 改进3: 使用配置化槽位名 + 空内容处理 + 安全访问
+    const slots = this.workflowMapping.anchors?.slots ?? {};
+    const titleTextSlot = slots.figure?.title_text ?? 'titleText';
     const titleNodeId = await this.findChildByName(instanceId, titleTextSlot);
     if (titleNodeId) {
       try {
@@ -521,8 +522,8 @@ class CardBasedFigmaWorkflowAutomator {
       }
     }
 
-    // ✅ 来源处理 + 空内容处理
-    const sourceTextSlot = this.workflowMapping.anchors.slots.figure.source_text || 'sourceText';
+    // ✅ 来源处理 + 空内容处理 + 安全访问
+    const sourceTextSlot = slots.figure?.source_text ?? 'sourceText';
     const sourceNodeId = await this.findChildByName(instanceId, sourceTextSlot);
     if (sourceNodeId) {
       try {
@@ -626,11 +627,13 @@ class CardBasedFigmaWorkflowAutomator {
         await this.hideSlotNode(instanceId, this.workflowMapping.anchors.slots?.figure?.source || 'slot:SOURCE', 'source slot');
       }
       
-      // Hide unused image slots - ✅ 容错处理
+      // Hide unused image slots - ✅ 统一槽位来源
+      const slots = this.workflowMapping.anchors.slots || {};
+      const imageSlotNames = slots.images || this.workflowMapping.anchors.image_slots || [];
       const maxImages = this.workflowMapping.images?.max_images ?? 4;
-      for (let i = 2; i <= maxImages; i++) {
+      for (let i = 2; i <= maxImages && i-1 < imageSlotNames.length; i++) {
         if (imageCount < i) {
-          await this.hideSlotNode(instanceId, `imgSlot${i}`, `image slot ${i}`);
+          await this.hideSlotNode(instanceId, imageSlotNames[i-1], `image slot ${i}`);
         }
       }
     }
