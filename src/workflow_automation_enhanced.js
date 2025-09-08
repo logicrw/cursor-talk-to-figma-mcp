@@ -53,6 +53,7 @@ class CardBasedFigmaWorkflowAutomator {
     
     // Load server configuration with workflow.mapping
     const serverConfig = JSON.parse(await fs.readFile(CONFIG.serverConfigPath, 'utf8'));
+    this.config = serverConfig; // ✅ 修复：保存完整配置
     this.workflowMapping = serverConfig.workflow.mapping;
     console.log('✅ Loaded workflow.mapping from server-config.json');
     
@@ -66,6 +67,40 @@ class CardBasedFigmaWorkflowAutomator {
     });
     
     this.contentData = JSON.parse(await fs.readFile(contentPath, 'utf8'));
+    
+    // Get Cards container nodeId for instance creation
+    if (this.channelManager && this.channelManager.currentChannel) {
+      try {
+        const documentInfo = await this.mcpClient.call("mcp__talk-to-figma__get_document_info");
+        const cardsContainer = documentInfo.children.find(child => 
+          child.name === this.workflowMapping.anchors.frame
+        );
+        if (cardsContainer) {
+          const containerInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", {
+            nodeId: cardsContainer.id
+          });
+          // Find Cards within ContentContainer
+          const contentContainer = containerInfo.children?.find(child => 
+            child.name === this.workflowMapping.anchors.container
+          );
+          if (contentContainer) {
+            const containerDetail = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", {
+              nodeId: contentContainer.id
+            });
+            const cardsNode = containerDetail.children?.find(child => 
+              child.name === this.workflowMapping.anchors.cards_stack
+            );
+            if (cardsNode) {
+              this.workflowMapping.anchors.cards_stack_id = cardsNode.id;
+              console.log(`✅ Found Cards container: ${cardsNode.id}`);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ Could not auto-detect Cards container, using fallback ID');
+        this.workflowMapping.anchors.cards_stack_id = "180:53";
+      }
+    }
     
     // Initialize run state
     try {
@@ -89,6 +124,11 @@ class CardBasedFigmaWorkflowAutomator {
     this.runState.execution_started_at = new Date().toISOString();
     this.runState.current_phase = this.dryRun ? 'dry_run_execution' : 'production_execution';
     await this.updateRunState();
+    
+    // 🧹 Clear Cards container before creating new instances (if configured)
+    if (this.config?.workflow?.cleanup_on_start) {
+      await this.clearCardsContainer();
+    }
     
     try {
       // Step 1: Create ordered content flow
@@ -193,46 +233,171 @@ class CardBasedFigmaWorkflowAutomator {
       return;
     }
     
-    // Get component keys for instance creation
-    const components = await this.mcpClient.call("mcp__talk-to-figma__get_local_components");
-    const figureComponent = components.components.find(c => c.name === this.workflowMapping.anchors.figure_component);
-    const bodyComponent = components.components.find(c => c.name === this.workflowMapping.anchors.body_component);
+    // 🎯 种子实例优化：解析种子实例ID
+    const seedInstances = await this.resolveSeedInstances();
+    const cardsContainerId = this.workflowMapping.anchors.cards_stack_id;
     
-    if (!figureComponent || !bodyComponent) {
-      throw new Error('Required components not found: FigureCard/BodyCard');
-    }
-    
-    // Create required instances
-    let yPosition = 2265; // Starting position
+    // Create required instances using seed instances
     this.runState.cards_created = [];
     
     for (let i = 0; i < orderedContent.length; i++) {
       const item = orderedContent[i];
-      const componentKey = item.type === 'figure_group' ? figureComponent.key : bodyComponent.key;
       const componentName = item.type === 'figure_group' ? 'FigureCard' : 'BodyCard';
+      const seedId = item.type === 'figure_group' ? seedInstances.figureInstanceId : seedInstances.bodyInstanceId;
+      
+      // 生成唯一实例名称
+      const newName = item.type === 'figure_group' 
+        ? `FigureCard_${item.group_id}` 
+        : `BodyCard_paragraph_${i}`;
       
       try {
-        const instance = await this.mcpClient.call("mcp__talk-to-figma__create_component_instance", {
-          componentKey: componentKey,
-          x: 158,
-          y: yPosition
+        // ✅ 种子实例克隆法：直接从种子追加到 Cards，无野生副本
+        const appendResult = await this.mcpClient.call("mcp__talk-to-figma__append_card_to_container", {
+          containerId: cardsContainerId,
+          templateId: seedId,
+          newName: newName,
+          insertIndex: -1
         });
         
         this.runState.cards_created.push({
           index: i,
           type: item.type,
           component: componentName,
-          instanceId: instance.id || `instance_${i}`,
-          position: { x: 158, y: yPosition }
+          instanceId: appendResult.newCardId,
+          group_id: item.group_id || `paragraph_${i}`,
+          name: newName
         });
         
-        console.log(`✅ Created ${componentName} instance ${i + 1}`);
-        yPosition += item.type === 'figure_group' ? 1400 : 200; // Estimated heights
+        console.log(`✅ Created ${componentName} instance ${i + 1} (ID: ${appendResult.newCardId})`);
         
       } catch (error) {
-        console.error(`❌ Failed to create ${componentName} instance:`, error.message);
+        console.error(`❌ Failed to create ${componentName} instance ${i + 1}:`, error);
         throw error;
       }
+    }
+    
+    console.log(`🎉 Successfully created ${this.runState.cards_created.length} instances`);
+  }
+
+  // 🎯 种子实例解析方法
+  async resolveSeedInstances() {
+    const seedsMapping = this.workflowMapping.anchors.seeds;
+    if (!seedsMapping) {
+      throw new Error('Seeds configuration not found in mapping.anchors.seeds');
+    }
+
+    // 查找 Seeds 框架
+    const docInfo = await this.mcpClient.call("mcp__talk-to-figma__get_document_info");
+    const seedsFrame = docInfo.children.find(frame => frame.name === seedsMapping.frame);
+    if (!seedsFrame) {
+      throw new Error(`Seeds frame "${seedsMapping.frame}" not found`);
+    }
+
+    // 获取种子实例详情
+    const seedsInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", {
+      nodeId: seedsFrame.id
+    });
+
+    const figureInstance = seedsInfo.children.find(child => child.name === seedsMapping.figure_instance);
+    const bodyInstance = seedsInfo.children.find(child => child.name === seedsMapping.body_instance);
+
+    if (!figureInstance || !bodyInstance) {
+      throw new Error(`Seed instances not found: ${seedsMapping.figure_instance} / ${seedsMapping.body_instance}`);
+    }
+
+    console.log(`🌱 Seed instances resolved: FigureCard=${figureInstance.id}, BodyCard=${bodyInstance.id}`);
+
+    return {
+      figureInstanceId: figureInstance.id,
+      bodyInstanceId: bodyInstance.id
+    };
+  }
+
+  async clearCardsContainer() {
+    if (!this.channelManager || !this.channelManager.currentChannel) {
+      console.warn('⚠️ No channel connection, skipping Cards cleanup');
+      return;
+    }
+    
+    try {
+      const cardsContainerId = this.workflowMapping.anchors.cards_stack_id || "194:51";
+      const cardsInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", {
+        nodeId: cardsContainerId
+      });
+      
+      if (cardsInfo.children && cardsInfo.children.length > 0) {
+        // ⚠️ 重要：只删除脚本生成的节点，保护模板结构
+        const scriptGeneratedNodes = cardsInfo.children.filter(child => {
+          const name = child.name || '';
+          return (
+            name.includes('_grp_') ||           // FigureCard 分组实例
+            name.includes('_paragraph_') ||     // BodyCard 段落实例  
+            name.includes('_copy_') ||          // 复制的实例
+            name.includes('FigureCard_') ||     // FigureCard 前缀
+            name.includes('BodyCard_') ||       // BodyCard 前缀
+            name.match(/^(FigureCard|BodyCard).*\d+$/) // 带数字后缀的卡片
+          );
+        });
+        
+        if (scriptGeneratedNodes.length > 0) {
+          const nodeIds = scriptGeneratedNodes.map(node => node.id);
+          console.log(`🧹 Safely cleaning ${nodeIds.length} script-generated items from Cards...`);
+          console.log(`📋 Deleting: ${scriptGeneratedNodes.map(n => n.name).join(', ')}`);
+          
+          const deleteResult = await this.mcpClient.call("mcp__talk-to-figma__delete_multiple_nodes", {
+            nodeIds: nodeIds
+          });
+          
+          console.log(`✅ Safe cleanup completed: ${deleteResult.nodesDeleted} deleted, ${deleteResult.nodesFailed} failed`);
+        } else {
+          console.log('✅ No script-generated content found, Cards container preserved');
+        }
+        
+        // 显示保留的模板结构
+        const preservedNodes = cardsInfo.children.filter(child => {
+          const name = child.name || '';
+          return !scriptGeneratedNodes.some(sg => sg.id === child.id);
+        });
+        if (preservedNodes.length > 0) {
+          console.log(`🛡️ Template preserved: ${preservedNodes.map(n => n.name).join(', ')}`);
+        }
+        
+      } else {
+        console.log('✅ Cards container already clean');
+      }
+    } catch (error) {
+      console.warn('⚠️ Cards cleanup failed:', error.message);
+    }
+  }
+
+  async findChildByName(instanceId, childName) {
+    try {
+      const instanceInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", {
+        nodeId: instanceId
+      });
+      
+      // Search in direct children
+      if (instanceInfo.children) {
+        for (const child of instanceInfo.children) {
+          if (child.name === childName) {
+            return child.id;
+          }
+          
+          // Search in grandchildren for nested structures
+          if (child.children) {
+            for (const grandchild of child.children) {
+              if (grandchild.name === childName) {
+                return grandchild.id;
+              }
+            }
+          }
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.error(`❌ Failed to find child "${childName}" in instance ${instanceId}:`, error.message);
+      return null;
     }
   }
 
@@ -258,47 +423,182 @@ class CardBasedFigmaWorkflowAutomator {
     const firstTitle = figures.find(f => f.title)?.title || '';
     const firstCredit = figures.find(f => f.credit)?.credit || '';
     
-    // Set component properties
-    const propertyUpdates = [];
-    
-    // Title handling
+    // Fill title text
     if (firstTitle) {
-      propertyUpdates.push({ property: this.workflowMapping.title.text_prop, value: firstTitle });
-      propertyUpdates.push({ property: this.workflowMapping.title.visible_prop, value: true });
-    } else {
-      propertyUpdates.push({ property: this.workflowMapping.title.visible_prop, value: false });
-    }
-    
-    // Source handling
-    if (firstCredit) {
-      propertyUpdates.push({ property: this.workflowMapping.source.text_prop, value: `Source: ${firstCredit}` });
-      propertyUpdates.push({ property: this.workflowMapping.source.visible_prop, value: true });
-    } else {
-      propertyUpdates.push({ property: this.workflowMapping.source.visible_prop, value: false });
-    }
-    
-    // Image visibility controls (max 4 images)
-    const maxImages = Math.min(images.length, this.workflowMapping.images.max_images);
-    for (let i = 2; i <= 4; i++) {
-      const showProp = this.workflowMapping.images.visibility_props[`imgSlot${i}`];
-      if (showProp) {
-        propertyUpdates.push({ property: showProp, value: i <= maxImages });
+      const titleNodeId = await this.findChildByName(instanceId, 'titleText');
+      if (titleNodeId) {
+        try {
+          await this.mcpClient.call("mcp__talk-to-figma__set_text_content", {
+            nodeId: titleNodeId,
+            text: firstTitle
+          });
+          console.log(`    ✅ Set title: "${firstTitle}"`);
+        } catch (error) {
+          console.error(`    ❌ Failed to set title:`, error.message);
+        }
       }
     }
     
-    // Apply property updates (this would need a new MCP method for component instance properties)
-    console.log(`    📝 Setting ${propertyUpdates.length} properties on instance ${instanceId}`);
+    // Fill source text
+    if (firstCredit) {
+      const sourceNodeId = await this.findChildByName(instanceId, 'sourceText');
+      if (sourceNodeId) {
+        try {
+          await this.mcpClient.call("mcp__talk-to-figma__set_text_content", {
+            nodeId: sourceNodeId,
+            text: `Source: ${firstCredit}`
+          });
+          console.log(`    ✅ Set source: "Source: ${firstCredit}"`);
+        } catch (error) {
+          console.error(`    ❌ Failed to set source:`, error.message);
+        }
+      }
+    }
+    
+    // Advanced visibility control with multi-layer fallback
+    await this.applyVisibilityControl(instanceId, {
+      hasTitle: !!firstTitle,
+      hasSource: !!firstCredit, 
+      imageCount: images.length
+    });
     
     // Fill images in slots
-    for (let i = 0; i < maxImages; i++) {
-      const imageSlot = this.workflowMapping.anchors.image_slots[i];
-      const imageUrl = `${CONFIG.staticServerUrl}/${images[i].asset_id}.png`;
+    for (let i = 0; i < images.length && i < this.workflowMapping.images.max_images; i++) {
+      const imageSlotName = this.workflowMapping.anchors.image_slots[i];
+      const imageNodeId = await this.findChildByName(instanceId, imageSlotName);
       
+      if (imageNodeId && images[i].asset_id) {
+        const imageUrl = `${CONFIG.staticServerUrl}/${images[i].asset_id}.png`;
+        try {
+          await this.mcpClient.call("mcp__talk-to-figma__set_image_fill", {
+            nodeId: imageNodeId,
+            imageUrl: imageUrl,
+            scaleMode: 'FILL',
+            opacity: 1
+          });
+          console.log(`    ✅ Filled ${imageSlotName} with ${images[i].asset_id}`);
+        } catch (error) {
+          console.error(`    ❌ Failed to fill image slot ${imageSlotName}:`, error.message);
+        }
+      }
+    }
+  }
+
+  async applyVisibilityControl(instanceId, { hasTitle, hasSource, imageCount }) {
+    // Step 1: Calculate visibility overrides based on configuration
+    const overrides = {};
+    
+    // Title visibility
+    if (this.workflowMapping.title?.visible_prop) {
+      overrides[this.workflowMapping.title.visible_prop] = hasTitle;
+    }
+    
+    // Source visibility  
+    if (this.workflowMapping.source?.visible_prop) {
+      overrides[this.workflowMapping.source.visible_prop] = hasSource;
+    }
+    
+    // Image slot visibility (img2, img3, img4)
+    for (let i = 2; i <= this.workflowMapping.images.max_images; i++) {
+      const visibilityProp = this.workflowMapping.images.visibility_props[`imgSlot${i}`];
+      if (visibilityProp) {
+        overrides[visibilityProp] = imageCount >= i;
+      }
+    }
+    
+    console.log(`    🎯 Visibility control: title:${hasTitle}, source:${hasSource}, images:${imageCount}`);
+    
+    // Step 2: Try instance overrides first (preferred method)
+    let instanceOverridesApplied = false;
+    try {
+      const overrideEntries = Object.entries(overrides);
+      if (overrideEntries.length > 0) {
+        // MCP requires different parameter format - need to check actual interface
+        await this.mcpClient.call("mcp__talk-to-figma__set_instance_overrides", {
+          sourceInstanceId: instanceId,
+          targetNodeIds: [instanceId],
+          overrides: overrides
+        });
+        instanceOverridesApplied = true;
+        console.log(`    ✅ Instance overrides applied: ${Object.keys(overrides).join(', ')}`);
+      }
+    } catch (error) {
+      console.log(`    ⚠️ Instance overrides not available: ${error.message}`);
+    }
+    
+    // Step 3: Fallback to node-level visibility control
+    if (!instanceOverridesApplied) {
+      console.log(`    🔄 Fallback: Using node-level visibility control`);
+      
+      // Hide title slot if no title
+      if (!hasTitle) {
+        await this.hideSlotNode(instanceId, this.workflowMapping.anchors.slots?.figure?.title || 'slot:TITLE', 'title slot');
+      }
+      
+      // Hide source slot if no source
+      if (!hasSource) {
+        await this.hideSlotNode(instanceId, this.workflowMapping.anchors.slots?.figure?.source || 'slot:SOURCE', 'source slot');
+      }
+      
+      // Hide unused image slots
+      for (let i = 2; i <= this.workflowMapping.images.max_images; i++) {
+        if (imageCount < i) {
+          await this.hideSlotNode(instanceId, `imgSlot${i}`, `image slot ${i}`);
+        }
+      }
+    }
+  }
+  
+  async hideSlotNode(instanceId, slotName, description) {
+    const slotNodeId = await this.findChildByName(instanceId, slotName);
+    if (!slotNodeId) {
+      console.warn(`    ⚠️ ${description} node '${slotName}' not found`);
+      return;
+    }
+    
+    // Try multiple methods in order of preference
+    const hideMethods = [
+      // Method 1: Node visibility (if available)
+      async () => {
+        await this.mcpClient.call("mcp__talk-to-figma__set_node_visible", {
+          nodeId: slotNodeId,
+          visible: false
+        });
+        return 'hidden';
+      },
+      
+      // Method 2: Opacity to 0
+      async () => {
+        await this.mcpClient.call("mcp__talk-to-figma__set_fill_color", {
+          nodeId: slotNodeId,
+          r: 0, g: 0, b: 0, a: 0
+        });
+        return 'transparent';
+      },
+      
+      // Method 3: Resize to minimal height  
+      async () => {
+        const nodeInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", {
+          nodeId: slotNodeId
+        });
+        await this.mcpClient.call("mcp__talk-to-figma__resize_node", {
+          nodeId: slotNodeId,
+          width: nodeInfo.absoluteBoundingBox?.width || 100,
+          height: 1
+        });
+        return 'minimized';
+      }
+    ];
+    
+    for (const [index, method] of hideMethods.entries()) {
       try {
-        // This would need instance-aware image filling
-        console.log(`    🖼️ Filling ${imageSlot} with ${images[i].asset_id}`);
+        const result = await method();
+        console.log(`    ✅ ${description} ${result} (method ${index + 1})`);
+        return;
       } catch (error) {
-        console.error(`    ❌ Failed to fill image slot ${imageSlot}:`, error.message);
+        if (index === hideMethods.length - 1) {
+          console.warn(`    ⚠️ All hide methods failed for ${description}: ${error.message}`);
+        }
       }
     }
   }
@@ -320,11 +620,22 @@ class CardBasedFigmaWorkflowAutomator {
     const instanceId = cardInstance.instanceId;
     const paragraphText = standaloneItem.block.text;
     
-    // Set bodyText property on the instance
-    console.log(`    📝 Setting bodyText on instance ${instanceId}`);
-    console.log(`    Content: "${paragraphText.substring(0, 100)}..."`);
-    
-    // This would need instance-aware text setting
+    // Find and fill body text node with correct slot name
+    const bodySlotName = this.workflowMapping.anchors?.slots?.body?.body || 'slot:BODY';
+    const bodyTextNodeId = await this.findChildByName(instanceId, bodySlotName);
+    if (bodyTextNodeId) {
+      try {
+        await this.mcpClient.call("mcp__talk-to-figma__set_text_content", {
+          nodeId: bodyTextNodeId,
+          text: paragraphText
+        });
+        console.log(`    ✅ Set body text: "${paragraphText.substring(0, 60)}..."`);
+      } catch (error) {
+        console.error(`    ❌ Failed to set body text:`, error.message);
+      }
+    } else {
+      console.warn(`    ⚠️ Body text node (${bodySlotName}) not found in instance ${instanceId}`);
+    }
   }
 
   generateDryRunSummary(contentItem, cardIndex, cardType) {

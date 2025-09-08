@@ -18,13 +18,19 @@
     "base64_rate_limit": 30
   },
   "workflow": {
-    "current_content_file": "250818_summer_break.json",
+    "cleanup_on_start": true,
+    "current_content_file": "250818_summer_break_content.json",
     "content_directory": "../docx2json",
     "mapping": {
       "anchors": {
         "frame": "Odaily特供海报",
         "container": "ContentContainer",
         "cards_stack": "Cards",
+        "seeds": {
+          "frame": "Seeds",
+          "figure_instance": "FigureCard__seedInstance",
+          "body_instance": "BodyCard__seedInstance"
+        },
         "figure_component": "FigureCard",
         "body_component": "BodyCard",
         "slots": {
