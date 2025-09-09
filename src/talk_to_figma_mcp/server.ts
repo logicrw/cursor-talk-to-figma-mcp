@@ -1251,17 +1251,19 @@ server.tool(
             type: "text",
             text: JSON.stringify(typedResult),
           }
-        ]
-      }
+        ],
+        structuredContent: typedResult
+      };
     } catch (error) {
+      const errorResult = { success: false, error: error instanceof Error ? error.message : String(error) };
       return {
         content: [
           {
             type: "text",
-            text: `Error creating component instance: ${error instanceof Error ? error.message : String(error)
-              }`,
+            text: JSON.stringify(errorResult),
           },
         ],
+        structuredContent: errorResult
       };
     }
   }
@@ -1323,7 +1325,8 @@ server.tool(
             type: "text",
             text: JSON.stringify(result)
           }
-        ]
+        ],
+        structuredContent: result
       };
     } catch (error) {
       return {
@@ -1359,7 +1362,8 @@ server.tool(
             type: "text",
             text: JSON.stringify(result)
           }
-        ]
+        ],
+        structuredContent: result
       };
     } catch (error) {
       return {

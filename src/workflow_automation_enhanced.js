@@ -49,6 +49,13 @@ class CardBasedFigmaWorkflowAutomator {
     this.channelManager = new FigmaChannelManager(mcpClient);
     this.dryRun = dryRun;
     
+    // Helper to unwrap MCP responses (supports both old text+JSON and new structuredContent)
+    this.unwrapMcpResponse = (r) =>
+      (r?.structuredContent) ||
+      (r?.content?.[0]?.json) ||
+      (r?.content?.[0]?.text && JSON.parse(r.content[0].text)) ||
+      r;
+    
     // Connect to channel
     if (channelId) {
       await this.channelManager.connect(channelId);
@@ -127,6 +134,70 @@ class CardBasedFigmaWorkflowAutomator {
     
     console.log(`📄 Loaded content with ${this.contentData.blocks.length} blocks`);
     console.log(`🎯 Mode: ${this.dryRun ? 'DRY-RUN' : 'PRODUCTION'}`);
+  }
+
+  // Instance Creation Factory - supports both seedless creation and fallback to seed cloning
+  async createCardInstance(parentId, cardType = 'figure') {
+    console.log(`🏭 Creating ${cardType} card instance...`);
+    
+    const config = this.workflowMapping[cardType] || {};
+    
+    // Try direct component instantiation first (B+ approach)
+    try {
+      if (config.componentId || config.componentKey) {
+        console.log(`  📦 Attempting direct component instantiation...`);
+        
+        const rawResult = await this.mcpClient.call("mcp__talk-to-figma__create_component_instance", {
+          parentId: parentId,
+          componentId: config.componentId || undefined,
+          componentKey: config.componentKey || undefined,
+          x: 0,
+          y: 0
+        });
+        const result = this.unwrapMcpResponse(rawResult);
+        
+        if (result.success) {
+          console.log(`  ✅ Direct creation succeeded: ${result.name} (${result.id})`);
+          return { id: result.id, name: result.name, method: 'direct' };
+        } else {
+          throw new Error(result.message || 'Direct creation failed');
+        }
+      }
+    } catch (error) {
+      console.warn(`  ⚠️ Direct creation failed: ${error.message}`);
+      console.warn(`  🔄 Falling back to seed cloning...`);
+    }
+    
+    // Fallback to seed cloning (existing approach)
+    try {
+      const result = await this.cloneCardFromSeed(parentId, cardType);
+      console.log(`  ✅ Seed cloning succeeded: ${result.name} (${result.id})`);
+      return { ...result, method: 'seed-clone' };
+    } catch (error) {
+      console.error(`  ❌ Both direct creation and seed cloning failed`);
+      throw new Error(`Failed to create ${cardType} card: Direct creation failed (${error.message}), seed cloning also failed`);
+    }
+  }
+
+  async cloneCardFromSeed(parentId, cardType) {
+    // This method handles the existing seed-based cloning logic
+    // Implementation depends on your current seed cloning approach
+    const seedInstances = await this.resolveSeedInstances();
+    const seedId = cardType === 'figure' ? seedInstances.figureInstanceId : seedInstances.bodyInstanceId;
+    
+    // Use existing append_card_to_container API
+    const rawResult = await this.mcpClient.call("mcp__talk-to-figma__append_card_to_container", {
+      containerId: parentId,
+      templateId: seedId,
+      insertIndex: -1
+    });
+    const result = this.unwrapMcpResponse(rawResult);
+    
+    if (!result.success) {
+      throw new Error(`Seed cloning failed: ${result.message}`);
+    }
+    
+    return { id: result.instanceId, name: result.instanceName || 'Cloned Card' };
   }
 
   async processWorkflow() {
@@ -267,28 +338,29 @@ class CardBasedFigmaWorkflowAutomator {
         : `${String(i+1).padStart(2,'0')}_Body_${i}`;
       
       try {
-        // ✅ 种子实例克隆法：直接从种子追加到 Cards，确保插入顺序
-        const appendResult = await this.mcpClient.call("mcp__talk-to-figma__append_card_to_container", {
-          containerId: cardsContainerId,
-          templateId: seedId,
-          newName: newName,
-          insertIndex: i  // ← 关键：卡片在 Cards 内的确切位置
-        });
+        console.log(`  🏭 Creating ${componentName} card ${i + 1}/${orderedContent.length}: ${newName}`);
         
-        // ✅ 改进2: 增强绑定关系，便于按索引对齐
+        // Use the new instance creation factory (B+ approach with fallback)
+        const cardType = item.type === 'figure_group' ? 'figure' : 'body';
+        const cardInstance = await this.createCardInstance(cardsContainerId, cardType);
+        
+        console.log(`    📝 Card created: ${cardInstance.name} via ${cardInstance.method}`);
+        
+        // ✅ Enhanced binding relationship for index alignment
         this.runState.cards_created.push({
           index: i,               // ← 与 orderedContent 的位置一一对应
-          instanceId: appendResult.newCardId,
+          instanceId: cardInstance.id,
+          creationMethod: cardInstance.method, // Track how it was created
           kind: item.type,        // 'figure_group' | 'standalone_paragraph'
           type: item.type,        // ← 向后兼容，别删
           component: componentName,
-          name: newName,
+          name: cardInstance.name,
           ref: item.type === 'figure_group'
             ? { group_id: item.group_id }                // grp_0010 / grp_0011…
             : { original_index: item.original_index }    // 段落在JSON中的原始索引
         });
         
-        console.log(`✅ Created ${componentName} instance ${i + 1} (ID: ${appendResult.newCardId})`);
+        console.log(`✅ Created ${componentName} instance ${i + 1} via ${cardInstance.method} (ID: ${cardInstance.id})`);
         
       } catch (error) {
         console.error(`❌ Failed to create ${componentName} instance ${i + 1}:`, error);
@@ -416,12 +488,34 @@ class CardBasedFigmaWorkflowAutomator {
     console.log('🔍 Discovering component property IDs...');
     
     try {
-      const seedInstances = await this.resolveSeedInstances();
+      // Try B+ approach first: create a temporary instance for property discovery
+      let discoveryInstanceId = null;
+      let shouldCleanupInstance = false;
       
-      // 使用新的get_component_property_references API
-      const referencesResult = await this.mcpClient.call("mcp__talk-to-figma__get_component_property_references", {
-        nodeId: seedInstances.figureInstanceId
+      try {
+        console.log('  🆕 Attempting property discovery via direct instance creation...');
+        const cardsStackId = this.workflowMapping.anchors?.cards_stack_id;
+        if (!cardsStackId) throw new Error('Cards stack ID not configured');
+        
+        const tempInstance = await this.createCardInstance(cardsStackId, 'figure');
+        discoveryInstanceId = tempInstance.id;
+        shouldCleanupInstance = (tempInstance.method === 'direct'); // Only cleanup if we created it directly
+        
+        console.log(`  📍 Using instance ${discoveryInstanceId} for property discovery (method: ${tempInstance.method})`);
+      } catch (error) {
+        console.warn(`  ⚠️ Direct instance creation failed, falling back to seed discovery: ${error.message}`);
+        
+        // Fallback: use existing seed-based discovery
+        const seedInstances = await this.resolveSeedInstances();
+        discoveryInstanceId = seedInstances.figureInstanceId;
+        shouldCleanupInstance = false;
+      }
+      
+      // Perform property discovery on the chosen instance
+      const rawResponse = await this.mcpClient.call("mcp__talk-to-figma__get_component_property_references", {
+        nodeId: discoveryInstanceId
       });
+      const referencesResult = this.unwrapMcpResponse(rawResponse);
       
       console.log('📋 Component properties result:', JSON.stringify(referencesResult, null, 2));
       
@@ -475,10 +569,29 @@ class CardBasedFigmaWorkflowAutomator {
       if (missingProps.length > 0) {
         const errorMsg = `❌ Required component properties not found: ${missingProps.join(', ')}. Available keys: ${availableKeys.join(', ')}`;
         console.error(errorMsg);
+        // Cleanup before throwing error
+        if (shouldCleanupInstance && discoveryInstanceId) {
+          try {
+            await this.mcpClient.call("mcp__talk-to-figma__delete_node", { nodeId: discoveryInstanceId });
+            console.log(`  🧹 Cleaned up temporary instance: ${discoveryInstanceId}`);
+          } catch (cleanupError) {
+            console.warn(`  ⚠️ Failed to cleanup temporary instance: ${cleanupError.message}`);
+          }
+        }
         throw new Error(errorMsg);
       }
       
       console.log('✅ Component property IDs discovered:', this.boolPropIds);
+      
+      // Cleanup temporary instance if we created it for discovery
+      if (shouldCleanupInstance && discoveryInstanceId) {
+        try {
+          await this.mcpClient.call("mcp__talk-to-figma__delete_node", { nodeId: discoveryInstanceId });
+          console.log(`  🧹 Cleaned up temporary discovery instance: ${discoveryInstanceId}`);
+        } catch (cleanupError) {
+          console.warn(`  ⚠️ Failed to cleanup temporary instance: ${cleanupError.message}`);
+        }
+      }
       
     } catch (error) {
       console.error('❌ Failed to discover property IDs:', error.message);
@@ -717,10 +830,11 @@ class CardBasedFigmaWorkflowAutomator {
       if (Object.keys(properties).length > 0) {
         console.log(`    🔧 Applying properties using setProperties:`, properties);
         
-        const result = await this.mcpClient.call("mcp__talk-to-figma__set_instance_properties", {
+        const rawResult = await this.mcpClient.call("mcp__talk-to-figma__set_instance_properties", {
           nodeId: instanceId,
           properties: properties
         });
+        const result = this.unwrapMcpResponse(rawResult);
         
         if (result.success) {
           console.log(`    ✅ Applied ${Object.keys(properties).length} properties to instance ${instanceId}`);
