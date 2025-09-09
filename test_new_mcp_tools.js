@@ -15,30 +15,25 @@ class TestMcpClient {
     // let's simulate expected responses for testing
     switch (method) {
       case 'mcp__talk-to-figma__get_component_property_references':
-        // Simulate a successful response with PropertyName#ID format
+        // Simulate a successful response with PropertyName#ID format (matching actual implementation)
         return {
           success: true,
-          message: `Got component property references from "FigureCard__seedInstance"`,
+          message: `Got 5 component properties from "FigureCard__seedInstance"`,
           nodeId: params.nodeId,
-          references: {
+          properties: {
             "showTitle#I194:57:showTitle": true,
             "showSource#I194:64:showSource": true,
             "showImg2#I194:61:showImg2": true,
             "showImg3#I194:62:showImg3": true,
             "showImg4#I194:63:showImg4": true
           },
-          raw: {
-            componentPropertyReferences: {
-              visible: "showTitle#I194:57:showTitle"
-            },
-            componentProperties: {
-              "showTitle#I194:57:showTitle": true,
-              "showSource#I194:64:showSource": true,
-              "showImg2#I194:61:showImg2": true,
-              "showImg3#I194:62:showImg3": true,
-              "showImg4#I194:63:showImg4": true
-            }
-          }
+          propertyKeys: [
+            "showTitle#I194:57:showTitle",
+            "showSource#I194:64:showSource", 
+            "showImg2#I194:61:showImg2",
+            "showImg3#I194:62:showImg3",
+            "showImg4#I194:63:showImg4"
+          ]
         };
       
       case 'mcp__talk-to-figma__set_instance_properties':
@@ -48,6 +43,18 @@ class TestMcpClient {
           message: `Applied ${Object.keys(params.properties).length} properties to instance`,
           nodeId: params.nodeId,
           applied: params.properties
+        };
+      
+      case 'mcp__talk-to-figma__create_component_instance':
+        console.log('✅ Mock createComponentInstance called with:', params);
+        const mockInstanceId = `mock-instance-${Date.now()}`;
+        return {
+          success: true,
+          message: `Created component instance`,
+          id: mockInstanceId,
+          name: `Mock ${params.componentId ? 'ComponentId' : 'ComponentKey'} Instance`,
+          componentId: params.componentId,
+          componentKey: params.componentKey
         };
       
       case 'mcp__talk-to-figma__get_document_info':
