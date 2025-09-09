@@ -82,6 +82,16 @@
         "text_prop": "bodyText",
         "text_field": "text"
       },
+      "figure": {
+        "componentName": "FigureCard",
+        "componentId": null,
+        "componentKey": null
+      },
+      "body": {
+        "componentName": "BodyCard", 
+        "componentId": null,
+        "componentKey": null
+      },
       "fallbacks": {
         "title_when_missing": "",
         "source_when_missing": "",

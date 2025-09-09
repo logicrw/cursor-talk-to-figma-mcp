@@ -49,12 +49,29 @@ class CardBasedFigmaWorkflowAutomator {
     this.channelManager = new FigmaChannelManager(mcpClient);
     this.dryRun = dryRun;
     
-    // Helper to unwrap MCP responses (supports both old text+JSON and new structuredContent)
-    this.unwrapMcpResponse = (r) =>
-      (r?.structuredContent) ||
-      (r?.content?.[0]?.json) ||
-      (r?.content?.[0]?.text && JSON.parse(r.content[0].text)) ||
-      r;
+    // Helper to unwrap MCP responses with robust error handling (follows MCP spec)
+    this.unwrapMcpResponse = (r) => {
+      // Standard MCP response structure: content array with text/image/resource items
+      if (r?.content?.[0]?.text) {
+        try {
+          // Try to parse as JSON first (most common case for our tools)
+          return JSON.parse(r.content[0].text);
+        } catch (parseError) {
+          // Not JSON or malformed - return structured error response
+          console.warn('MCP response parse warning:', parseError.message);
+          return { 
+            success: false, 
+            error: 'JSON parse failed', 
+            rawText: r.content[0].text,
+            parseError: parseError.message 
+          };
+        }
+      }
+      
+      // For non-text content or missing content, return as-is
+      // This handles cases where tools return other MCP content types
+      return r || { success: false, error: 'Empty MCP response' };
+    };
     
     // Connect to channel
     if (channelId) {
@@ -136,6 +153,31 @@ class CardBasedFigmaWorkflowAutomator {
     console.log(`🎯 Mode: ${this.dryRun ? 'DRY-RUN' : 'PRODUCTION'}`);
   }
 
+  // Helper methods for enhanced error handling
+  categorizeComponentError(errorMessage) {
+    const msg = errorMessage.toLowerCase();
+    if (msg.includes('not found') || msg.includes('404')) return 'Component Not Found';
+    if (msg.includes('permission') || msg.includes('access') || msg.includes('unauthorized')) return 'Permission Denied';
+    if (msg.includes('library') || msg.includes('publish')) return 'Library Access Issue';
+    if (msg.includes('key') && msg.includes('invalid')) return 'Invalid Component Key';
+    if (msg.includes('parent') || msg.includes('container')) return 'Parent Container Issue';
+    return 'Component Creation Error';
+  }
+
+  explainComponentError(errorMessage) {
+    const msg = errorMessage.toLowerCase();
+    if (msg.includes('permission') || msg.includes('access')) {
+      return 'Component library access denied. Check if: 1) Library is enabled in this file, 2) Component is published, 3) You have team access rights';
+    }
+    if (msg.includes('not found') || msg.includes('404')) {
+      return 'Component not found. Verify componentKey/componentId is correct and component exists';
+    }
+    if (msg.includes('library') || msg.includes('publish')) {
+      return 'Library issue. Component may not be published or library not enabled in this file';
+    }
+    return errorMessage; // Return original message if no specific explanation
+  }
+
   // Instance Creation Factory - supports both seedless creation and fallback to seed cloning
   async createCardInstance(parentId, cardType = 'figure') {
     console.log(`🏭 Creating ${cardType} card instance...`);
@@ -160,11 +202,15 @@ class CardBasedFigmaWorkflowAutomator {
           console.log(`  ✅ Direct creation succeeded: ${result.name} (${result.id})`);
           return { id: result.id, name: result.name, method: 'direct' };
         } else {
-          throw new Error(result.message || 'Direct creation failed');
+          // Enhanced error categorization for common component creation failures
+          const errorMsg = result.message || result.error || 'Direct creation failed';
+          const errorType = this.categorizeComponentError(errorMsg);
+          throw new Error(`${errorType}: ${errorMsg}`);
         }
       }
     } catch (error) {
-      console.warn(`  ⚠️ Direct creation failed: ${error.message}`);
+      const friendlyError = this.explainComponentError(error.message);
+      console.warn(`  ⚠️ Direct creation failed: ${friendlyError}`);
       console.warn(`  🔄 Falling back to seed cloning...`);
     }
     

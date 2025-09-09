@@ -1251,8 +1251,7 @@ server.tool(
             type: "text",
             text: JSON.stringify(typedResult),
           }
-        ],
-        structuredContent: typedResult
+        ]
       };
     } catch (error) {
       const errorResult = { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -1262,8 +1261,7 @@ server.tool(
             type: "text",
             text: JSON.stringify(errorResult),
           },
-        ],
-        structuredContent: errorResult
+        ]
       };
     }
   }
@@ -1325,8 +1323,7 @@ server.tool(
             type: "text",
             text: JSON.stringify(result)
           }
-        ],
-        structuredContent: result
+        ]
       };
     } catch (error) {
       return {
@@ -1362,8 +1359,7 @@ server.tool(
             type: "text",
             text: JSON.stringify(result)
           }
-        ],
-        structuredContent: result
+        ]
       };
     } catch (error) {
       return {
