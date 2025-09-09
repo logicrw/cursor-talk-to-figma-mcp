@@ -423,62 +423,59 @@ class CardBasedFigmaWorkflowAutomator {
         nodeId: seedInstances.figureInstanceId
       });
       
-      console.log('📋 Component property references result:', JSON.stringify(referencesResult, null, 2));
+      console.log('📋 Component properties result:', JSON.stringify(referencesResult, null, 2));
       
-      if (!referencesResult.success || !referencesResult.references) {
-        throw new Error(`Failed to get property references: ${referencesResult.message || 'Unknown error'}`);
+      if (!referencesResult.success || !referencesResult.properties) {
+        throw new Error(`Failed to get component properties: ${referencesResult.message || 'Unknown error'}`);
       }
       
-      // 构建布尔属性映射 - 从配置中获取友好名称到PropertyName#ID的映射
+      // Get configuration for expected property names
       const visibilityMapping = this.workflowMapping.images?.visibility_props || {};
       const titleVisibleProp = this.workflowMapping.title?.visible_prop || 'showTitle';
       const sourceVisibleProp = this.workflowMapping.source?.visible_prop || 'showSource';
       
       this.boolPropIds = { figure: {} };
       
-      // 从返回的references中查找对应的PropertyName#ID格式
-      const references = referencesResult.references;
+      // Get available property keys (already in PropertyName#ID format)
+      const availableKeys = referencesResult.propertyKeys || Object.keys(referencesResult.properties);
+      console.log('🔍 Available property keys:', availableKeys);
       
-      // 映射标题属性
-      const titleRef = Object.keys(references).find(ref => 
-        ref.toLowerCase().includes('title') || ref.includes(titleVisibleProp.toLowerCase())
-      );
-      if (titleRef) {
-        this.boolPropIds.figure[titleVisibleProp] = titleRef;
-        console.log(`📌 Mapped title property: ${titleVisibleProp} -> ${titleRef}`);
+      // Use strict prefix matching to find properties - no more fuzzy includes()
+      const findProperty = (friendlyName) => {
+        return availableKeys.find(key => key.startsWith(`${friendlyName}#`));
+      };
+      
+      // Map title property
+      const titleKey = findProperty(titleVisibleProp);
+      if (titleKey) {
+        this.boolPropIds.figure[titleVisibleProp] = titleKey;
+        console.log(`📌 Mapped title property: ${titleVisibleProp} -> ${titleKey}`);
       }
       
-      // 映射来源属性
-      const sourceRef = Object.keys(references).find(ref => 
-        ref.toLowerCase().includes('source') || ref.includes(sourceVisibleProp.toLowerCase())
-      );
-      if (sourceRef) {
-        this.boolPropIds.figure[sourceVisibleProp] = sourceRef;
-        console.log(`📌 Mapped source property: ${sourceVisibleProp} -> ${sourceRef}`);
+      // Map source property  
+      const sourceKey = findProperty(sourceVisibleProp);
+      if (sourceKey) {
+        this.boolPropIds.figure[sourceVisibleProp] = sourceKey;
+        console.log(`📌 Mapped source property: ${sourceVisibleProp} -> ${sourceKey}`);
       }
       
-      // 映射图片槽位属性
+      // Map image slot properties
       Object.entries(visibilityMapping).forEach(([slotName, propName]) => {
-        const imgRef = Object.keys(references).find(ref => 
-          ref.toLowerCase().includes(propName.toLowerCase()) || 
-          ref.toLowerCase().includes(slotName.toLowerCase().replace('slot', ''))
-        );
-        if (imgRef) {
-          this.boolPropIds.figure[propName] = imgRef;
-          console.log(`📌 Mapped image property: ${propName} (${slotName}) -> ${imgRef}`);
+        const imageKey = findProperty(propName);
+        if (imageKey) {
+          this.boolPropIds.figure[propName] = imageKey;
+          console.log(`📌 Mapped image property: ${propName} (${slotName}) -> ${imageKey}`);
         }
       });
       
-      // 验证是否所有必要属性都找到了
+      // Fail-fast validation: check if all required properties were found
       const requiredProps = [titleVisibleProp, sourceVisibleProp, ...Object.values(visibilityMapping)];
       const missingProps = requiredProps.filter(prop => !this.boolPropIds.figure[prop]);
       
       if (missingProps.length > 0) {
-        console.warn(`⚠️ Some properties not found in component references:`, missingProps);
-        console.warn(`Available references:`, Object.keys(references));
-        
-        // Fail fast as requested - don't use fallbacks
-        throw new Error(`Missing required component properties: ${missingProps.join(', ')}. Available: ${Object.keys(references).join(', ')}`);
+        const errorMsg = `❌ Required component properties not found: ${missingProps.join(', ')}. Available keys: ${availableKeys.join(', ')}`;
+        console.error(errorMsg);
+        throw new Error(errorMsg);
       }
       
       console.log('✅ Component property IDs discovered:', this.boolPropIds);
@@ -639,7 +636,7 @@ class CardBasedFigmaWorkflowAutomator {
       }
     }
     
-    // Advanced visibility control with multi-layer fallback
+    // Apply official Figma setProperties API for visibility control
     await this.applyVisibilityControl(instanceId, {
       hasTitle: !!firstTitle,
       hasSource: !!firstCredit, 

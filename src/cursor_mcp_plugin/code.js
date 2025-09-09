@@ -3018,46 +3018,22 @@ async function getComponentPropertyReferences(params) {
     const instance = node;
     console.log(`Getting component property references for instance: ${instance.name}`);
 
-    // Get component property references and current values
-    const references = instance.componentPropertyReferences || {};
+    // Get component properties directly - this is the official source of PropertyName#ID keys
     const properties = instance.componentProperties || {};
     
-    console.log("Component property references:", references);
-    console.log("Component properties:", properties);
+    console.log("Component properties available:", Object.keys(properties));
+    console.log("Component property values:", properties);
 
-    // Build the references object with current values
-    const referencesWithValues = {};
-    
-    // Start with componentPropertyReferences format
-    Object.entries(references).forEach(([nodeProperty, propertyReference]) => {
-      if (typeof propertyReference === 'string') {
-        // Get current value from componentProperties
-        const currentValue = properties[propertyReference];
-        referencesWithValues[propertyReference] = currentValue !== undefined ? currentValue : null;
-      }
-    });
-    
-    // Also add direct component properties that might not be in references
-    Object.entries(properties).forEach(([propertyName, value]) => {
-      if (!referencesWithValues.hasOwnProperty(propertyName)) {
-        referencesWithValues[propertyName] = value;
-      }
-    });
-
-    console.log("Final references with values:", referencesWithValues);
-    
+    // Return the properties directly - keys are already in PropertyName#ID format
     const result = {
       success: true,
-      message: `Got component property references from "${instance.name}"`,
+      message: `Got ${Object.keys(properties).length} component properties from "${instance.name}"`,
       nodeId: params.nodeId,
-      references: referencesWithValues,
-      raw: {
-        componentPropertyReferences: references,
-        componentProperties: properties
-      }
+      properties: properties,
+      propertyKeys: Object.keys(properties)
     };
 
-    figma.notify(`Got ${Object.keys(referencesWithValues).length} property references`);
+    figma.notify(`Got ${Object.keys(properties).length} component properties`);
     return result;
 
   } catch (error) {
