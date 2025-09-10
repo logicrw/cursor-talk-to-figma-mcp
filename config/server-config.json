@@ -84,13 +84,13 @@
       },
       "figure": {
         "componentName": "FigureCard",
-        "componentId": null,
-        "componentKey": null
+        "componentId": "194:56",
+        "componentKey": "fc4afd0baa35964a92683dbd2a31fc8f5ef4cdfb"
       },
       "body": {
         "componentName": "BodyCard", 
-        "componentId": null,
-        "componentKey": null
+        "componentId": "194:54",
+        "componentKey": "0c445c87a4aa0bc0be40dcfc8f5ef4cdfb"
       },
       "fallbacks": {
         "title_when_missing": "",

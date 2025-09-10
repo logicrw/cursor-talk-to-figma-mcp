@@ -186,9 +186,6 @@ async function handleCommand(command, params) {
     case "set_instance_properties":
       return await setInstanceProperties(params);
     
-    case "create_component_instance":
-      return await createComponentInstance(params);
-    
     case "set_instance_overrides":
       // Check if instanceNodeIds parameter is provided
       if (params && params.targetNodeIds) {
@@ -3133,31 +3130,37 @@ async function createComponentInstance(params) {
 
   const { componentId, componentKey, parentId, x = 0, y = 0 } = params;
 
-  if (!componentId && !componentKey) {
-    const error = "Either componentId or componentKey must be provided";
+  console.log(`=== Seedless Component Creation ===`);
+  console.log(`componentId: "${componentId}"`);
+  console.log(`componentKey: "${componentKey}"`);
+  
+  // For local components, ONLY use componentId - importComponentByKeyAsync is for published libraries
+  const hasLocalComponentId = componentId && componentId.trim() !== '';
+  const hasLibraryComponentKey = componentKey && componentKey.trim() !== '' && componentKey !== 'null';
+  
+  if (!hasLocalComponentId && !hasLibraryComponentKey) {
+    const error = "Either componentId (local) or componentKey (library) must be provided";
     console.error(error);
     figma.notify(error);
     return { success: false, message: error };
   }
-
-  if (!parentId) {
-    const error = "parentId parameter is required";
-    console.error(error);
-    figma.notify(error);
-    return { success: false, message: error };
-  }
+  
+  console.log(`Method: ${hasLocalComponentId ? 'LOCAL_COMPONENT_ID' : 'LIBRARY_COMPONENT_KEY'}`)
 
   try {
-    // Get parent node and validate it can contain children
-    const parentNode = await figma.getNodeByIdAsync(parentId);
-    if (!parentNode) {
-      const error = `Parent node not found with ID: ${parentId}`;
-      console.error(error);
-      figma.notify(error);
-      return { success: false, message: error };
+    let parentNode = null;
+    if (parentId) {
+      // Get parent node and validate it can contain children
+      parentNode = await figma.getNodeByIdAsync(parentId);
+      if (!parentNode) {
+        const error = `Parent node not found with ID: ${parentId}`;
+        console.error(error);
+        figma.notify(error);
+        return { success: false, message: error };
+      }
     }
 
-    if (!("children" in parentNode)) {
+    if (parentNode && !("children" in parentNode)) {
       const error = `Parent node cannot contain children: ${parentNode.type}`;
       console.error(error);
       figma.notify(error);
@@ -3166,12 +3169,12 @@ async function createComponentInstance(params) {
 
     let component = null;
 
-    // Try to get component by ID first
-    if (componentId) {
-      console.log(`Getting component by ID: ${componentId}`);
+    // Priority 1: Local component using componentId
+    if (hasLocalComponentId) {
+      console.log(`🏭 Getting LOCAL component by ID: ${componentId}`);
       const node = await figma.getNodeByIdAsync(componentId);
       if (!node) {
-        const error = `Component not found with ID: ${componentId}`;
+        const error = `Local component not found with ID: ${componentId}`;
         console.error(error);
         figma.notify(error);
         return { success: false, message: error };
@@ -3185,13 +3188,15 @@ async function createComponentInstance(params) {
       }
       
       component = node;
+      console.log(`✅ Found LOCAL component: ${component.name}`);
       
-    } else if (componentKey) {
-      console.log(`Importing component by key: ${componentKey}`);
+    } else if (hasLibraryComponentKey) {
+      console.log(`📚 Importing LIBRARY component by key: ${componentKey}`);
       try {
         component = await figma.importComponentByKeyAsync(componentKey);
+        console.log(`✅ Imported LIBRARY component: ${component.name}`);
       } catch (importError) {
-        const error = `Failed to import component by key "${componentKey}": ${importError.message}`;
+        const error = `Failed to import library component by key "${componentKey}": ${importError.message}`;
         console.error(error);
         figma.notify(error);
         return { success: false, message: error };
@@ -3205,26 +3210,33 @@ async function createComponentInstance(params) {
       return { success: false, message: error };
     }
 
-    console.log(`Creating instance of component: ${component.name}`);
+    console.log(`🚀 SEEDLESS: Creating instance of ${component.name}...`);
     
-    // Create the instance
+    // Create the instance directly (no seed cloning)
     const instance = component.createInstance();
     instance.x = x;
     instance.y = y;
 
-    // Append to parent
-    parentNode.appendChild(instance);
+    // Append to parent if specified, otherwise add to current page
+    if (parentNode) {
+      parentNode.appendChild(instance);
+      console.log(`📍 Instance placed in: ${parentNode.name}`);
+    } else {
+      figma.currentPage.appendChild(instance);
+      console.log(`📍 Instance placed in: Current Page`);
+    }
 
-    console.log(`Instance created successfully: ${instance.name} (ID: ${instance.id})`);
+    console.log(`✅ SEEDLESS SUCCESS: ${instance.name} (${instance.id})`);
     
     const result = {
       success: true,
-      message: `Created instance "${instance.name}" from component "${component.name}"`,
+      message: `Seedless creation succeeded: "${instance.name}" from "${component.name}"`,
       id: instance.id,
       name: instance.name,
       parentId: parentId,
       componentId: component.id,
-      componentName: component.name
+      componentName: component.name,
+      method: hasLocalComponentId ? 'direct-local' : 'direct-library'  // Track creation method
     };
 
     figma.notify(`Created instance "${instance.name}" successfully`);

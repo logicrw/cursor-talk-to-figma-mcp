@@ -1233,17 +1233,42 @@ server.tool(
   "create_component_instance",
   "Create an instance of a component in Figma",
   {
-    componentKey: z.string().describe("Key of the component to instantiate"),
+    componentKey: z.string().optional().describe("Key of the component to instantiate"),
+    componentId: z.string().optional().describe("ID of the component to instantiate"),
+    parentId: z.string().optional().describe("Optional parent node ID to append the instance to"),
     x: z.number().describe("X position"),
     y: z.number().describe("Y position"),
   },
-  async ({ componentKey, x, y }: any) => {
+  async ({ componentKey, componentId, parentId, x, y }: any) => {
+    // Manual validation: at least one component identifier required
+    if (!componentId && !componentKey) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ 
+              success: false, 
+              message: "Either componentId (local) or componentKey (library) must be provided" 
+            }),
+          },
+        ],
+      };
+    }
+
     try {
-      const result = await sendCommandToFigma("create_component_instance", {
-        componentKey,
-        x,
-        y,
-      });
+      // Only send non-empty parameters to avoid empty string confusion
+      const params: any = { x, y };
+      if (componentId && componentId.trim() !== '') {
+        params.componentId = componentId;
+      }
+      if (componentKey && componentKey.trim() !== '') {
+        params.componentKey = componentKey;
+      }
+      if (parentId && parentId.trim() !== '') {
+        params.parentId = parentId;
+      }
+
+      const result = await sendCommandToFigma("create_component_instance", params);
       const typedResult = result as any;
       return {
         content: [
@@ -2762,7 +2787,9 @@ type CommandParams = {
   get_local_components: Record<string, never>;
   get_team_components: Record<string, never>;
   create_component_instance: {
-    componentKey: string;
+    componentKey?: string;
+    componentId?: string;
+    parentId?: string;
     x: number;
     y: number;
   };
