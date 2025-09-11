@@ -186,6 +186,9 @@ async function handleCommand(command, params) {
     case "set_instance_properties":
       return await setInstanceProperties(params);
     
+    case "set_instance_properties_by_base":
+      return await setInstancePropsByBase(params.nodeId, params.properties);
+    
     case "set_instance_overrides":
       // Check if instanceNodeIds parameter is provided
       if (params && params.targetNodeIds) {
@@ -2985,6 +2988,90 @@ async function deleteMultipleNodes(params) {
   };
 }
 
+// PropertyName#ID adaptation layer - converts base names to full PropertyName#ID
+function buildPropertyKeyMap(instance) {
+  console.log("=== Building PropertyName#ID map ===");
+  const map = {};
+  
+  if (!instance.componentProperties) {
+    console.log("No componentProperties available");
+    return map;
+  }
+  
+  // Map base names to PropertyName#ID format
+  for (const fullKey of Object.keys(instance.componentProperties)) {
+    const baseName = fullKey.split('#')[0];  // 'showTitle#I194:57:showTitle' → 'showTitle'
+    map[baseName] = fullKey;
+    console.log(`Mapped: ${baseName} → ${fullKey}`);
+  }
+  
+  return map;
+}
+
+// Enhanced setProperties using base names (showTitle, showImg2, etc.)
+async function setInstancePropsByBase(instanceId, propsByBase) {
+  console.log("=== setInstancePropsByBase called ===");
+  console.log("Base properties:", JSON.stringify(propsByBase, null, 2));
+  
+  try {
+    const node = await figma.getNodeByIdAsync(instanceId);
+    if (!node) {
+      return { success: false, message: `Node not found: ${instanceId}` };
+    }
+    
+    if (node.type !== "INSTANCE") {
+      return { success: false, message: `Node is not an instance: ${node.type}` };
+    }
+    
+    // Build property key map
+    const keyMap = buildPropertyKeyMap(node);
+    const fullProperties = {};
+    
+    // Convert base names to PropertyName#ID format
+    for (const [baseName, value] of Object.entries(propsByBase)) {
+      const fullKey = keyMap[baseName];
+      if (fullKey) {
+        fullProperties[fullKey] = value;
+        console.log(`✅ Mapped ${baseName} = ${value} → ${fullKey}`);
+      } else {
+        console.log(`⚠️ Base property not found: ${baseName}`);
+      }
+    }
+    
+    if (Object.keys(fullProperties).length === 0) {
+      return { 
+        success: false, 
+        message: "No valid properties to apply",
+        availableProperties: Object.keys(keyMap)
+      };
+    }
+    
+    // Apply using official setProperties API
+    console.log("🎯 Applying properties:", JSON.stringify(fullProperties, null, 2));
+    node.setProperties(fullProperties);
+    
+    const result = {
+      success: true,
+      message: `Applied ${Object.keys(fullProperties).length} properties using official setProperties API`,
+      nodeId: instanceId,
+      appliedProperties: fullProperties,
+      appliedCount: Object.keys(fullProperties).length
+    };
+    
+    figma.notify(`Applied ${Object.keys(fullProperties).length} properties successfully`);
+    return result;
+    
+  } catch (error) {
+    console.error("Error in setInstancePropsByBase:", error);
+    const errorMsg = `Error: ${error.message}`;
+    figma.notify(errorMsg);
+    return {
+      success: false,
+      message: errorMsg
+    };
+  }
+}
+
 // Implementation for getComponentPropertyReferences function
 async function getComponentPropertyReferences(params) {
   console.log("=== getComponentPropertyReferences called ===");
@@ -3044,7 +3131,7 @@ async function getComponentPropertyReferences(params) {
   }
 }
 
-// Implementation for setInstanceProperties function
+// Implementation for setInstanceProperties function with PropertyName#ID adaptation
 async function setInstanceProperties(params) {
   console.log("=== setInstanceProperties called ===");
   
@@ -3062,6 +3149,21 @@ async function setInstanceProperties(params) {
     return { success: false, message: error };
   }
 
+  // Check if properties use PropertyName#ID format or base names
+  const propertyKeys = Object.keys(params.properties);
+  const hasFullKeys = propertyKeys.some(key => key.includes('#'));
+  const hasBaseKeys = propertyKeys.some(key => !key.includes('#'));
+  
+  if (hasFullKeys && hasBaseKeys) {
+    console.log("⚠️ Mixed property key formats detected - using direct setProperties");
+    // Mixed formats - use direct setProperties for PropertyName#ID keys
+  } else if (hasBaseKeys) {
+    console.log("🔄 Base property names detected - using adaptation layer");
+    // All base names - use adaptation layer
+    return await setInstancePropsByBase(params.nodeId, params.properties);
+  }
+  
+  // Direct PropertyName#ID format or mixed - use original logic
   try {
     const node = await figma.getNodeByIdAsync(params.nodeId);
     if (!node) {
@@ -3079,8 +3181,8 @@ async function setInstanceProperties(params) {
     }
 
     const instance = node;
-    console.log(`Setting properties for instance: ${instance.name}`);
-    console.log("Properties to set:", params.properties);
+    console.log(`🎯 Setting properties for instance: ${instance.name}`);
+    console.log("Properties to set (PropertyName#ID format):", params.properties);
 
     // Apply properties using Figma's official setProperties API
     instance.setProperties(params.properties);

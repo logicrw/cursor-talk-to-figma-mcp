@@ -1399,6 +1399,42 @@ server.tool(
   }
 );
 
+// Set Instance Properties by Base Names Tool
+server.tool(
+  "set_instance_properties_by_base", 
+  "Set component properties using base names (showTitle, showImg2, etc.) with automatic PropertyName#ID conversion",
+  {
+    nodeId: z.string().describe("ID of the instance node"),
+    properties: z.record(z.union([z.boolean(), z.string(), z.number()])).describe("Properties object using base names (showTitle, showSource, showImg2, etc.)")
+  },
+  async ({ nodeId, properties }: any) => {
+    try {
+      const result = await sendCommandToFigma("set_instance_properties_by_base", {
+        nodeId: nodeId,
+        properties: properties
+      });
+
+      return {
+        content: [
+          {
+            type: "text", 
+            text: JSON.stringify(result)
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error setting properties by base names: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ]
+      };
+    }
+  }
+);
+
 // Set Instance Overrides Tool
 server.tool(
   "set_instance_overrides",
@@ -2797,6 +2833,10 @@ type CommandParams = {
     nodeId: string;
   };
   set_instance_properties: {
+    nodeId: string;
+    properties: Record<string, boolean | string | number>;
+  };
+  set_instance_properties_by_base: {
     nodeId: string;
     properties: Record<string, boolean | string | number>;
   };
