@@ -1,230 +1,434 @@
 #!/usr/bin/env node
 
 /**
- * Summer Break 海报模板替换 - 生产执行脚本
- * 使用 Seedless 直造工程执行 250818_summer_break_content.json 替换
+ * Weekly Poster Orchestration (E2E hardened)
+ * - Resolve latest content → Infer dataset → Ensure static server
+ * - Validate template & properties → Create instances (direct→seed fallback)
+ * - Fill header/cards → Report summary
  */
 
 import WebSocket from 'ws';
 import fs from 'fs/promises';
+import path from 'path';
+import { spawn } from 'child_process';
+import http from 'http';
+import { resolveContentPath, inferDataset, buildAssetUrl, computeStaticServerUrl } from '../src/config-resolver.js';
 
-class SummerBreakReplacer {
+class WeeklyPosterRunner {
   constructor() {
     this.ws = null;
     this.messageId = 1;
-    this.pendingMessages = new Map();
+    this.pending = new Map();
     this.connected = false;
+    this.channel = process.env.CHANNEL || '';
+    this.config = null;
+    this.mapping = null;
+    this.staticUrl = 'http://127.0.0.1:3056/assets';
+    this.staticServerProc = null;
+    this.content = null;
+    this.contentPath = null;
+    this.dataset = null;
+    this.cardsContainerId = null;
+    this.seeds = { figure: null, body: null };
+    this.report = { created: [], errors: [] };
+    this.base64Rate = 30; // per second
+    this.base64Sent = [];
   }
 
-  async initialize() {
-    console.log('🚀 Summer Break 海报模板替换启动...');
-    console.log('📋 目标: 250818_summer_break_content.json (22 blocks)');
-    console.log('🏭 方法: Seedless 直造 (componentId)');
-    console.log('📡 频道: spnhgqyv\n');
+  async loadConfig() {
+    const cfgPath = path.join(process.cwd(), 'config/server-config.json');
+    this.config = JSON.parse(await fs.readFile(cfgPath, 'utf8'));
+    this.mapping = this.config.workflow.mapping;
+    this.staticUrl = computeStaticServerUrl(this.config);
+    this.base64Rate = Number(this.config.asset_transfer?.base64_rate_limit ?? 30);
+  }
 
-    return new Promise((resolve, reject) => {
-      this.ws = new WebSocket('ws://127.0.0.1:3055');
+  async resolveContent() {
+    const { contentPath } = resolveContentPath(process.cwd(), {
+      initParam: null,
+      cliArg: this.getArg('--content'),
+      envVar: process.env.CONTENT_JSON_PATH,
+      configDefault: this.config.workflow.current_content_file
+    });
+    this.contentPath = contentPath;
+    this.content = JSON.parse(await fs.readFile(contentPath, 'utf8'));
+    this.dataset = inferDataset(this.content.assets || [], contentPath);
+  }
 
-      this.ws.on('open', () => {
-        console.log('✅ WebSocket 连接成功');
-        this.connected = true;
-        resolve();
-      });
+  getArg(name) {
+    const idx = process.argv.indexOf(name);
+    if (idx !== -1 && process.argv[idx + 1] && !process.argv[idx + 1].startsWith('--')) return process.argv[idx + 1];
+    return null;
+  }
 
-      this.ws.on('message', (data) => {
-        try {
-          const message = JSON.parse(data.toString());
-          this.handleMessage(message);
-        } catch (error) {
-          console.log('📨 Raw message:', data.toString());
-        }
-      });
+  async ensureStaticServer() {
+    const asset = (this.content.assets || [])[0];
+    if (!asset) return; // nothing to verify
+    const testUrl = buildAssetUrl(this.staticUrl, this.content.assets || [], asset.asset_id, this.contentPath);
+    const ok = await this.httpHeadOk(testUrl);
+    if (ok) {
+      console.log(`✅ Static server reachable: ${testUrl}`);
+      return;
+    }
+    console.log('⚠️ Static server unreachable, starting local server...');
+    this.staticServerProc = spawn(process.execPath, [path.join(process.cwd(), 'src/static-server.js')], {
+      stdio: 'inherit'
+    });
+    // wait up to 3s
+    for (let i = 0; i < 6; i++) {
+      await this.sleep(500);
+      if (await this.httpHeadOk(testUrl)) {
+        console.log('✅ Static server started');
+        return;
+      }
+    }
+    console.log('⚠️ Static server still unreachable; will use Base64 fallback for images');
+  }
 
-      this.ws.on('error', (error) => {
-        console.error('❌ WebSocket 错误:', error.message);
-        reject(error);
-      });
-
-      this.ws.on('close', () => {
-        console.log('🔌 WebSocket 连接关闭');
-        this.connected = false;
-      });
+  httpHeadOk(url) {
+    return new Promise((resolve) => {
+      try {
+        const req = http.request(url, { method: 'HEAD', timeout: 1500 }, (res) => {
+          resolve(res.statusCode && res.statusCode >= 200 && res.statusCode < 400);
+        });
+        req.on('error', () => resolve(false));
+        req.on('timeout', () => { try { req.destroy(); } catch {} resolve(false); });
+        req.end();
+      } catch {
+        resolve(false);
+      }
     });
   }
 
-  handleMessage(message) {
-    if (message.id && this.pendingMessages.has(message.id)) {
-      const { resolve } = this.pendingMessages.get(message.id);
-      this.pendingMessages.delete(message.id);
-      resolve(message);
-    } else {
-      console.log('📡 频道消息:', message.data || message);
+  async connectWS() {
+    const host = this.config.websocket.host || '127.0.0.1';
+    const port = this.config.websocket.port || 3055;
+    const url = `ws://${host}:${port}`;
+    await new Promise((resolve, reject) => {
+      this.ws = new WebSocket(url);
+      this.ws.on('open', () => resolve());
+      this.ws.on('error', (e) => reject(e));
+      this.ws.on('message', (data) => this.onMessage(data));
+    });
+    console.log(`✅ WebSocket connected: ${url}`);
+    // Join channel
+    const joinChan = (this.getArg('--channel') || this.channel || 'weekly-poster').trim();
+    await this.wsSend({ type: 'join', channel: joinChan });
+    this.channel = joinChan;
+    console.log(`📡 Joined channel: ${this.channel}`);
+  }
+
+  onMessage(raw) {
+    try {
+      const msg = JSON.parse(raw.toString());
+      if (msg.type === 'message' || msg.type === 'broadcast' || msg.type === 'system') {
+        const inner = msg.message || {};
+        if (inner.id && this.pending.has(inner.id)) {
+          const { resolve } = this.pending.get(inner.id);
+          this.pending.delete(inner.id);
+          resolve(inner.result || inner || msg);
+          return;
+        }
+      }
+    } catch (e) {
+      // ignore
     }
   }
 
-  async sendCommand(command, params = {}) {
-    if (!this.connected) {
-      throw new Error('WebSocket 未连接');
-    }
-
-    const message = {
-      id: this.messageId++,
-      command: command,
-      ...params
-    };
-
+  wsSend(payload) {
     return new Promise((resolve, reject) => {
-      this.pendingMessages.set(message.id, { resolve, reject });
-      this.ws.send(JSON.stringify(message));
+      try {
+        this.ws.send(JSON.stringify(payload));
+        resolve(true);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
 
-      // 30秒超时
+  sendCommand(command, params = {}) {
+    const id = String(this.messageId++);
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      this.wsSend({
+        id,
+        type: 'message',
+        channel: this.channel,
+        message: { id, command, params }
+      });
       setTimeout(() => {
-        if (this.pendingMessages.has(message.id)) {
-          this.pendingMessages.delete(message.id);
-          reject(new Error(`命令超时: ${command}`));
+        if (this.pending.has(id)) {
+          this.pending.delete(id);
+          reject(new Error(`Timeout for command ${command}`));
         }
       }, 30000);
     });
   }
 
-  async executeReplacement() {
-    try {
-      console.log('📡 连接频道 spnhgqyv...');
-      const joinResult = await this.sendCommand('join_channel', { 
-        channel: 'spnhgqyv' 
-      });
-      console.log('✅ 频道连接成功');
+  async locateAnchors() {
+    const doc = await this.sendCommand('get_document_info', {});
+    const frame = (doc.children || []).find((c) => c.name === this.mapping.anchors.frame);
+    if (!frame) throw new Error(`Frame not found: ${this.mapping.anchors.frame}`);
+    const frameInfo = await this.sendCommand('get_node_info', { nodeId: frame.id });
+    const container = (frameInfo.children || []).find((c) => c.name === this.mapping.anchors.container);
+    if (!container) throw new Error(`Container not found: ${this.mapping.anchors.container}`);
+    const containerInfo = await this.sendCommand('get_node_info', { nodeId: container.id });
+    const cards = (containerInfo.children || []).find((c) => c.name === this.mapping.anchors.cards_stack);
+    if (!cards) throw new Error(`Cards stack not found: ${this.mapping.anchors.cards_stack}`);
+    this.cardsContainerId = cards.id;
 
-      console.log('\n🔍 验证文档结构...');
-      const docInfo = await this.sendCommand('get_document_info');
-      console.log('✅ 文档信息获取成功');
-
-      // 验证组件存在
-      const components = await this.sendCommand('get_local_components');
-      console.log('✅ 找到组件:', components.components?.map(c => c.name).join(', '));
-
-      // 加载 Summer Break 数据
-      console.log('\n📄 加载 Summer Break 数据...');
-      const content = JSON.parse(
-        await fs.readFile('./docx2json/250818_summer_break_content.json', 'utf-8')
-      );
-      console.log(`✅ 加载成功: ${content.blocks?.length || 0} 个数据块`);
-
-      const figureBlocks = content.blocks?.filter(b => b.type === 'figure') || [];
-      console.log(`🖼️  图片块数量: ${figureBlocks.length}`);
-
-      console.log('\n🏗️ 开始批量创建 FigureCard 实例...');
-      let successCount = 0;
-      let failCount = 0;
-
-      for (let i = 0; i < Math.min(figureBlocks.length, 5); i++) {
-        const block = figureBlocks[i];
-        console.log(`\n📦 创建第 ${i + 1} 张卡片...`);
-        
-        try {
-          // 使用 Seedless 直造
-          const createResult = await this.sendCommand('create_component_instance', {
-            componentId: '194:56',  // FigureCard
-            parentId: '194:51',     // Cards 容器
-            x: 0,
-            y: i * 400  // 垂直排列
-          });
-
-          if (createResult.success) {
-            console.log(`✅ 直造成功: ${createResult.name} (${createResult.id})`);
-            console.log(`   方法: ${createResult.method || 'direct-local'}`);
-            
-            // 设置属性（显隐控制）
-            const hasTitle = block.title && block.title.trim() !== '';
-            const hasSource = block.credit && block.credit.trim() !== '';
-            const imageCount = 1; // 基础一张图
-
-            const properties = {
-              'showTitle#I194:57:showTitle': hasTitle,
-              'showSource#I194:64:showSource': hasSource,
-              'showImg2#I194:61:showImg2': imageCount >= 2,
-              'showImg3#I194:62:showImg3': imageCount >= 3,
-              'showImg4#I194:63:showImg4': imageCount >= 4
-            };
-
-            const propResult = await this.sendCommand('set_instance_properties', {
-              nodeId: createResult.id,
-              properties: properties
-            });
-
-            if (propResult.success) {
-              console.log(`   属性设置: ✅ ${Object.keys(properties).length} 个属性`);
-              successCount++;
-            } else {
-              console.log(`   属性设置: ❌ ${propResult.message}`);
-            }
-
-          } else {
-            console.log(`❌ 创建失败: ${createResult.message}`);
-            failCount++;
-          }
-
-        } catch (error) {
-          console.log(`❌ 操作异常: ${error.message}`);
-          failCount++;
-        }
-
-        // 避免过快操作
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-
-      console.log('\n' + '='.repeat(60));
-      console.log('🎊 Summer Break 模板替换完成!');
-      console.log('='.repeat(60));
-      console.log(`✅ 成功: ${successCount} 张卡片`);
-      console.log(`❌ 失败: ${failCount} 张卡片`);
-      console.log(`🏭 方法: Seedless 直造 (componentId)`);
-      console.log(`📊 数据: Summer Break JSON (${figureBlocks.length} 图片块)`);
-      console.log(`🎯 属性: 官方 setProperties API 控制`);
-      
-      if (successCount > 0) {
-        console.log(`\n🔍 请查看 Figma 中的 Cards 容器验证结果:`);
-        console.log(`   - 卡片是否正确创建`);
-        console.log(`   - 显隐控制是否生效`);
-        console.log(`   - Auto-layout 是否正确收缩`);
-      }
-      
-      console.log('\n='.repeat(60));
-
-    } catch (error) {
-      console.error('\n💥 执行失败:', error.message);
-      console.log('\n🔧 故障排查建议:');
-      console.log('1. 确认 Figma 插件正在运行');
-      console.log('2. 确认插件已重新加载最新代码');
-      console.log('3. 确认目标文档已打开');
-      console.log('4. 确认组件 ID 正确 (194:56)');
-      console.log('5. 确认容器 ID 正确 (194:51)');
+    // Seeds
+    const seedsFrame = (doc.children || []).find((c) => c.name === this.mapping.anchors.seeds.frame);
+    if (seedsFrame) {
+      const seedsInfo = await this.sendCommand('get_node_info', { nodeId: seedsFrame.id });
+      const figSeed = (seedsInfo.children || []).find((c) => c.name === this.mapping.anchors.seeds.figure_instance);
+      const bodySeed = (seedsInfo.children || []).find((c) => c.name === this.mapping.anchors.seeds.body_instance);
+      this.seeds.figure = figSeed?.id || null;
+      this.seeds.body = bodySeed?.id || null;
     }
+  }
+
+  createOrderedContentFlow() {
+    const blocks = this.content.blocks || [];
+    const groups = {};
+    const standalone = [];
+    const order = [];
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i];
+      if (b.group_id) {
+        if (!groups[b.group_id]) { groups[b.group_id] = []; order.push({ type: 'group', group_id: b.group_id, original_index: i }); }
+        groups[b.group_id].push(b);
+      } else if (b.type === 'paragraph') {
+        standalone.push({ type: 'standalone_paragraph', block: b, original_index: i });
+        order.push({ type: 'standalone_paragraph', original_index: i });
+      }
+    }
+    const flow = [];
+    let si = 0;
+    for (const item of order) {
+      if (item.type === 'group') {
+        const arr = groups[item.group_id] || [];
+        arr.sort((a,b)=> (a.group_seq||0)-(b.group_seq||0));
+        flow.push({ type: 'figure_group', group_id: item.group_id, blocks: arr, figures: arr.filter(x=>x.type==='figure'), paragraphs: arr.filter(x=>x.type==='paragraph') });
+      } else {
+        flow.push(standalone[si++]);
+      }
+    }
+    return flow;
+  }
+
+  async createCardInstance(kind) {
+    const cfg = this.mapping[kind] || {};
+    // Try direct instance creation
+    if (cfg.componentId || cfg.componentKey) {
+      const direct = await this.sendCommand('create_component_instance', {
+        parentId: this.cardsContainerId,
+        componentId: cfg.componentId || undefined,
+        componentKey: cfg.componentKey || undefined,
+        x: 0, y: 0
+      });
+      if (direct?.success && direct.id) {
+        return { id: direct.id, name: direct.name, method: direct.method || 'direct' };
+      }
+    }
+    // Fallback to seed cloning
+    const seedId = kind === 'figure' ? this.seeds.figure : this.seeds.body;
+    if (!seedId) throw new Error(`No seed instance id for ${kind}`);
+    const clone = await this.sendCommand('append_card_to_container', {
+      containerId: this.cardsContainerId,
+      templateId: seedId,
+      insertIndex: -1
+    });
+    if (clone?.success && clone.newNodeId) return { id: clone.newNodeId, name: clone.newNodeName || 'Cloned Card', method: 'seed-clone' };
+    // Some builds return text; attempt parse
+    if (clone && clone.containerName && clone.newNodeId) return { id: clone.newNodeId, name: clone.newNodeName || 'Cloned Card', method: 'seed-clone' };
+    throw new Error(`Failed to create card: ${JSON.stringify(clone)}`);
+  }
+
+  async dfsFindChildIdByName(nodeId, name) {
+    const info = await this.sendCommand('get_node_info', { nodeId });
+    const target = String(name || '').trim();
+    const stack = [info];
+    while (stack.length) {
+      const n = stack.pop();
+      if (n?.name === target) return n.id;
+      if (n?.children) for (const ch of n.children) stack.push(ch);
+    }
+    return null;
+  }
+
+  async setText(nodeId, text) {
+    await this.sendCommand('set_text_content', { nodeId, text: text || '' });
+    await this.sendCommand('set_text_auto_resize', { nodeId, autoResize: 'HEIGHT' });
+  }
+
+  async throttleBase64() {
+    const now = Date.now();
+    // remove >1s
+    this.base64Sent = this.base64Sent.filter(t => now - t < 1000);
+    if (this.base64Sent.length >= this.base64Rate) {
+      const wait = 1000 - (now - this.base64Sent[0]);
+      await this.sleep(Math.max(0, wait));
+      this.base64Sent = this.base64Sent.filter(t => Date.now() - t < 1000);
+    }
+    this.base64Sent.push(Date.now());
+  }
+
+  async fillFigureCard(instanceId, group) {
+    const slots = this.mapping.anchors?.slots || {};
+    const figures = group.figures || [];
+    const hasTitle = figures.some(f => !!f.title);
+    const firstTitle = (figures.find(f => f.title)?.title) || '';
+    const hasSource = figures.some(f => !!f.credit);
+    const firstCredit = (figures.find(f => f.credit)?.credit) || '';
+    const assetPath = this.mapping.images?.asset_path || 'image.asset_id';
+    const images = figures.map(f => ({ asset_id: this.getByPath(f, assetPath) })).filter(x => !!x.asset_id);
+
+    // title
+    const titleName = slots.figure?.title_text || 'titleText';
+    const titleId = await this.dfsFindChildIdByName(instanceId, titleName);
+    if (titleId) await this.setText(titleId, firstTitle);
+    // source
+    const sourceName = slots.figure?.source_text || 'sourceText';
+    const sourceId = await this.dfsFindChildIdByName(instanceId, sourceName);
+    if (sourceId) await this.setText(sourceId, firstCredit ? `Source: ${firstCredit}` : '');
+    // visibility
+    const props = {};
+    const titleProp = this.mapping.title?.visible_prop || 'showTitle';
+    const sourceProp = this.mapping.source?.visible_prop || 'showSource';
+    props[titleProp] = !!hasTitle;
+    props[sourceProp] = !!hasSource;
+    const imgSlots = (slots.images || this.mapping.anchors.image_slots || []);
+    for (let i = 2; i <= Math.min(imgSlots.length, this.mapping.images?.max_images || imgSlots.length); i++) {
+      const slotName = imgSlots[i-1];
+      const visibilityProp = (this.mapping.images?.visibility_props || {})[slotName];
+      if (visibilityProp) props[visibilityProp] = images.length >= i;
+    }
+    await this.sendCommand('set_instance_properties_by_base', { nodeId: instanceId, properties: props });
+
+    // images
+    const imageNodeNames = imgSlots;
+    for (let i = 0; i < Math.min(images.length, imageNodeNames.length); i++) {
+      const slotName = imageNodeNames[i];
+      const imgNodeId = await this.dfsFindChildIdByName(instanceId, slotName);
+      if (!imgNodeId) continue;
+      const url = buildAssetUrl(this.staticUrl, this.content.assets || [], images[i].asset_id, this.contentPath);
+      if (await this.httpHeadOk(url)) {
+        await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode: 'FILL', opacity: 1 });
+      } else {
+        // fallback Base64
+        const localPath = path.join(process.cwd(), 'docx2json', 'assets', this.dataset, `${images[i].asset_id}.png`);
+        try {
+          const buf = await fs.readFile(localPath);
+          const b64 = buf.toString('base64');
+          await this.throttleBase64();
+          await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FILL', opacity: 1 });
+        } catch (e) {
+          console.warn(`⚠️ Base64 fallback failed for ${images[i].asset_id}: ${e.message}`);
+        }
+      }
+    }
+  }
+
+  async fillBodyCard(instanceId, item) {
+    const slots = this.mapping.anchors?.slots || {};
+    const bodySlot = slots.body?.body || 'slot:BODY';
+    const bodyId = await this.dfsFindChildIdByName(instanceId, bodySlot);
+    if (bodyId) await this.setText(bodyId, item.block?.text || '');
+  }
+
+  getByPath(obj, pathStr) {
+    try { return (pathStr || '').split('.').reduce((o,k)=> (o && o[k] != null ? o[k] : undefined), obj); } catch { return undefined; }
+  }
+
+  async fillHeader() {
+    try {
+      const doc = await this.sendCommand('get_document_info', {});
+      const frame = (doc.children || []).find((c) => c.name === this.mapping.anchors.frame);
+      if (!frame) return;
+      const frameInfo = await this.sendCommand('get_node_info', { nodeId: frame.id });
+      const header = this.mapping.anchors.header || {};
+      const meta = this.content.doc || {};
+      const month = this.formatMonth(meta.date || '');
+      const setByName = async (name, text) => {
+        if (!name) return;
+        const id = await this.dfsFindChildIdByName(frame.id, name);
+        if (id) await this.setText(id, text);
+      };
+      await setByName(header.title, meta.title || '');
+      await setByName(header.date, meta.date || '');
+      await setByName(header.month, month || '');
+    } catch (e) {
+      console.warn('⚠️ fillHeader skipped:', e.message);
+    }
+  }
+
+  formatMonth(dateStr) {
+    const m = String(dateStr||'').match(/\d{4}-(\d{2})-\d{2}/); if (m) return m[1];
+    const m2 = String(dateStr||'').match(/\d{4}(\d{2})\d{2}/); if (m2) return m2[1];
+    return '';
+  }
+
+  async run() {
+    console.log('🚀 Weekly Poster Orchestration starting...');
+    await this.loadConfig();
+    await this.resolveContent();
+    await this.ensureStaticServer();
+    await this.connectWS();
+    await this.locateAnchors();
+    await this.fillHeader();
+
+    const flow = this.createOrderedContentFlow();
+    console.log(`📋 Content flow items: ${flow.length}`);
+
+    for (let i = 0; i < flow.length; i++) {
+      const item = flow[i];
+      const kind = item.type === 'figure_group' ? 'figure' : 'body';
+      try {
+        const inst = await this.createCardInstance(kind);
+        this.report.created.push({ index: i, id: inst.id, method: inst.method, kind });
+        if (kind === 'figure') await this.fillFigureCard(inst.id, item);
+        else await this.fillBodyCard(inst.id, item);
+        console.log(`✅ Filled #${i+1} ${kind} card`);
+      } catch (e) {
+        console.error(`❌ Failed item #${i+1}:`, e.message);
+        this.report.errors.push({ index: i, error: e.message });
+      }
+    }
+
+    // Summary
+    const summary = {
+      dataset: this.dataset,
+      staticServer: this.staticUrl,
+      channel: this.channel,
+      total: flow.length,
+      created: this.report.created.length,
+      errors: this.report.errors.length,
+      createdDetails: this.report.created.slice(0,10)
+    };
+    console.log('\n📊 Run Summary:');
+    console.log(JSON.stringify(summary, null, 2));
   }
 
   async close() {
-    if (this.ws) {
-      this.ws.close();
+    try { if (this.ws) this.ws.close(); } catch {}
+    if (this.staticServerProc) {
+      try { this.staticServerProc.kill(); } catch {}
     }
   }
+
+  sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 }
 
 async function main() {
-  const replacer = new SummerBreakReplacer();
-  
+  const runner = new WeeklyPosterRunner();
   try {
-    await replacer.initialize();
-    await replacer.executeReplacement();
-  } catch (error) {
-    console.error('🚨 程序异常:', error.message);
+    await runner.run();
+  } catch (e) {
+    console.error('💥 Orchestration failed:', e.message);
   } finally {
-    await replacer.close();
+    await runner.close();
   }
 }
-
-console.log('🔥 开始执行 Summer Break 海报模板替换!');
-console.log('🎯 Seedless 直造工程 - 生产环境验证');
-console.log('📋 250818_summer_break_content.json → Figma 模板');
-console.log('');
 
 main();
