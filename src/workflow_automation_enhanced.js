@@ -15,7 +15,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import FigmaChannelManager from './figma-channel-manager.js';
-import { resolveContentPath, parseArgs } from './config-resolver.js';
+import { resolveContentPath, parseArgs, buildAssetUrl, computeStaticServerUrl, inferDataset } from './config-resolver.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,7 +24,7 @@ const __dirname = path.dirname(__filename);
 const CONFIG = {
   serverConfigPath: path.join(__dirname, '../config/server-config.json'),
   runStatePath: path.join(__dirname, '../config/run_state.json'),
-  staticServerUrl: 'http://localhost:3056/assets'
+  staticServerUrl: 'http://127.0.0.1:3056/assets'
 };
 
 // utils: get value by "a.b.c" path
@@ -41,6 +41,9 @@ class CardBasedFigmaWorkflowAutomator {
     this.dryRun = false;
     this.boolPropIds = null; // Cache for component boolean property IDs
     this.seedInstanceIds = null; // Cache for seed instance IDs
+    this.staticServerUrl = CONFIG.staticServerUrl; // will be recomputed from config
+    this.contentPath = null;
+    this.dataset = null;
   }
 
   async initialize(mcpClient, channelId = null, contentFile = null, dryRun = false) {
@@ -86,6 +89,11 @@ class CardBasedFigmaWorkflowAutomator {
     this.config = serverConfig; // ✅ 修复：保存完整配置
     this.workflowMapping = serverConfig.workflow.mapping;
     console.log('✅ Loaded workflow.mapping from server-config.json');
+    // compute static server url from config
+    try {
+      this.staticServerUrl = computeStaticServerUrl(serverConfig);
+      console.log(`🌐 Static server: ${this.staticServerUrl}`);
+    } catch {}
     
     // Resolve and load content data
     const cliArgs = parseArgs();
@@ -95,8 +103,10 @@ class CardBasedFigmaWorkflowAutomator {
       envVar: process.env.CONTENT_JSON_PATH,
       configDefault: serverConfig.workflow.current_content_file
     });
-    
+    this.contentPath = contentPath;
     this.contentData = JSON.parse(await fs.readFile(contentPath, 'utf8'));
+    // infer dataset for later asset url building
+    this.dataset = inferDataset(this.contentData?.assets || [], this.contentPath);
     
     // Get Cards container nodeId for instance creation
     if (this.channelManager && this.channelManager.currentChannel) {
@@ -811,7 +821,7 @@ class CardBasedFigmaWorkflowAutomator {
       const imageNodeId = await this.findChildByName(instanceId, imageSlotName);
       
       if (imageNodeId && images[i].asset_id) {
-        const imageUrl = `${CONFIG.staticServerUrl}/${images[i].asset_id}.png`;
+        const imageUrl = buildAssetUrl(this.staticServerUrl, this.contentData?.assets || [], images[i].asset_id, this.contentPath);
         try {
           await this.mcpClient.call("mcp__talk-to-figma__set_image_fill", {
             nodeId: imageNodeId,
