@@ -4,6 +4,7 @@
 // Plugin state
 const state = {
   serverPort: 3055, // Default port
+  channel: null,
 };
 
 
@@ -96,9 +97,13 @@ function updateSettings(settings) {
   if (settings.serverPort) {
     state.serverPort = settings.serverPort;
   }
+  if (settings.channel) {
+    state.channel = settings.channel;
+  }
 
   figma.clientStorage.setAsync("settings", {
     serverPort: state.serverPort,
+    channel: state.channel,
   });
 }
 
@@ -1467,6 +1472,9 @@ async function setTextContent(params) {
       if (savedSettings.serverPort) {
         state.serverPort = savedSettings.serverPort;
       }
+      if (savedSettings.channel) {
+        state.channel = savedSettings.channel;
+      }
     }
 
     // Send initial settings to UI
@@ -1474,6 +1482,7 @@ async function setTextContent(params) {
       type: "init-settings",
       settings: {
         serverPort: state.serverPort,
+        channel: state.channel,
       },
     });
   } catch (error) {
