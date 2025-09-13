@@ -247,13 +247,50 @@ class CardBasedFigmaWorkflowAutomator {
       templateId: seedId,
       insertIndex: -1
     });
-    const result = this.unwrapMcpResponse(rawResult);
-    
-    if (!result.success) {
-      throw new Error(`Seed cloning failed: ${result.message}`);
+    const parsed = this.unwrapMcpResponse(rawResult);
+
+    // Normalize different return shapes:
+    // - Plugin data via server text message (contains "New card ID: <id>" and name inside quotes)
+    // - Potential JSON object with { newNodeId, newNodeName } or { id, name } or { instanceId, instanceName }
+    const normalize = (objOrText) => {
+      if (!objOrText) return null;
+      // Object-like
+      if (typeof objOrText === 'object') {
+        const id = objOrText.newNodeId || objOrText.instanceId || objOrText.id;
+        const name = objOrText.newNodeName || objOrText.instanceName || objOrText.name || 'Cloned Card';
+        if (id) return { id, name };
+      }
+      // Text fallback
+      if (typeof objOrText === 'string') {
+        // Extract name between first quotes after 'appended card'
+        let nameMatch = objOrText.match(/appended card \"([^\"]+)\"/i);
+        // Extract ID after 'New card ID:'
+        let idMatch = objOrText.match(/New card ID:\s*([^\s]+)/i);
+        if (idMatch) {
+          return { id: idMatch[1], name: (nameMatch && nameMatch[1]) || 'Cloned Card' };
+        }
+      }
+      return null;
+    };
+
+    let normalized = null;
+    if (parsed && parsed.success && typeof parsed === 'object') {
+      normalized = normalize(parsed);
     }
-    
-    return { id: result.instanceId, name: result.instanceName || 'Cloned Card' };
+    if (!normalized && parsed && parsed.rawText) {
+      normalized = normalize(parsed.rawText);
+    }
+    if (!normalized) {
+      // Try using the raw MCP response directly if available
+      normalized = normalize(rawResult?.content?.[0]?.text || rawResult);
+    }
+
+    if (!normalized) {
+      const msg = parsed?.message || parsed?.error || 'Unknown append result';
+      throw new Error(`Seed cloning failed: ${msg}`);
+    }
+
+    return normalized;
   }
 
   async processWorkflow() {
@@ -555,7 +592,8 @@ class CardBasedFigmaWorkflowAutomator {
         
         const tempInstance = await this.createCardInstance(cardsStackId, 'figure');
         discoveryInstanceId = tempInstance.id;
-        shouldCleanupInstance = (tempInstance.method === 'direct'); // Only cleanup if we created it directly
+        // Clean up only if we created an instance directly (covers variants like 'direct-local')
+        shouldCleanupInstance = (typeof tempInstance.method === 'string' && tempInstance.method.startsWith('direct'));
         
         console.log(`  📍 Using instance ${discoveryInstanceId} for property discovery (method: ${tempInstance.method})`);
       } catch (error) {
