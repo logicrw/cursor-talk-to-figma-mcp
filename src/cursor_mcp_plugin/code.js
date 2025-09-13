@@ -403,6 +403,55 @@ function filterFigmaNode(node) {
   return filtered;
 }
 
+// Compute absolute bounding box from absoluteTransform + width/height
+function getAbsoluteBoundingBox(node) {
+  try {
+    const t = node.absoluteTransform;
+    const width = typeof node.width === 'number' ? node.width : 0;
+    const height = typeof node.height === 'number' ? node.height : 0;
+    if (t && Array.isArray(t) && t.length >= 2 && t[0].length >= 3) {
+      const x = t[0][2];
+      const y = t[1][2];
+      return { x, y, width, height };
+    }
+  } catch (e) {}
+  return undefined;
+}
+
+// Adapt filter to enrich with plugin-available fields when not present
+const _origFilterFigmaNode = filterFigmaNode;
+filterFigmaNode = function(node) {
+  const filtered = _origFilterFigmaNode(node);
+  if (!filtered) return filtered;
+
+  // Add absoluteBoundingBox if missing and possible
+  if (!filtered.absoluteBoundingBox && node && 'absoluteTransform' in node) {
+    const bbox = getAbsoluteBoundingBox(node);
+    if (bbox) filtered.absoluteBoundingBox = bbox;
+  }
+
+  // Add text style if TEXT node and style missing
+  if (node && node.type === 'TEXT' && !filtered.style) {
+    try {
+      const fontName = node.fontName !== figma.mixed ? node.fontName : { family: 'Mixed', style: 'Mixed' };
+      const lineHeightPx = node.lineHeight && node.lineHeight.unit === 'PIXELS' ? node.lineHeight.value : undefined;
+      filtered.style = {
+        fontFamily: fontName.family,
+        fontStyle: fontName.style,
+        fontWeight: node.fontWeight !== undefined ? node.fontWeight : undefined,
+        fontSize: node.fontSize,
+        textAlignHorizontal: node.textAlignHorizontal,
+        letterSpacing: node.letterSpacing,
+        lineHeightPx: lineHeightPx
+      };
+    } catch (e) {
+      // best effort
+    }
+  }
+
+  return filtered;
+}
+
 async function getNodeInfo(nodeId) {
   const node = await figma.getNodeByIdAsync(nodeId);
 
@@ -410,11 +459,8 @@ async function getNodeInfo(nodeId) {
     throw new Error(`Node not found with ID: ${nodeId}`);
   }
 
-  const response = await node.exportAsync({
-    format: "JSON_REST_V1",
-  });
-
-  return filterFigmaNode(response.document);
+  // Traverse live node graph and build filtered JSON
+  return filterFigmaNode(node);
 }
 
 async function getNodesInfo(nodeIds) {
@@ -427,18 +473,11 @@ async function getNodesInfo(nodeIds) {
     // Filter out any null values (nodes that weren't found)
     const validNodes = nodes.filter((node) => node !== null);
 
-    // Export all valid nodes in parallel
-    const responses = await Promise.all(
-      validNodes.map(async (node) => {
-        const response = await node.exportAsync({
-          format: "JSON_REST_V1",
-        });
-        return {
-          nodeId: node.id,
-          document: filterFigmaNode(response.document),
-        };
-      })
-    );
+    // Build filtered info for each
+    const responses = validNodes.map((node) => ({
+      nodeId: node.id,
+      document: filterFigmaNode(node)
+    }));
 
     return responses;
   } catch (error) {
@@ -633,27 +672,11 @@ async function getReactions(nodeIds) {
 
 async function readMyDesign() {
   try {
-    // Load all selected nodes in parallel
-    const nodes = await Promise.all(
-      figma.currentPage.selection.map((node) => figma.getNodeByIdAsync(node.id))
-    );
-
-    // Filter out any null values (nodes that weren't found)
-    const validNodes = nodes.filter((node) => node !== null);
-
-    // Export all valid nodes in parallel
-    const responses = await Promise.all(
-      validNodes.map(async (node) => {
-        const response = await node.exportAsync({
-          format: "JSON_REST_V1",
-        });
-        return {
-          nodeId: node.id,
-          document: filterFigmaNode(response.document),
-        };
-      })
-    );
-
+    const selection = figma.currentPage.selection || [];
+    const responses = selection.map((node) => ({
+      nodeId: node.id,
+      document: filterFigmaNode(node)
+    }));
     return responses;
   } catch (error) {
     throw new Error(`Error getting nodes info: ${error.message}`);
