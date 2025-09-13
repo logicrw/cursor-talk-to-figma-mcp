@@ -44,6 +44,7 @@ class CardBasedFigmaWorkflowAutomator {
     this.staticServerUrl = CONFIG.staticServerUrl; // will be recomputed from config
     this.contentPath = null;
     this.dataset = null;
+    this.mainFrameId = null;
   }
 
   async initialize(mcpClient, channelId = null, contentFile = null, dryRun = false) {
@@ -112,12 +113,11 @@ class CardBasedFigmaWorkflowAutomator {
     if (this.channelManager && this.channelManager.currentChannel) {
       try {
         const documentInfo = await this.mcpClient.call("mcp__talk-to-figma__get_document_info");
-        const cardsContainer = documentInfo.children.find(child => 
-          child.name === this.workflowMapping.anchors.frame
-        );
-        if (cardsContainer) {
+        const mainFrame = documentInfo.children.find(child => child.name === this.workflowMapping.anchors.frame);
+        if (mainFrame) {
+          this.mainFrameId = mainFrame.id;
           const containerInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", {
-            nodeId: cardsContainer.id
+            nodeId: mainFrame.id
           });
           // Find Cards within ContentContainer
           const contentContainer = containerInfo.children?.find(child => 
@@ -135,11 +135,11 @@ class CardBasedFigmaWorkflowAutomator {
               console.log(`✅ Found Cards container: ${cardsNode.id}`);
             }
           }
-        }
-      } catch (error) {
-        console.warn('⚠️ Could not auto-detect Cards container, using fallback ID');
-        this.workflowMapping.anchors.cards_stack_id = "180:53";
       }
+    } catch (error) {
+      console.warn('⚠️ Could not auto-detect Cards container, using fallback ID');
+      this.workflowMapping.anchors.cards_stack_id = "180:53";
+    }
     }
     
     // Initialize run state
@@ -307,6 +307,7 @@ class CardBasedFigmaWorkflowAutomator {
     
     try {
       // Step 1: Create ordered content flow
+      await this.fillHeader(this.contentData?.doc || {});
       const orderedContent = this.createOrderedContentFlow();
       console.log(`📋 Generated ordered content flow: ${orderedContent.length} items`);
       
@@ -350,6 +351,73 @@ class CardBasedFigmaWorkflowAutomator {
       await this.updateRunState();
       throw error;
     }
+  }
+
+  // Helper: DFS search within any node info tree
+  dfsFindNodeIdByName(rootInfo, targetName) {
+    const target = String(targetName || '').trim();
+    if (!target || !rootInfo) return null;
+    const stack = [rootInfo];
+    while (stack.length) {
+      const node = stack.pop();
+      if (node?.name === target) return node.id || null;
+      if (node?.children && Array.isArray(node.children)) {
+        for (const ch of node.children) stack.push(ch);
+      }
+    }
+    return null;
+  }
+
+  async fillHeader(docMeta = {}) {
+    try {
+      const headerCfg = this.workflowMapping?.anchors?.header || {};
+      if (!this.mainFrameId) {
+        // Try to resolve main frame again if missing
+        const documentInfo = await this.mcpClient.call("mcp__talk-to-figma__get_document_info");
+        const mainFrame = documentInfo.children.find(child => child.name === this.workflowMapping.anchors.frame);
+        if (mainFrame) this.mainFrameId = mainFrame.id;
+      }
+      if (!this.mainFrameId) {
+        console.warn('⚠️ No main frame detected, skipping header fill');
+        return;
+      }
+
+      const frameInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", { nodeId: this.mainFrameId });
+      const setIfFound = async (nodeName, text) => {
+        if (!nodeName) return;
+        const nodeId = this.dfsFindNodeIdByName(frameInfo, nodeName);
+        if (!nodeId) return;
+        try {
+          await this.mcpClient.call("mcp__talk-to-figma__set_text_content", { nodeId, text: text || '' });
+          await this.mcpClient.call("mcp__talk-to-figma__set_text_auto_resize", { nodeId, autoResize: 'HEIGHT' });
+          console.log(`🧭 Header set ${nodeName}: "${(text || '').toString().substring(0, 60)}"`);
+        } catch (e) {
+          console.warn(`⚠️ Failed to set header ${nodeName}: ${e.message}`);
+        }
+      };
+
+      const title = docMeta.title || '';
+      const dateStr = docMeta.date || '';
+      const month = this.formatMonthFromDate(dateStr);
+
+      await setIfFound(headerCfg.title, title);
+      await setIfFound(headerCfg.date, dateStr);
+      await setIfFound(headerCfg.month, month);
+    } catch (error) {
+      console.warn('⚠️ fillHeader failed:', error.message);
+    }
+  }
+
+  formatMonthFromDate(dateStr) {
+    try {
+      if (!dateStr) return '';
+      const m = String(dateStr).match(/\d{4}-(\d{2})-\d{2}/);
+      if (m) return m[1];
+      // try compact yyyyMMdd
+      const m2 = String(dateStr).match(/\d{4}(\d{2})\d{2}/);
+      if (m2) return m2[1];
+      return '';
+    } catch { return ''; }
   }
 
   createOrderedContentFlow() {
@@ -821,6 +889,10 @@ class CardBasedFigmaWorkflowAutomator {
           nodeId: titleNodeId,
           text: firstTitle || ''  // ✅ 空内容设为空字符串，依赖Auto-layout收缩
         });
+        await this.mcpClient.call("mcp__talk-to-figma__set_text_auto_resize", {
+          nodeId: titleNodeId,
+          autoResize: 'HEIGHT'
+        });
         console.log(`    ✅ Set title: "${firstTitle || '(empty)'}"`);
       } catch (error) {
         console.error(`    ❌ Failed to set title:`, error.message);
@@ -836,6 +908,10 @@ class CardBasedFigmaWorkflowAutomator {
         await this.mcpClient.call("mcp__talk-to-figma__set_text_content", {
           nodeId: sourceNodeId,
           text: sourceText  // ✅ 空内容设为空字符串
+        });
+        await this.mcpClient.call("mcp__talk-to-figma__set_text_auto_resize", {
+          nodeId: sourceNodeId,
+          autoResize: 'HEIGHT'
         });
         console.log(`    ✅ Set source: "${sourceText || '(empty)'}"`);
       } catch (error) {
@@ -973,6 +1049,10 @@ class CardBasedFigmaWorkflowAutomator {
         await this.mcpClient.call("mcp__talk-to-figma__set_text_content", {
           nodeId: bodyTextNodeId,
           text: paragraphText
+        });
+        await this.mcpClient.call("mcp__talk-to-figma__set_text_auto_resize", {
+          nodeId: bodyTextNodeId,
+          autoResize: 'HEIGHT'
         });
         console.log(`    ✅ Set body text: "${paragraphText.substring(0, 60)}..."`);
       } catch (error) {

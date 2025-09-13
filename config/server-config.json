@@ -28,6 +28,11 @@
         "frame": "Odaily特供海报",
         "container": "ContentContainer",
         "cards_stack": "Cards",
+        "header": {
+          "title": "HeaderTitle",
+          "date": "HeaderDate",
+          "month": "HeaderMonth"
+        },
         "seeds": {
           "frame": "Seeds",
           "figure_instance": "FigureCard__seedInstance",
