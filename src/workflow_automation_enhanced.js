@@ -655,8 +655,22 @@ class CardBasedFigmaWorkflowAutomator {
       
       try {
         console.log('  🆕 Attempting property discovery via direct instance creation...');
-        const cardsStackId = this.workflowMapping.anchors?.cards_stack_id;
-        if (!cardsStackId) throw new Error('Cards stack ID not configured');
+        let cardsStackId = this.workflowMapping.anchors?.cards_stack_id;
+        if (!cardsStackId) {
+          // Resolve by names: frame → container → cards_stack
+          const docInfo = await this.mcpClient.call("mcp__talk-to-figma__get_document_info");
+          const frameNode = docInfo.children.find(child => child.name === this.workflowMapping.anchors.frame);
+          if (!frameNode) throw new Error('Main frame not found for property discovery');
+          const frameInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", { nodeId: frameNode.id });
+          const containerNode = frameInfo.children?.find(child => child.name === this.workflowMapping.anchors.container);
+          if (!containerNode) throw new Error('Content container not found for property discovery');
+          const containerInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", { nodeId: containerNode.id });
+          const cardsNode = containerInfo.children?.find(child => child.name === this.workflowMapping.anchors.cards_stack);
+          if (!cardsNode) throw new Error('Cards stack not found for property discovery');
+          cardsStackId = cardsNode.id;
+          this.workflowMapping.anchors.cards_stack_id = cardsStackId;
+          console.log(`  🔗 Resolved cards stack id by name: ${cardsStackId}`);
+        }
         
         const tempInstance = await this.createCardInstance(cardsStackId, 'figure');
         discoveryInstanceId = tempInstance.id;
