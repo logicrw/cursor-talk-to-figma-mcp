@@ -689,49 +689,70 @@ class CardBasedFigmaWorkflowAutomator {
       const visibilityMapping = this.workflowMapping.images?.visibility_props || {};
       const titleVisibleProp = this.workflowMapping.title?.visible_prop || 'showTitle';
       const sourceVisibleProp = this.workflowMapping.source?.visible_prop || 'showSource';
-      
+
       this.boolPropIds = { figure: {} };
-      
+
       // Get available property keys (already in PropertyName#ID format)
       const availableKeys = referencesResult.propertyKeys || Object.keys(referencesResult.properties);
       console.log('🔍 Available property keys:', availableKeys);
-      
-      // Use strict prefix matching to find properties - no more fuzzy includes()
+
+      // Build normalized baseName → actualKey map for robust matching
+      const normalize = (s) => String(s || '')
+        .toLowerCase()
+        .replace(/\s+/g, '')
+        .replace(/[_\-]+/g, '');
+
+      const keyByNormalizedBase = {};
+      for (const key of availableKeys) {
+        const base = String(key).split('#')[0];
+        const norm = normalize(base);
+        if (!keyByNormalizedBase[norm]) keyByNormalizedBase[norm] = key;
+      }
+
       const findProperty = (friendlyName) => {
-        return availableKeys.find(key => key.startsWith(`${friendlyName}#`));
+        const exactPrefix = availableKeys.find(key => key.startsWith(`${friendlyName}#`));
+        if (exactPrefix) return exactPrefix;
+        const norm = normalize(friendlyName);
+        return keyByNormalizedBase[norm] || null;
       };
-      
+
       // Map title property
       const titleKey = findProperty(titleVisibleProp);
       if (titleKey) {
         this.boolPropIds.figure[titleVisibleProp] = titleKey;
         console.log(`📌 Mapped title property: ${titleVisibleProp} -> ${titleKey}`);
+      } else {
+        console.error(`❌ Title property not found: ${titleVisibleProp}`);
       }
-      
+
       // Map source property  
       const sourceKey = findProperty(sourceVisibleProp);
       if (sourceKey) {
         this.boolPropIds.figure[sourceVisibleProp] = sourceKey;
         console.log(`📌 Mapped source property: ${sourceVisibleProp} -> ${sourceKey}`);
+      } else {
+        console.error(`❌ Source property not found: ${sourceVisibleProp}`);
       }
-      
-      // Map image slot properties
+
+      // Map image slot properties (optional, do not fail workflow if missing)
+      const missingImageProps = [];
       Object.entries(visibilityMapping).forEach(([slotName, propName]) => {
         const imageKey = findProperty(propName);
         if (imageKey) {
           this.boolPropIds.figure[propName] = imageKey;
           console.log(`📌 Mapped image property: ${propName} (${slotName}) -> ${imageKey}`);
+        } else {
+          console.warn(`⚠️ Image visibility property not found: ${propName} (${slotName}). Will treat as hidden by default.`);
+          missingImageProps.push(propName);
         }
       });
-      
-      // Fail-fast validation: check if all required properties were found
-      const requiredProps = [titleVisibleProp, sourceVisibleProp, ...Object.values(visibilityMapping)];
-      const missingProps = requiredProps.filter(prop => !this.boolPropIds.figure[prop]);
-      
-      if (missingProps.length > 0) {
-        const errorMsg = `❌ Required component properties not found: ${missingProps.join(', ')}. Available keys: ${availableKeys.join(', ')}`;
+
+      // Fail-fast validation: essential properties must be present
+      const essentialMissing = [titleVisibleProp, sourceVisibleProp].filter(prop => !this.boolPropIds.figure[prop]);
+      if (essentialMissing.length > 0) {
+        const availableBases = availableKeys.map(k => k.split('#')[0]);
+        const errorMsg = `❌ Essential component properties missing: ${essentialMissing.join(', ')}. Available base names: ${availableBases.join(', ')}`;
         console.error(errorMsg);
-        // Cleanup before throwing error
         if (shouldCleanupInstance && discoveryInstanceId) {
           try {
             await this.mcpClient.call("mcp__talk-to-figma__delete_node", { nodeId: discoveryInstanceId });
@@ -742,7 +763,11 @@ class CardBasedFigmaWorkflowAutomator {
         }
         throw new Error(errorMsg);
       }
-      
+
+      if (missingImageProps.length > 0) {
+        console.warn(`ℹ️ Proceeding with defaults: missing image visibility props will be treated as hidden: ${missingImageProps.join(', ')}`);
+      }
+
       console.log('✅ Component property IDs discovered:', this.boolPropIds);
       
       // Cleanup temporary instance if we created it for discovery
