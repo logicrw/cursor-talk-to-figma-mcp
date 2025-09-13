@@ -122,6 +122,68 @@ bun socket
 4. Connect the plugin to the WebSocket server by joining a channel using `join_channel`
 5. Use Cursor to communicate with Figma using the MCP tools
 
+## Weekly Poster Workflow (DOCX → Figma)
+
+This repo includes an end-to-end workflow that turns weekly DOCX content (pre-converted to JSON) into a Figma poster based on a fixed template.
+
+Steps
+- Start WebSocket relay: `bun socket`
+- Open Figma, run the "Cursor Talk To Figma MCP" plugin
+- In plugin UI, set a stable `Channel` (or pass `--channel` to the script)
+- Run the orchestration script:
+
+```bash
+# Auto-discovers the latest content JSON under docx2json/
+node scripts/run_weekly_poster.js --channel my-weekly
+
+# Or target a specific content JSON
+node scripts/run_weekly_poster.js --content ./docx2json/250818_summer_break_content.json --channel weekly-250818
+```
+
+Notes
+- No manual config edits are required per dataset. Dataset is inferred from `assets[0].filename` or the content filename stem.
+- Images are fetched by URL first. If the static server is unavailable, the script and server will automatically fall back to Base64 with rate limiting (`config.asset_transfer.base64_rate_limit`).
+- Header fields (title/date/month) are filled from `content.doc` and all text nodes are set to auto-resize (HEIGHT).
+- Visibility is driven by component boolean properties discovered at runtime (no hardcoded `PropertyName#ID`). Missing non-essential image visibility props default to hidden.
+
+Acceptance Criteria
+- Zero per-week manual edits; images auto-resolve per dataset.
+- Correct card count/order/visibility with header filled; text auto-resizes.
+- Channels are explicit and reproducible via UI field or `--channel` flag.
+
+## Static Assets Server
+
+The static server exposes `docx2json/assets` with strict path normalization.
+
+Config example
+```json
+{
+  "static_server": {
+    "port": 3056,
+    "host": "127.0.0.1",
+    "baseDir": "../docx2json/assets",
+    "publicRoute": "/assets"
+  }
+}
+```
+
+Routes
+- `GET /assets/<dataset>/<filename>` → serves `docx2json/assets/<dataset>/<filename>` with safe join
+
+Quick checks
+```bash
+node src/static-server.js &
+curl -I http://127.0.0.1:3056/assets/250818_summer_break/img_76f7bfb095b6.png   # 200
+curl -I 'http://127.0.0.1:3056/assets/../../etc/passwd'                         # 403
+curl -I http://127.0.0.1:3056/assets/250818_summer_break/not-exist.png          # 404
+```
+
+## Troubleshooting
+
+- Figma plugin not connected: ensure `bun socket` is running, and join the same channel in UI and scripts.
+- Images not showing: verify static server is reachable; if not, Base64 fallback should kick in (check logs). Adjust `asset_transfer.base64_max_size`/`base64_rate_limit` in `config/server-config.json` if needed.
+- Property discovery fail-fast: if essential properties (e.g., `showTitle`, `showSource`) cannot be mapped, the workflow halts with a clear error listing available base names—rename boolean properties in your template accordingly.
+
 ## MCP Tools
 
 The MCP server provides the following tools for interacting with Figma:
