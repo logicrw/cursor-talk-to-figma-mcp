@@ -113,6 +113,86 @@ try {
   config = { websocket: { port: 3055, host: 'localhost' } };
 }
 
+// Helpers for static asset fallback
+function getStaticBaseDir(): string {
+  try {
+    const sc = config?.static_server || {};
+    const legacy = sc.assets_path ? path.resolve(process.cwd(), 'src', '..', sc.assets_path) : null;
+    // Prefer explicit baseDir; else parent of legacy assets_path; else default
+    const baseDir = sc.baseDir
+      ? path.resolve(process.cwd(), 'src', '..', sc.baseDir)
+      : (legacy ? path.resolve(legacy, '..') : path.resolve(process.cwd(), 'docx2json', 'assets'));
+    return baseDir;
+  } catch {
+    return path.resolve(process.cwd(), 'docx2json', 'assets');
+  }
+}
+
+function getPublicRoute(): string {
+  try {
+    return (config?.static_server?.publicRoute || '/assets') as string;
+  } catch {
+    return '/assets';
+  }
+}
+
+function localPathFromAssetUrl(imageUrl: string): { ok: boolean; path?: string; reason?: string } {
+  try {
+    const baseDir = getStaticBaseDir();
+    const route = getPublicRoute();
+    const u = new URL(imageUrl);
+    const pathname = u.pathname; // e.g. /assets/dataset/file.png
+    const prefix = route.endsWith('/') ? route.slice(0, -1) : route;
+    if (!pathname.startsWith(prefix + '/')) {
+      return { ok: false, reason: `URL does not match public route: ${route}` };
+    }
+    const rel = pathname.slice(prefix.length + 1); // dataset/file
+    const normalizedRel = path.normalize(rel);
+    const abs = path.resolve(baseDir, normalizedRel);
+    const relToBase = path.relative(baseDir, abs);
+    if (relToBase.startsWith('..') || path.isAbsolute(relToBase)) {
+      return { ok: false, reason: 'Path traversal detected' };
+    }
+    return { ok: true, path: abs };
+  } catch (e: any) {
+    return { ok: false, reason: e?.message || 'Invalid URL' };
+  }
+}
+
+const base64SendTimestamps: number[] = [];
+function delay(ms: number) { return new Promise(res => setTimeout(res, ms)); }
+async function throttleBase64Send() {
+  try {
+    const rate = (config?.asset_transfer?.base64_rate_limit ?? 30) as number;
+    if (!rate || rate <= 0) return;
+    const now = Date.now();
+    // keep last 1000ms
+    for (let i = base64SendTimestamps.length - 1; i >= 0; i--) {
+      if (now - base64SendTimestamps[i] > 1000) {
+        base64SendTimestamps.splice(0, i + 1);
+        break;
+      }
+    }
+    if (base64SendTimestamps.length >= rate) {
+      const oldest = base64SendTimestamps[0];
+      const waitMs = Math.max(0, 1000 - (now - oldest));
+      if (waitMs > 0) {
+        logger.info(`Base64 rate limit reached (${rate}/s). Sleeping ${waitMs}ms...`);
+        await delay(waitMs);
+      }
+      // purge again
+      const now2 = Date.now();
+      for (let i = base64SendTimestamps.length - 1; i >= 0; i--) {
+        if (now2 - base64SendTimestamps[i] > 1000) {
+          base64SendTimestamps.splice(0, i + 1);
+          break;
+        }
+      }
+    }
+    base64SendTimestamps.push(Date.now());
+  } catch {}
+}
+
 // Add command line argument parsing
 const args = process.argv.slice(2);
 const serverArg = args.find(arg => arg.startsWith('--server='));
@@ -3241,40 +3321,84 @@ server.tool(
       };
     }
     
+    // Fast path: if caller already provided base64, forward directly
+    if (imageBase64 && !imageUrl) {
+      try {
+        const result = await sendCommandToFigma("set_image_fill", {
+          nodeId,
+          imageBase64,
+          scaleMode: scaleMode || 'FILL',
+          opacity: opacity ?? 1,
+        });
+        const typedResult = result as any;
+        return {
+          content: [{ type: "text", text: JSON.stringify(typedResult) }]
+        };
+      } catch (e) {
+        return {
+          content: [{ type: "text", text: `Error setting image fill (base64): ${e instanceof Error ? e.message : String(e)}` }]
+        };
+      }
+    }
+
+    // URL-first path with automatic Base64 fallback
     try {
       const result = await sendCommandToFigma("set_image_fill", {
         nodeId,
-        imageBase64,
         imageUrl,
         scaleMode: scaleMode || 'FILL',
         opacity: opacity ?? 1,
       });
-      const typedResult = result as { 
-        success: boolean; 
-        nodeId: string;
-        targetNodeId: string;
-        nodeName: string;
-        targetNodeName: string;
-        scaleMode: string;
-        opacity: number;
-      };
+      const typedResult = result as any;
       return {
-        content: [
-          {
-            type: "text",
-            text: `Successfully set image fill for node "${typedResult.nodeName}" with scale mode ${typedResult.scaleMode}${typedResult.targetNodeId !== typedResult.nodeId ? ` (target: ${typedResult.targetNodeName})` : ''}`,
-          },
-        ],
+        content: [{ type: "text", text: JSON.stringify(typedResult) }]
       };
     } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error setting image fill: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-      };
+      logger.warn(`URL image fetch failed, attempting Base64 fallback: ${error instanceof Error ? error.message : String(error)}`);
+
+      // Try to resolve local file path from imageUrl
+      if (!imageUrl) {
+        return {
+          content: [{ type: "text", text: `Error setting image fill: ${error instanceof Error ? error.message : String(error)}` }]
+        };
+      }
+
+      const local = localPathFromAssetUrl(imageUrl);
+      if (!local.ok || !local.path) {
+        return {
+          content: [{ type: "text", text: `Fallback unable to map URL to local path: ${local.reason || 'unknown reason'}` }]
+        };
+      }
+
+      try {
+        const stat = fs.statSync(local.path);
+        const limitKB = Number((config?.asset_transfer?.base64_max_size ?? 10240));
+        const sizeKB = Math.ceil(stat.size / 1024);
+        if (sizeKB > limitKB) {
+          return {
+            content: [{ type: "text", text: `Fallback skipped: file too large (${sizeKB}KB > ${limitKB}KB)` }]
+          };
+        }
+
+        const buf = fs.readFileSync(local.path);
+        const b64 = buf.toString('base64');
+        await throttleBase64Send();
+
+        const result2 = await sendCommandToFigma("set_image_fill", {
+          nodeId,
+          imageBase64: b64,
+          scaleMode: scaleMode || 'FILL',
+          opacity: opacity ?? 1,
+        });
+        const typed2 = result2 as any;
+        return {
+          content: [{ type: "text", text: JSON.stringify(typed2) }]
+        };
+      } catch (e2) {
+        return {
+          content: [{ type: "text", text: `Fallback failed: ${e2 instanceof Error ? e2.message : String(e2)}` }]
+        };
+      }
     }
   }
 );
@@ -3382,6 +3506,4 @@ main().catch(error => {
   logger.error(`Error starting FigmaMCP server: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 });
-
-
 
