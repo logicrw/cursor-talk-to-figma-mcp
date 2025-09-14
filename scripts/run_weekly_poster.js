@@ -121,17 +121,29 @@ class WeeklyPosterRunner {
   onMessage(raw) {
     try {
       const msg = JSON.parse(raw.toString());
-      if (msg.type === 'message' || msg.type === 'broadcast' || msg.type === 'system') {
-        const inner = msg.message || {};
-        if (inner.id && this.pending.has(inner.id)) {
+      console.log(`📨 Received message type: ${msg.type}${msg.message?.id ? ` (id: ${msg.message.id})` : ''}`);
+
+      // Handle broadcast messages (responses from Figma)
+      if (msg.type === 'broadcast' && msg.message) {
+        const inner = msg.message;
+        // Only process if this message has a result (skip command echo)
+        if (inner.id && this.pending.has(inner.id) && inner.result !== undefined) {
           const { resolve } = this.pending.get(inner.id);
           this.pending.delete(inner.id);
-          resolve(inner.result || inner || msg);
+          console.log(`✅ Got result for command id: ${inner.id}`);
+          resolve(inner.result);
           return;
         }
       }
+      // Handle system messages
+      if (msg.type === 'system') {
+        // Channel join confirmation
+        if (msg.message && typeof msg.message === 'object' && msg.message.result) {
+          console.log(`✅ Channel confirmed: ${msg.channel}`);
+        }
+      }
     } catch (e) {
-      // ignore
+      console.error('Message parse error:', e);
     }
   }
 
@@ -148,6 +160,7 @@ class WeeklyPosterRunner {
 
   sendCommand(command, params = {}) {
     const id = String(this.messageId++);
+    console.log(`📤 Sending command: ${command} (id: ${id})`);
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
       this.wsSend({
@@ -159,6 +172,7 @@ class WeeklyPosterRunner {
       setTimeout(() => {
         if (this.pending.has(id)) {
           this.pending.delete(id);
+          console.error(`❌ Timeout for command ${command} (id: ${id})`);
           reject(new Error(`Timeout for command ${command}`));
         }
       }, 30000);
