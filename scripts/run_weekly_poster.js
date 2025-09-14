@@ -165,24 +165,76 @@ class WeeklyPosterRunner {
     });
   }
 
+  // Robust name normalization: remove spaces/zero-width chars and normalize width
+  normalizeName(s) {
+    return String(s || '')
+      .normalize('NFKC')
+      .replace(/[\s\u200B-\u200D\uFEFF]/g, '')
+      .trim();
+  }
+
+  async deepFindByName(rootNodeId, targetName, types = ['FRAME','SECTION','GROUP','COMPONENT','INSTANCE']) {
+    const T = this.normalizeName(targetName);
+    try {
+      const res = await this.sendCommand('scan_nodes_by_types', { nodeId: rootNodeId, types });
+      const hit = (res.nodes || res.matchingNodes || []).find(n => this.normalizeName(n.name) === T);
+      return hit || null;
+    } catch {
+      return null;
+    }
+  }
+
+  findShallowByName(children, targetName) {
+    const T = this.normalizeName(targetName);
+    return (children || []).find(c => this.normalizeName(c.name) === T) || null;
+  }
+
   async locateAnchors() {
     const doc = await this.sendCommand('get_document_info', {});
-    const frame = (doc.children || []).find((c) => c.name === this.mapping.anchors.frame);
-    if (!frame) throw new Error(`Frame not found: ${this.mapping.anchors.frame}`);
+    const wantedFrameName = this.mapping.anchors.frame;
+
+    // 1) Try shallow match on current page
+    let frame = this.findShallowByName(doc.children, wantedFrameName);
+    // 2) Deep search as fallback
+    if (!frame) {
+      frame = await this.deepFindByName(doc.id, wantedFrameName);
+      if (frame) console.log(`🔎 Resolved frame by deep search: ${frame.name} (${frame.id})`);
+    }
+    // 3) Selection fallback
+    if (!frame) {
+      const sel = await this.sendCommand('get_selection', {});
+      const first = (sel.selection || []).find(n => n.type === 'FRAME') || sel.selection?.[0];
+      if (first) {
+        console.warn(`⚠️ Anchor fallback: using selected node "${first.name}" (${first.id})`);
+        frame = first;
+      }
+    }
+    if (!frame) throw new Error(`Frame not found after fallback: ${wantedFrameName}`);
+
+    // Resolve container (deep, normalized)
     const frameInfo = await this.sendCommand('get_node_info', { nodeId: frame.id });
-    const container = (frameInfo.children || []).find((c) => c.name === this.mapping.anchors.container);
+    let container = this.findShallowByName(frameInfo.children, this.mapping.anchors.container);
+    if (!container) {
+      container = await this.deepFindByName(frame.id, this.mapping.anchors.container);
+    }
     if (!container) throw new Error(`Container not found: ${this.mapping.anchors.container}`);
+
+    // Resolve cards stack
     const containerInfo = await this.sendCommand('get_node_info', { nodeId: container.id });
-    const cards = (containerInfo.children || []).find((c) => c.name === this.mapping.anchors.cards_stack);
+    let cards = this.findShallowByName(containerInfo.children, this.mapping.anchors.cards_stack);
+    if (!cards) {
+      cards = await this.deepFindByName(container.id, this.mapping.anchors.cards_stack);
+    }
     if (!cards) throw new Error(`Cards stack not found: ${this.mapping.anchors.cards_stack}`);
     this.cardsContainerId = cards.id;
+    console.log(`🔗 Resolved cards stack id by name: ${cards.id}`);
 
-    // Seeds
-    const seedsFrame = (doc.children || []).find((c) => c.name === this.mapping.anchors.seeds.frame);
+    // Seeds (best-effort)
+    const seedsFrame = this.findShallowByName(doc.children, this.mapping.anchors.seeds.frame) || await this.deepFindByName(doc.id, this.mapping.anchors.seeds.frame);
     if (seedsFrame) {
       const seedsInfo = await this.sendCommand('get_node_info', { nodeId: seedsFrame.id });
-      const figSeed = (seedsInfo.children || []).find((c) => c.name === this.mapping.anchors.seeds.figure_instance);
-      const bodySeed = (seedsInfo.children || []).find((c) => c.name === this.mapping.anchors.seeds.body_instance);
+      const figSeed = this.findShallowByName(seedsInfo.children, this.mapping.anchors.seeds.figure_instance) || await this.deepFindByName(seedsFrame.id, this.mapping.anchors.seeds.figure_instance);
+      const bodySeed = this.findShallowByName(seedsInfo.children, this.mapping.anchors.seeds.body_instance) || await this.deepFindByName(seedsFrame.id, this.mapping.anchors.seeds.body_instance);
       this.seeds.figure = figSeed?.id || null;
       this.seeds.body = bodySeed?.id || null;
     }
