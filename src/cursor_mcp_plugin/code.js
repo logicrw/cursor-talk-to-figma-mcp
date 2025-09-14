@@ -323,9 +323,6 @@ function rgbaToHex(color) {
 }
 
 function filterFigmaNode(node) {
-  if (node.type === "VECTOR") {
-    return null;
-  }
 
   var filtered = {
     id: node.id,

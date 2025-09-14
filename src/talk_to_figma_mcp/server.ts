@@ -379,10 +379,6 @@ function rgbaToHex(color: any): string {
 }
 
 function filterFigmaNode(node: any) {
-  // Skip VECTOR type nodes
-  if (node.type === "VECTOR") {
-    return null;
-  }
 
   const filtered: any = {
     id: node.id,
