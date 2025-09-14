@@ -1,0 +1,16 @@
+🚀 Weekly Poster Orchestration starting...
+🔍 Auto-discovery: Found 2 date-pattern files, choosing latest date: 250818_summer_break_content.json
+📄 Using content: /Users/chenrongwei/Projects/cursor-talk-to-figma-mcp/docx2json/250818_summer_break_content.json (via server-config.json)
+⚠️ Static server unreachable, starting local server...
+Static file server running on http://127.0.0.1:3056
+Public route: /assets
+Serving base dir: /Users/chenrongwei/Projects/cursor-talk-to-figma-mcp/docx2json/assets
+Config loaded from: /Users/chenrongwei/Projects/cursor-talk-to-figma-mcp/config/server-config.json
+Served: 250818_summer_break/img_76f7bfb095b6.png (image/png)
+✅ Static server started
+✅ WebSocket connected: ws://127.0.0.1:3055
+📡 Joined channel: 3fspxu5k
+🔧 Debug: Resolving get_document_info with: {"id":"1","command":"get_document_info","params":{}}
+📋 Document info received: {"id":"1","command":"get_document_info","params":{}}
+🔍 Looking for frame: "Odaily特供海报"
+💥 Orchestration failed: Frame not found after fallback: Odaily特供海报

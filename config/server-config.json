@@ -72,7 +72,6 @@
           "imgSlot4": "showImg4"
         }
       },
-      "imageFill": { "scaleMode": "FILL" },
       "title": {
         "paths": ["title"],
         "take": "first_non_empty",
