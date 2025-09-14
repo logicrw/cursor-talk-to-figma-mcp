@@ -76,25 +76,25 @@
         color: #cccccc;
       }
       .status {
-        display: inline-block;
-        padding: 4px 10px;
-        border-radius: 9999px;
-        font-size: 12px;
-        line-height: 1.6;
-        margin: 6px 0 0 0;
+        margin-top: 16px;
+        padding: 12px;
+        border-radius: 6px;
+        font-size: 14px;
       }
-      .status.connected { background-color: #1a472a; color: #4ade80; }
-      .status.disconnected { background-color: #471a1a; color: #ff9999; }
-      .status.info, .status.connecting { background-color: #1a3147; color: #66b3ff; }
+      .status.connected {
+        background-color: #1a472a;
+        color: #4ade80;
+      }
+      .status.disconnected {
+        background-color: #471a1a;
+        color: #ff9999;
+      }
+      .status.info {
+        background-color: #1a3147;
+        color: #66b3ff;
+      }
       .section {
         margin-bottom: 24px;
-      }
-      .card {
-        background-color: #2b2b2b;
-        border-radius: 10px;
-        padding: 16px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-        margin-bottom: 16px;
       }
       .hidden {
         display: none;
@@ -167,25 +167,6 @@
       .operation-error {
         color: #ff9999;
       }
-      /* Progress polish */
-      #progress-container { margin-top: 8px; }
-      #progress-message { font-size: 12px; margin-top: 4px; color: #cccccc; }
-      #progress-status { font-size: 12px; }
-      #progress-percentage { font-size: 12px; }
-      /* Mini buttons */
-      .mini-btn { padding: 4px 8px; font-size: 12px; border-radius: 6px; }
-      .muted { color: #999999; font-size: 12px; margin-top: 4px; }
-      /* CLI snippet */
-      .snippet {
-        background-color: #1e1e1e;
-        border: 1px solid #444444;
-        border-radius: 6px;
-        padding: 8px;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-        font-size: 12px;
-        color: #e0e0e0;
-        overflow-x: auto;
-      }
     </style>
   </head>
   <body>
@@ -209,7 +190,6 @@
       </div>
 
       <div id="content-connection" class="tab-content active">
-        <div class="card" id="connection-card">
         <div class="section">
           <label for="port">WebSocket Server Port</label>
           <div style="display: flex; gap: 8px">
@@ -227,33 +207,24 @@
 
         <div class="section">
           <label for="channel">Channel</label>
-          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <div style="display: flex; gap: 8px">
             <input
               type="text"
               id="channel"
               placeholder="e.g. my-weekly-channel"
             />
             <button id="btn-join-channel" class="secondary">Join</button>
-            <button id="btn-copy-channel" class="secondary mini-btn">Copy</button>
-            <button id="btn-regenerate-channel" class="secondary mini-btn">Regenerate</button>
           </div>
-          <div id="settings-hint" class="muted hidden">Settings saved for next time</div>
         </div>
 
-        <div id="connection-status" class="status disconnected">Not connected to Cursor MCP server</div>
+        <div id="connection-status" class="status disconnected">
+          Not connected to Cursor MCP server
+        </div>
 
         <div class="section">
           <button id="btn-disconnect" class="secondary" disabled>
             Disconnect
           </button>
-        </div>
-        
-        <div id="cli-snippet-container" class="section hidden">
-          <div style="display:flex; justify-content: space-between; align-items:center; gap:8px; margin-bottom:6px;">
-            <div class="muted">CLI Snippet</div>
-            <button id="btn-copy-cli" class="secondary mini-btn">Copy</button>
-          </div>
-          <div id="cli-snippet" class="snippet"></div>
         </div>
         
         <!-- Add Progress Bar Section -->
@@ -267,7 +238,6 @@
             <div id="progress-status">Not started</div>
             <div id="progress-percentage">0%</div>
           </div>
-        </div>
         </div>
       </div>
 
@@ -311,12 +281,6 @@
       const disconnectButton = document.getElementById("btn-disconnect");
       const channelInput = document.getElementById("channel");
       const joinChannelButton = document.getElementById("btn-join-channel");
-      const copyChannelButton = document.getElementById("btn-copy-channel");
-      const regenerateChannelButton = document.getElementById("btn-regenerate-channel");
-      const settingsHint = document.getElementById("settings-hint");
-      const cliSnippet = document.getElementById("cli-snippet");
-      const cliSnippetContainer = document.getElementById("cli-snippet-container");
-      const cliCopyButton = document.getElementById("btn-copy-cli");
       const connectionStatus = document.getElementById("connection-status");
 
       // Tabs
@@ -334,30 +298,19 @@
       function updateConnectionStatus(isConnected, message) {
         state.connected = isConnected;
         connectionStatus.innerHTML =
-          message || (isConnected ? "Connected to Cursor MCP server" : "Not connected to Cursor MCP server");
-        // Badge style class
-        let badgeClass = 'status ';
-        if (!isConnected && /connecting/i.test(String(message))) {
-          badgeClass += 'connecting';
-        } else {
-          badgeClass += isConnected ? 'connected' : 'disconnected';
-        }
-        connectionStatus.className = badgeClass;
+          message ||
+          (isConnected
+            ? "Connected to Cursor MCP server"
+            : "Not connected to Cursor MCP server");
+        connectionStatus.className = `status ${
+          isConnected ? "connected" : "disconnected"
+        }`;
 
         connectButton.disabled = isConnected;
         disconnectButton.disabled = !isConnected;
         portInput.disabled = isConnected;
-        channelInput.disabled = false; // always editable
+        channelInput.disabled = !isConnected ? false : false; // allow channel change even when connected
         joinChannelButton.disabled = !isConnected;
-
-        // Update CLI snippet visibility
-        if (isConnected && state.channel) {
-          const cmd = `node scripts/run_weekly_poster.js --channel ${state.channel} --content ./docx2json/250818_summer_break_content.json`;
-          cliSnippet.textContent = cmd;
-          cliSnippetContainer.classList.remove('hidden');
-        } else {
-          cliSnippetContainer.classList.add('hidden');
-        }
       }
 
       // Connect to WebSocket server
@@ -377,11 +330,10 @@
             if (!desired && state.channel) desired = state.channel;
             if (!desired) desired = generateChannelName();
             console.log("Joining channel:", desired);
-          state.channel = desired;
+            state.channel = desired;
 
-          // Persist channel via plugin clientStorage
-          parent.postMessage({ pluginMessage: { type: 'update-settings', channel: state.channel } }, '*');
-          showSettingsSavedHint();
+            // Persist channel via plugin clientStorage
+            parent.postMessage({ pluginMessage: { type: 'update-settings', channel: state.channel } }, '*');
 
             // Join the channel using the same format as App.tsx
             state.socket.send(
@@ -427,7 +379,6 @@
                     channelInput.value = newChan;
                     // Persist
                     parent.postMessage({ pluginMessage: { type: 'update-settings', channel: state.channel } }, '*');
-                    showSettingsSavedHint();
                     // Join new channel
                     state.socket.send(JSON.stringify({ type: 'join', channel: newChan }));
                     updateConnectionStatus(true, `Connected to server on port ${port} in channel: <strong>${newChan}</strong>`);
@@ -480,42 +431,9 @@
         state.channel = newChan;
         // Persist
         parent.postMessage({ pluginMessage: { type: 'update-settings', channel: state.channel } }, '*');
-        showSettingsSavedHint();
         state.socket.send(JSON.stringify({ type: 'join', channel: newChan }));
         updateConnectionStatus(true, `Connected to server on port ${state.serverPort} in channel: <strong>${newChan}</strong>`);
       });
-
-      // Copy current channel
-      copyChannelButton.addEventListener('click', async () => {
-        try {
-          await navigator.clipboard.writeText(String(state.channel || channelInput.value || ''));
-        } catch (e) { console.error('Clipboard error', e); }
-      });
-
-      // Regenerate channel and auto-join
-      regenerateChannelButton.addEventListener('click', async () => {
-        const newChan = generateChannelName();
-        channelInput.value = newChan;
-        state.channel = newChan;
-        parent.postMessage({ pluginMessage: { type: 'update-settings', channel: state.channel } }, '*');
-        showSettingsSavedHint();
-        if (state.connected && state.socket) {
-          state.socket.send(JSON.stringify({ type: 'join', channel: newChan }));
-          updateConnectionStatus(true, `Connected to server on port ${state.serverPort} in channel: <strong>${newChan}</strong>`);
-        }
-      });
-
-      // Copy CLI snippet
-      cliCopyButton.addEventListener('click', async () => {
-        try { await navigator.clipboard.writeText(cliSnippet.textContent || ''); } catch(e) { console.error('Clipboard error', e); }
-      });
-
-      function showSettingsSavedHint() {
-        try {
-          settingsHint.classList.remove('hidden');
-          setTimeout(()=> settingsHint.classList.add('hidden'), 2000);
-        } catch {}
-      }
 
       // Disconnect from websocket server
       function disconnectFromServer() {
