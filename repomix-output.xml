@@ -124,6 +124,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": null,
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0001",
       "group_seq": 1,
       "group_len": 1,
@@ -140,6 +141,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": "近年来最大规模的两个月就业数据下修（除疫情期间外）令市场措手不及",
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0002",
       "group_seq": 1,
       "group_len": 2,
@@ -151,7 +153,10 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_8ec9cb9ae6e9"
       },
       "title": null,
-      "credit": "Source: Bloomberg",
+      "credit": "Bloomberg",
+      "credit_tokens": [
+        "Bloomberg"
+      ],
       "group_id": "grp_0002",
       "group_seq": 2,
       "group_len": 2,
@@ -168,6 +173,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": "多项领先指标显示就业市场仍有下行压力",
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0003",
       "group_seq": 1,
       "group_len": 2,
@@ -179,7 +185,10 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_d4ca6e3b06c4"
       },
       "title": null,
-      "credit": "Source: Bloomberg",
+      "credit": "Bloomberg",
+      "credit_tokens": [
+        "Bloomberg"
+      ],
       "group_id": "grp_0003",
       "group_seq": 2,
       "group_len": 2,
@@ -200,6 +209,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": "2 年期收益率遭遇近年来最大单日跌幅之一",
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0004",
       "group_seq": 1,
       "group_len": 2,
@@ -211,7 +221,10 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_b6a9fd5b0797"
       },
       "title": null,
-      "credit": "Source: Bloomberg",
+      "credit": "Bloomberg",
+      "credit_tokens": [
+        "Bloomberg"
+      ],
       "group_id": "grp_0004",
       "group_seq": 2,
       "group_len": 2,
@@ -224,6 +237,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": "利率市场定价反映年底前 60 个基点左右的降息预期",
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0005",
       "group_seq": 1,
       "group_len": 2,
@@ -235,7 +249,10 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_f8dc418031b4"
       },
       "title": null,
-      "credit": "Source: Bloomberg",
+      "credit": "Bloomberg",
+      "credit_tokens": [
+        "Bloomberg"
+      ],
       "group_id": "grp_0005",
       "group_seq": 2,
       "group_len": 2,
@@ -252,6 +269,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": null,
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0006",
       "group_seq": 1,
       "group_len": 2,
@@ -263,7 +281,12 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_9531c10ca8b1"
       },
       "title": null,
-      "credit": "Source: Truth Social, WSJ, Bloomberg",
+      "credit": "Truth Social, WSJ, Bloomberg",
+      "credit_tokens": [
+        "Truth Social",
+        "WSJ",
+        "Bloomberg"
+      ],
       "group_id": "grp_0006",
       "group_seq": 2,
       "group_len": 2,
@@ -279,7 +302,10 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_1e4a81f54c2d"
       },
       "title": "美联储在最新一次会议上承认商品通胀压力正在上升",
-      "credit": "Source: Fortune",
+      "credit": "Fortune",
+      "credit_tokens": [
+        "Fortune"
+      ],
       "group_id": "grp_0007",
       "group_seq": 1,
       "group_len": 1,
@@ -304,6 +330,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": "随著关税收入增加，美国财政收支在近几个月大幅改善",
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0008",
       "group_seq": 1,
       "group_len": 2,
@@ -315,7 +342,11 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_aaea9d097d0b"
       },
       "title": null,
-      "credit": "Source: ABC News, CNBC",
+      "credit": "ABC News, CNBC",
+      "credit_tokens": [
+        "ABC News",
+        "CNBC"
+      ],
       "group_id": "grp_0008",
       "group_seq": 2,
       "group_len": 2,
@@ -328,6 +359,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": "资本大规模回流美国市场，美元大幅反弹",
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0009",
       "group_seq": 1,
       "group_len": 2,
@@ -339,7 +371,10 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_f061deb8628d"
       },
       "title": null,
-      "credit": "Source: Spectra Markets",
+      "credit": "Spectra Markets",
+      "credit_tokens": [
+        "Spectra Markets"
+      ],
       "group_id": "grp_0009",
       "group_seq": 2,
       "group_len": 2,
@@ -355,7 +390,10 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_ac89c7f55c68"
       },
       "title": "疲乏的股市最终选择关注 Amazon/Coinbase 不如预期的业绩，而非 Meta 和 Microsoft 的强劲表现",
-      "credit": "Source: Spectra Markets",
+      "credit": "Spectra Markets",
+      "credit_tokens": [
+        "Spectra Markets"
+      ],
       "group_id": "grp_0010",
       "group_seq": 1,
       "group_len": 1,
@@ -368,6 +406,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": "股市中散户投机情绪仍然非常高涨",
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0011",
       "group_seq": 1,
       "group_len": 1,
@@ -388,6 +427,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": "Coinbase 股价自 7 月高点回落 25%，拖累整体加密货币市场情绪走弱",
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0012",
       "group_seq": 1,
       "group_len": 2,
@@ -399,7 +439,11 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_5b0997e0456d"
       },
       "title": null,
-      "credit": "Source: Bloomberg, Messari",
+      "credit": "Bloomberg, Messari",
+      "credit_tokens": [
+        "Bloomberg",
+        "Messari"
+      ],
       "group_id": "grp_0012",
       "group_seq": 2,
       "group_len": 2,
@@ -411,7 +455,10 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_180933dec0c2"
       },
       "title": "BTC 多头期货清算超过 10 亿美元，结束了艰难的一周",
-      "credit": "Source: Bloomberg",
+      "credit": "Bloomberg",
+      "credit_tokens": [
+        "Bloomberg"
+      ],
       "group_id": "grp_0013",
       "group_seq": 1,
       "group_len": 1,
@@ -428,6 +475,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": "由于整体市场风险情绪降温，ETF 在上周五出现显著的资金流出",
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0014",
       "group_seq": 1,
       "group_len": 2,
@@ -439,7 +487,10 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_5e4e9c09229a"
       },
       "title": null,
-      "credit": "Source: Farside Investors",
+      "credit": "Farside Investors",
+      "credit_tokens": [
+        "Farside Investors"
+      ],
       "group_id": "grp_0014",
       "group_seq": 2,
       "group_len": 2,
@@ -456,6 +507,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": "次级市场流动性的显著改善，是机构化进程的一个重要指标",
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0015",
       "group_seq": 1,
       "group_len": 2,
@@ -467,7 +519,10 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_b88b3366afae"
       },
       "title": null,
-      "credit": "Source: Kaiko",
+      "credit": "Kaiko",
+      "credit_tokens": [
+        "Kaiko"
+      ],
       "group_id": "grp_0015",
       "group_seq": 2,
       "group_len": 2,
@@ -633,6 +688,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": null,
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0001",
       "group_seq": 1,
       "group_len": 1,
@@ -645,6 +701,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": "当前市场情绪",
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0002",
       "group_seq": 1,
       "group_len": 2,
@@ -656,7 +713,11 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_0b2aa77c3510"
       },
       "title": null,
-      "credit": "Source: FT, Reddit",
+      "credit": "FT, Reddit",
+      "credit_tokens": [
+        "FT",
+        "Reddit"
+      ],
       "group_id": "grp_0002",
       "group_seq": 2,
       "group_len": 2,
@@ -673,6 +734,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": "通胀指标难以软化至2%目标以下",
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0003",
       "group_seq": 1,
       "group_len": 1,
@@ -688,7 +750,10 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_09aa1fc6253d"
       },
       "title": "密西根大学通胀预期：短期与长期指标均意外上行",
-      "credit": "Source: Bloomberg",
+      "credit": "Bloomberg",
+      "credit_tokens": [
+        "Bloomberg"
+      ],
       "group_id": "grp_0004",
       "group_seq": 1,
       "group_len": 1,
@@ -700,7 +765,11 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_b2b73f4d8b19"
       },
       "title": "财长贝森特近期宣称“中性”利率应低约150个基点",
-      "credit": "Source: Forbes, CNBC",
+      "credit": "Forbes, CNBC",
+      "credit_tokens": [
+        "Forbes",
+        "CNBC"
+      ],
       "group_id": "grp_0005",
       "group_seq": 1,
       "group_len": 1,
@@ -716,7 +785,10 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_88ea3fc64567"
       },
       "title": "强劲PPI后，市场仅定价9月会议降息一次（25基点）的可能性低于90%",
-      "credit": "Source: Citi",
+      "credit": "Citi",
+      "credit_tokens": [
+        "Citi"
+      ],
       "group_id": "grp_0006",
       "group_seq": 1,
       "group_len": 1,
@@ -733,6 +805,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": "过去一周政府的SBR相关头条令市场失望",
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0007",
       "group_seq": 1,
       "group_len": 2,
@@ -744,7 +817,11 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_78ec0ebdafd6"
       },
       "title": null,
-      "credit": "Source: Yahoo Finance, Arkham",
+      "credit": "Yahoo Finance, Arkham",
+      "credit_tokens": [
+        "Yahoo Finance",
+        "Arkham"
+      ],
       "group_id": "grp_0007",
       "group_seq": 2,
       "group_len": 2,
@@ -760,7 +837,11 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_be731c0a03dc"
       },
       "title": "BTC & ETH ETF 上周资金流入创纪录",
-      "credit": "Source: Bloomberg, X",
+      "credit": "Bloomberg, X",
+      "credit_tokens": [
+        "Bloomberg",
+        "X"
+      ],
       "group_id": "grp_0008",
       "group_seq": 1,
       "group_len": 1,
@@ -773,6 +854,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": "主要由ETH流入激增170亿美元推动",
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0009",
       "group_seq": 1,
       "group_len": 1,
@@ -793,6 +875,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": "美国消费者对股价的看涨程度 vs 自身收入前景达历史之最",
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0010",
       "group_seq": 1,
       "group_len": 2,
@@ -804,7 +887,10 @@ gitdir: ../.git/modules/docx2json
         "asset_id": "img_833164888c66"
       },
       "title": null,
-      "credit": "Source: DB",
+      "credit": "DB",
+      "credit_tokens": [
+        "DB"
+      ],
       "group_id": "grp_0010",
       "group_seq": 2,
       "group_len": 2,
@@ -817,6 +903,7 @@ gitdir: ../.git/modules/docx2json
       },
       "title": "基金经理现金水准降至周期低点",
       "credit": null,
+      "credit_tokens": null,
       "group_id": "grp_0011",
       "group_seq": 1,
       "group_len": 1,
@@ -1176,6 +1263,7 @@ class GroupCandidate:
     layout: str  # 'row' or 'column'
     title: Optional[str] = None
     credit: Optional[str] = None
+    credit_tokens: Optional[List[str]] = None
     reason: Optional[str] = None  # Debug info
 
 # --------- Configuration and Helpers ----------
@@ -1242,16 +1330,32 @@ def sha256_of_file(path: str) -> str:
             h.update(chunk)
     return h.hexdigest()
 
+def normalize_credits(text: str) -> Tuple[str, List[str]]:
+    """
+    Normalize figure credits to raw credits (no leading label).
+    - Strip leading prefix using regex: ^(?:source|来源|來源)\s*[:：]\s* (case-insensitive)
+    - Split by separators [、，,;；／/|], trim tokens, drop empties, de-duplicate preserving order
+    - Return (joined_str, tokens) where joined_str uses ", " as separator
+    """
+    if not text:
+        return "", []
+    # Strip known prefixes ("Source:" / "来源：" / "來源：")
+    stripped = re.sub(r'^\s*(?:source|来源|來源)\s*[:：]\s*', '', text, flags=re.I)
+    # Split by common separators and clean tokens
+    raw_parts = re.split(r'[、，,;；／/|]+', stripped)
+    seen = set()
+    tokens: List[str] = []
+    for part in raw_parts:
+        tok = part.strip().strip(' .。；;，,')
+        if tok and tok not in seen:
+            seen.add(tok)
+            tokens.append(tok)
+    return (", ".join(tokens), tokens)
+
 def normalize_credit(text: str) -> str:
-    if not text: return ""
-    # Remove 来源:/來源:/Source: (both half-width and full-width colons)
-    text = re.sub(r'^\s*(来源|來源|Source)\s*[：:]\s*', '', text, flags=re.I)
-    # Remove leading/trailing spaces and ending punctuation
-    text = text.strip().rstrip('.,;，。；')
-    # Add unified "Source: " prefix
-    if text:
-        text = f"Source: {text}"
-    return text
+    """Backward-compatible wrapper returning only the normalized credit string"""
+    s, _ = normalize_credits(text)
+    return s
 
 def is_short_title(text: str, max_len: int) -> bool:
     """Check if text could be a figure title"""
@@ -1317,24 +1421,9 @@ def extract_title_content(text: str) -> str:
     return text
 
 def extract_source_content(text: str) -> str:
-    """提取来源内容（去除前缀标记，统一添加Source前缀）"""
-    if not text:
-        return ""
-    text = text.strip()
-    
-    # 定义所有可能的来源前缀（按长度排序，长的优先）
-    prefixes = [
-        '来源：', '来源:', '來源：', '來源:', 'Source：', 'Source:',
-        '来源 ', '來源 ', 'Source ', '来源', '來源', 'Source'
-    ]
-    
-    for prefix in prefixes:
-        if text.lower().startswith(prefix.lower()):
-            content = text[len(prefix):].strip()
-            # Add unified "Source: " prefix
-            return f"Source: {content}" if content else ""
-    
-    return text
+    """提取来源内容（去除前缀标记；返回原始credits，不加任何前缀）"""
+    s, _ = normalize_credits(text)
+    return s
 
 DOC_TITLE_RE = re.compile(r'^\s*(\d{6})\s*-\s*(.+)')
 def parse_date_from_yyMMdd(yyMMdd: str) -> Optional[str]:
@@ -1487,6 +1576,16 @@ def extract_and_hash_images(figures: List[FigureCandidate], docx_path: str, asse
     
     # Ensure assets directory exists
     os.makedirs(assets_dir, exist_ok=True)
+    # Build relative prefix for asset filenames (relative to 'assets' root if possible)
+    try:
+        assets_root_abs = os.path.abspath('assets')
+        assets_dir_abs = os.path.abspath(assets_dir)
+        rel_prefix = os.path.relpath(assets_dir_abs, assets_root_abs)
+        if rel_prefix.startswith('..'):
+            # Not under 'assets' root; fallback to basename
+            rel_prefix = os.path.basename(assets_dir)
+    except Exception:
+        rel_prefix = os.path.basename(assets_dir)
     
     # Extract images from DOCX ZIP
     try:
@@ -1525,7 +1624,7 @@ def extract_and_hash_images(figures: List[FigureCandidate], docx_path: str, asse
                 if asset_id not in assets:
                     assets[asset_id] = {
                         "asset_id": asset_id,
-                        "filename": os.path.join(os.path.basename(assets_dir), output_filename),
+                        "filename": os.path.join(rel_prefix, output_filename),
                         "sha256": sha256_hash
                     }
     
@@ -1670,9 +1769,12 @@ def assign_titles_and_credits(groups: List[GroupCandidate], para_texts: List[str
                 if 0 <= check_idx < len(para_texts):
                     text = para_texts[check_idx]
                     if text and is_source_paragraph(text):
-                        credit_content = extract_source_content(text)
-                        if credit_content:
-                            credit = safe_traditional_to_simplified(credit_content, converter) if converter else credit_content
+                        credit_str, credit_tokens = normalize_credits(text)
+                        if credit_tokens:
+                            if converter:
+                                credit_tokens = [safe_traditional_to_simplified(t, converter) for t in credit_tokens]
+                            credit = ", ".join(credit_tokens)
+                            group.credit_tokens = credit_tokens
                             break
         
         # Fallback to legacy heuristic method if explicit markers not found
@@ -1695,9 +1797,12 @@ def assign_titles_and_credits(groups: List[GroupCandidate], para_texts: List[str
                     text = para_texts[check_idx]
                     # Skip explicit markers (to avoid double processing)
                     if text and not is_title_paragraph(text) and not is_source_paragraph(text) and is_potential_credit_line(text):
-                        credit = normalize_credit(text)
-                        if converter:
-                            credit = safe_traditional_to_simplified(credit, converter)
+                        credit_str, credit_tokens = normalize_credits(text)
+                        if credit_tokens:
+                            if converter:
+                                credit_tokens = [safe_traditional_to_simplified(t, converter) for t in credit_tokens]
+                            credit = ", ".join(credit_tokens)
+                            group.credit_tokens = credit_tokens
                         break
         
         group.title = title
@@ -1733,8 +1838,15 @@ def convert_docx_to_ncj(docx_path: str, config: Config) -> Dict[str, Any]:
     # Extract figures and paragraph texts
     figures, para_texts, page_width_emu = extract_figures_from_docx(doc, docx_path, converter)
     
-    # Extract and hash real image assets
-    assets = extract_and_hash_images(figures, docx_path, config.assets_dir)
+    # Extract and hash real image assets (per-doc subdirectory under assets_dir)
+    doc_base = os.path.splitext(os.path.basename(docx_path))[0]
+    # Build slug: lowercase, non [0-9a-z] -> '_', collapse '_'
+    tmp = doc_base.lower()
+    tmp = re.sub(r'[^0-9a-z]+', '_', tmp)
+    tmp = re.sub(r'_+', '_', tmp).strip('_')
+    doc_slug = (tmp or "doc")
+    per_doc_assets_dir = os.path.join(config.assets_dir, doc_slug)
+    assets = extract_and_hash_images(figures, docx_path, per_doc_assets_dir)
     
     # Group figures
     groups = group_figures(figures, para_texts, page_width_emu, config)
@@ -1832,6 +1944,7 @@ def convert_docx_to_ncj(docx_path: str, config: Config) -> Dict[str, Any]:
                     "image": {"asset_id": asset_id},
                     "title": group_starting_here.title if seq == 0 else None,  # Title on first figure
                     "credit": group_starting_here.credit if seq == group_len - 1 else None,  # Credit on last figure
+                    "credit_tokens": group_starting_here.credit_tokens if seq == group_len - 1 else None,
                     "group_id": group_id,
                     "group_seq": seq + 1,
                     "group_len": group_len,
@@ -1879,8 +1992,8 @@ def main():
     parser = argparse.ArgumentParser(description='Convert DOCX to NCJ with advanced figure grouping')
     parser.add_argument('input', help='Input DOCX file')
     parser.add_argument('--out', default='content.json', help='Output JSON file')
-    parser.add_argument('--assets-dir', default='assets/media', 
-                       help='Directory to extract image assets')
+    parser.add_argument('--assets-dir', default='assets', 
+                       help='Directory to extract image assets (per-doc subfolders)')
     parser.add_argument('--max_title_len', type=int, default=60, 
                        help='Maximum length for title detection')
     parser.add_argument('--max_gap_paras', type=int, default=1,
@@ -1889,10 +2002,16 @@ def main():
                        help='Page width ratio for row layout detection')
     parser.add_argument('--debug', action='store_true',
                        help='Include debug information in output')
-    parser.add_argument('--traditional-to-simplified', action='store_true',
-                       help='Convert traditional Chinese to simplified Chinese')
+    parser.add_argument('--traditional-to-simplified', dest='traditional_to_simplified',
+                       action='store_true', default=True,
+                       help='Convert traditional Chinese to simplified Chinese (default: on)')
+    parser.add_argument('--no-traditional-to-simplified', dest='traditional_to_simplified',
+                       action='store_false',
+                       help='Disable traditional→simplified conversion')
     parser.add_argument('--no-explicit-markers', action='store_true',
                        help='Disable explicit title/source marker detection (use legacy heuristic only)')
+    parser.add_argument('--self-test-credits', action='store_true',
+                       help='Run credit normalization self-test and exit')
     
     args = parser.parse_args()
     
@@ -1906,6 +2025,19 @@ def main():
     config.traditional_to_simplified = args.traditional_to_simplified
     config.use_explicit_markers = not args.no_explicit_markers  # Default: use explicit markers
     
+    # Self test for credits normalization
+    if args.self_test_credits:
+        samples = [
+            "Source: FT, Reddit",
+            "来源：FT；WSJ；FT",
+            "來源: BBC／Reuters | FT",
+            " source ：  Bloomberg  ,  Bloomberg  ,  Nikkei  ",
+        ]
+        for s in samples:
+            joined, tokens = normalize_credits(s)
+            print(json.dumps({"input": s, "credit": joined, "tokens": tokens}, ensure_ascii=False))
+        return
+
     # Convert
     try:
         ncj = convert_docx_to_ncj(args.input, config)
@@ -6391,6 +6523,146 @@ console.log(`WebSocket server running on ${config.websocket.host}:${server.port}
 console.log(`Config loaded from: ${CONFIG_PATH}`);
 </file>
 
+<file path="src/static-server.js">
+#!/usr/bin/env node
+
+import http from 'http';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load configuration
+const CONFIG_PATH = path.join(__dirname, '../config/server-config.json');
+const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+
+// Backward-compatible configuration resolution
+const staticCfg = config.static_server || {};
+const PORT = process.env.STATIC_PORT || staticCfg.port;
+const HOST = process.env.STATIC_HOST || staticCfg.host;
+const PUBLIC_ROUTE = staticCfg.publicRoute || '/assets';
+
+// Determine base directory:
+// 1) Prefer explicit baseDir (e.g., ../docx2json/assets)
+// 2) Fallback to parent of legacy assets_path (which may include dataset subdir)
+// 3) Final fallback to ../docx2json/assets
+const legacyAssetsPath = staticCfg.assets_path
+  ? path.resolve(__dirname, staticCfg.assets_path)
+  : null;
+const BASE_DIR = path.resolve(
+  __dirname,
+  staticCfg.baseDir || (legacyAssetsPath ? path.join(legacyAssetsPath, '..') : '../docx2json/assets')
+);
+
+const server = http.createServer((req, res) => {
+  // Enable CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200);
+    res.end();
+    return;
+  }
+
+  // Parse URL path
+  const urlPath = new URL(req.url, `http://localhost:${PORT}`).pathname;
+
+  if (urlPath.startsWith(PUBLIC_ROUTE + '/')) {
+    // Strip public route prefix and decode
+    const relUrlPath = decodeURIComponent(urlPath.slice(PUBLIC_ROUTE.length + 1));
+
+    // Normalize and resolve to prevent path traversal
+    const normalizedRel = path.normalize(relUrlPath);
+    const absolutePath = path.resolve(BASE_DIR, normalizedRel);
+    const relToBase = path.relative(BASE_DIR, absolutePath);
+
+    // Security: ensure the final path stays within BASE_DIR
+    if (relToBase.startsWith('..') || path.isAbsolute(relToBase)) {
+      res.writeHead(403);
+      res.end('Forbidden');
+      return;
+    }
+
+    // Check file existence
+    if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) {
+      res.writeHead(404);
+      res.end('Not Found');
+      return;
+    }
+
+    // Content-Type resolution
+    const ext = path.extname(absolutePath).toLowerCase();
+    const contentType =
+      ext === '.png' ? 'image/png' :
+      ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
+      ext === '.gif' ? 'image/gif' :
+      ext === '.webp' ? 'image/webp' :
+      'application/octet-stream';
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=3600'); // 1 hour cache
+
+    const stream = fs.createReadStream(absolutePath);
+    stream.pipe(res);
+
+    console.log(`Served: ${path.relative(BASE_DIR, absolutePath)} (${contentType})`);
+  } else {
+    res.writeHead(404);
+    res.end('Not Found');
+  }
+});
+
+server.listen(PORT, HOST, () => {
+  console.log(`Static file server running on http://${HOST}:${PORT}`);
+  console.log(`Public route: ${PUBLIC_ROUTE}`);
+  console.log(`Serving base dir: ${BASE_DIR}`);
+  console.log(`Config loaded from: ${CONFIG_PATH}`);
+});
+</file>
+
+<file path="package.json">
+{
+  "name": "cursor-talk-to-figma-mcp",
+  "description": "Cursor Talk to Figma MCP",
+  "version": "0.3.2",
+  "module": "dist/server.js",
+  "main": "dist/server.js",
+  "bin": {
+    "cursor-talk-to-figma-mcp": "dist/server.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "type": "module",
+  "scripts": {
+    "start": "bun run dist/server.js",
+    "socket": "bun run src/socket.ts",
+    "setup": "./scripts/setup.sh",
+    "build": "tsup",
+    "build:watch": "tsup --watch",
+    "dev": "bun run build:watch",
+    "pub:release": "bun run build && npm publish"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "bun-types": "^1.2.5",
+    "tsup": "^8.4.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.13.1",
+    "uuid": "latest",
+    "ws": "latest",
+    "zod": "3.22.4"
+  }
+}
+</file>
+
 <file path="scripts/run_weekly_poster.js">
 #!/usr/bin/env node
 
@@ -6739,8 +7011,24 @@ class WeeklyPosterRunner {
     const figures = group.figures || [];
     const hasTitle = figures.some(f => !!f.title);
     const firstTitle = (figures.find(f => f.title)?.title) || '';
-    const hasSource = figures.some(f => !!f.credit);
-    const firstCredit = (figures.find(f => f.credit)?.credit) || '';
+    // Aggregate credits across figures → unique tokens
+    const sCfg = this.mapping.source || {};
+    const prefix = sCfg.prefix ?? 'Source: ';
+    const mode = sCfg.mode || 'inline'; // inline | label
+    const splitRe = /[、，,;；／/|]+/;
+    const stripPrefix = (t) => String(t||'').replace(/^(?:source|来源)\s*[:：]\s*/i, '').trim();
+    const creditsTokens = [];
+    const seen = new Set();
+    for (const f of figures) {
+      const raw = String(f?.credit || '');
+      if (!raw) continue;
+      for (const tok of raw.split(splitRe)) {
+        const clean = stripPrefix(tok);
+        const key = clean.toLowerCase();
+        if (clean && !seen.has(key)) { seen.add(key); creditsTokens.push(clean); }
+      }
+    }
+    const hasSource = creditsTokens.length > 0;
     const assetPath = this.mapping.images?.asset_path || 'image.asset_id';
     const images = figures.map(f => ({ asset_id: this.getByPath(f, assetPath) })).filter(x => !!x.asset_id);
 
@@ -6748,16 +7036,44 @@ class WeeklyPosterRunner {
     const titleName = slots.figure?.title_text || 'titleText';
     const titleId = await this.dfsFindChildIdByName(instanceId, titleName);
     if (titleId) await this.setText(titleId, firstTitle);
-    // source
+    // source (renderer-owned labeling)
     const sourceName = slots.figure?.source_text || 'sourceText';
     const sourceId = await this.dfsFindChildIdByName(instanceId, sourceName);
-    if (sourceId) await this.setText(sourceId, firstCredit ? `Source: ${firstCredit}` : '');
+    if (sourceId) {
+      let text = '';
+      if (hasSource) {
+        const inlineText = creditsTokens.join(', ');
+        text = (mode === 'inline') ? (prefix + inlineText) : inlineText;
+        // collapse duplicate prefixes
+        text = text.replace(/^(?:Source:\s*)+/i, 'Source: ');
+      }
+      await this.sendCommand('set_text_content', { nodeId: sourceId, text });
+      const autoSize = (this.mapping.source?.auto_size || 'HEIGHT');
+      await this.sendCommand('set_text_auto_resize', { nodeId: sourceId, autoResize: autoSize });
+      if (autoSize === 'HEIGHT') {
+        const containerName = slots.figure?.source || 'slot:SOURCE';
+        const containerId = await this.dfsFindChildIdByName(instanceId, containerName);
+        if (containerId) {
+          const box = await this.sendCommand('get_node_info', { nodeId: containerId });
+          const srcInfo = await this.sendCommand('get_node_info', { nodeId: sourceId });
+          const w = box?.absoluteBoundingBox?.width;
+          const h = srcInfo?.absoluteBoundingBox?.height;
+          if (w && h) {
+            await this.sendCommand('resize_node', { nodeId: sourceId, width: w, height: h });
+            console.log(`📐 Source resized width=${w}`);
+          }
+        }
+      }
+      console.log(`📄 Source mode=${mode} text="${text}" credits=${JSON.stringify(creditsTokens)}`);
+    }
     // visibility
     const props = {};
     const titleProp = this.mapping.title?.visible_prop || 'showTitle';
     const sourceProp = this.mapping.source?.visible_prop || 'showSource';
     props[titleProp] = !!hasTitle;
     props[sourceProp] = !!hasSource;
+    // optional label visibility (best-effort)
+    props['showSourceLabel'] = (mode === 'label');
     const imgSlots = (slots.images || this.mapping.anchors.image_slots || []);
     for (let i = 2; i <= Math.min(imgSlots.length, this.mapping.images?.max_images || imgSlots.length); i++) {
       const slotName = imgSlots[i-1];
@@ -6785,6 +7101,24 @@ class WeeklyPosterRunner {
           await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FILL', opacity: 1 });
         } catch (e) {
           console.warn(`⚠️ Base64 fallback failed for ${images[i].asset_id}: ${e.message}`);
+        }
+      }
+    }
+    // Fallback: fill image grid when named slots are absent
+    if (images.length > 0 && imageNodeNames.length === 0) {
+      const gridName = slots.figure?.image_grid || 'slot:IMAGE_GRID';
+      const gridId = await this.dfsFindChildIdByName(instanceId, gridName);
+      if (gridId) {
+        console.log('🔍 Fallback: scanned IMAGE_GRID to place images');
+        const gridInfo = await this.sendCommand('get_node_info', { nodeId: gridId });
+        const targets = (gridInfo.children || []).slice(0, images.length);
+        for (let i = 0; i < targets.length; i++) {
+          const url = buildAssetUrl(this.staticUrl, this.content.assets || [], images[i].asset_id, this.contentPath);
+          try {
+            if (await this.httpHeadOk(url)) {
+              await this.sendCommand('set_image_fill', { nodeId: targets[i].id, imageUrl: url, scaleMode: 'FILL', opacity: 1 });
+            }
+          } catch {}
         }
       }
     }
@@ -6892,107 +7226,6 @@ async function main() {
 }
 
 main();
-</file>
-
-<file path="src/static-server.js">
-#!/usr/bin/env node
-
-import http from 'http';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Load configuration
-const CONFIG_PATH = path.join(__dirname, '../config/server-config.json');
-const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-
-// Backward-compatible configuration resolution
-const staticCfg = config.static_server || {};
-const PORT = process.env.STATIC_PORT || staticCfg.port;
-const HOST = process.env.STATIC_HOST || staticCfg.host;
-const PUBLIC_ROUTE = staticCfg.publicRoute || '/assets';
-
-// Determine base directory:
-// 1) Prefer explicit baseDir (e.g., ../docx2json/assets)
-// 2) Fallback to parent of legacy assets_path (which may include dataset subdir)
-// 3) Final fallback to ../docx2json/assets
-const legacyAssetsPath = staticCfg.assets_path
-  ? path.resolve(__dirname, staticCfg.assets_path)
-  : null;
-const BASE_DIR = path.resolve(
-  __dirname,
-  staticCfg.baseDir || (legacyAssetsPath ? path.join(legacyAssetsPath, '..') : '../docx2json/assets')
-);
-
-const server = http.createServer((req, res) => {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (req.method === 'OPTIONS') {
-    res.writeHead(200);
-    res.end();
-    return;
-  }
-
-  // Parse URL path
-  const urlPath = new URL(req.url, `http://localhost:${PORT}`).pathname;
-
-  if (urlPath.startsWith(PUBLIC_ROUTE + '/')) {
-    // Strip public route prefix and decode
-    const relUrlPath = decodeURIComponent(urlPath.slice(PUBLIC_ROUTE.length + 1));
-
-    // Normalize and resolve to prevent path traversal
-    const normalizedRel = path.normalize(relUrlPath);
-    const absolutePath = path.resolve(BASE_DIR, normalizedRel);
-    const relToBase = path.relative(BASE_DIR, absolutePath);
-
-    // Security: ensure the final path stays within BASE_DIR
-    if (relToBase.startsWith('..') || path.isAbsolute(relToBase)) {
-      res.writeHead(403);
-      res.end('Forbidden');
-      return;
-    }
-
-    // Check file existence
-    if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) {
-      res.writeHead(404);
-      res.end('Not Found');
-      return;
-    }
-
-    // Content-Type resolution
-    const ext = path.extname(absolutePath).toLowerCase();
-    const contentType =
-      ext === '.png' ? 'image/png' :
-      ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
-      ext === '.gif' ? 'image/gif' :
-      ext === '.webp' ? 'image/webp' :
-      'application/octet-stream';
-
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Cache-Control', 'public, max-age=3600'); // 1 hour cache
-
-    const stream = fs.createReadStream(absolutePath);
-    stream.pipe(res);
-
-    console.log(`Served: ${path.relative(BASE_DIR, absolutePath)} (${contentType})`);
-  } else {
-    res.writeHead(404);
-    res.end('Not Found');
-  }
-});
-
-server.listen(PORT, HOST, () => {
-  console.log(`Static file server running on http://${HOST}:${PORT}`);
-  console.log(`Public route: ${PUBLIC_ROUTE}`);
-  console.log(`Serving base dir: ${BASE_DIR}`);
-  console.log(`Config loaded from: ${CONFIG_PATH}`);
-});
 </file>
 
 <file path="src/cursor_mcp_plugin/ui.html">
@@ -7724,157 +7957,6 @@ server.listen(PORT, HOST, () => {
 </html>
 </file>
 
-<file path="package.json">
-{
-  "name": "cursor-talk-to-figma-mcp",
-  "description": "Cursor Talk to Figma MCP",
-  "version": "0.3.2",
-  "module": "dist/server.js",
-  "main": "dist/server.js",
-  "bin": {
-    "cursor-talk-to-figma-mcp": "dist/server.js"
-  },
-  "files": [
-    "dist",
-    "README.md"
-  ],
-  "type": "module",
-  "scripts": {
-    "start": "bun run dist/server.js",
-    "socket": "bun run src/socket.ts",
-    "setup": "./scripts/setup.sh",
-    "build": "tsup",
-    "build:watch": "tsup --watch",
-    "dev": "bun run build:watch",
-    "pub:release": "bun run build && npm publish"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "bun-types": "^1.2.5",
-    "tsup": "^8.4.0",
-    "typescript": "^5.0.0"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "1.13.1",
-    "uuid": "latest",
-    "ws": "latest",
-    "zod": "3.22.4"
-  }
-}
-</file>
-
-<file path="config/server-config.json">
-{
-  "websocket": {
-    "port": 3055,
-    "host": "127.0.0.1"
-  },
-  "static_server": {
-    "port": 3056,
-    "host": "127.0.0.1",
-    "assets_path": "../docx2json/assets/250818_summer_break",
-    "baseDir": "../docx2json/assets",
-    "publicRoute": "/assets"
-  },
-  "logging": {
-    "level": "info",
-    "redact_sensitive": true
-  },
-  "asset_transfer": {
-    "mode": "URL_FIRST",
-    "base64_max_size": 10240,
-    "base64_rate_limit": 30
-  },
-  "workflow": {
-    "cleanup_on_start": true,
-    "current_content_file": "250818_summer_break_content.json",
-    "content_directory": "../docx2json",
-    "mapping": {
-      "anchors": {
-        "frame": "Odaily特供海报",
-        "container": "ContentContainer",
-        "cards_stack": "Cards",
-        "header": {
-          "title": "HeaderTitle",
-          "date": "HeaderDate",
-          "month": "HeaderMonth"
-        },
-        "seeds": {
-          "frame": "Seeds",
-          "figure_instance": "FigureCard__seedInstance",
-          "body_instance": "BodyCard__seedInstance"
-        },
-        "figure_component": "FigureCard",
-        "body_component": "BodyCard",
-        "slots": {
-          "figure": {
-            "title": "slot:TITLE",
-            "title_text": "titleText",
-            "image_grid": "slot:IMAGE_GRID", 
-            "source": "slot:SOURCE",
-            "source_text": "sourceText"
-          },
-          "body": {
-            "body": "slot:BODY"
-          },
-          "images": ["imgSlot1", "imgSlot2", "imgSlot3", "imgSlot4"]
-        },
-        "image_slots": ["imgSlot1", "imgSlot2", "imgSlot3", "imgSlot4"]
-      },
-      "grouping": {
-        "group_by": "group_id",
-        "order_by": "group_seq",
-        "paragraph_attach_mode": "standalone"
-      },
-      "images": {
-        "asset_path": "image.asset_id",
-        "count_field": "group_len",
-        "max_images": 4,
-        "height_strategy": "fixed",
-        "fixed_height_px": 260,
-        "visibility_props": {
-          "imgSlot2": "showImg2",
-          "imgSlot3": "showImg3",
-          "imgSlot4": "showImg4"
-        }
-      },
-      "title": {
-        "paths": ["title"],
-        "take": "first_non_empty",
-        "text_prop": "titleText",
-        "visible_prop": "showTitle"
-      },
-      "source": {
-        "paths": ["credit"],
-        "take": "first_non_empty",
-        "text_prop": "sourceText",
-        "visible_prop": "showSource"
-      },
-      "paragraph": {
-        "component": "BodyCard",
-        "text_prop": "bodyText",
-        "text_field": "text"
-      },
-      "figure": {
-        "componentName": "FigureCard",
-        "componentId": "194:56",
-        "componentKey": "fc4afd0baa35964a92683dbd2a31fc8f5ef4cdfb"
-      },
-      "body": {
-        "componentName": "BodyCard", 
-        "componentId": "194:54",
-        "componentKey": "0c445c87a4aa0bc0be40dcfc8f5ef4cdfb"
-      },
-      "fallbacks": {
-        "title_when_missing": "",
-        "source_when_missing": "",
-        "image_when_missing": null
-      }
-    }
-  }
-}
-</file>
-
 <file path="readme.md">
 # Cursor Talk to Figma MCP
 
@@ -8199,6 +8281,121 @@ When working with the Figma MCP:
 ## License
 
 MIT
+</file>
+
+<file path="config/server-config.json">
+{
+  "websocket": {
+    "port": 3055,
+    "host": "127.0.0.1"
+  },
+  "static_server": {
+    "port": 3056,
+    "host": "127.0.0.1",
+    "assets_path": "../docx2json/assets/250818_summer_break",
+    "baseDir": "../docx2json/assets",
+    "publicRoute": "/assets"
+  },
+  "logging": {
+    "level": "info",
+    "redact_sensitive": true
+  },
+  "asset_transfer": {
+    "mode": "URL_FIRST",
+    "base64_max_size": 10240,
+    "base64_rate_limit": 30
+  },
+  "workflow": {
+    "cleanup_on_start": true,
+    "current_content_file": "250818_summer_break_content.json",
+    "content_directory": "../docx2json",
+    "mapping": {
+      "anchors": {
+        "frame": "Odaily特供海报",
+        "container": "ContentContainer",
+        "cards_stack": "Cards",
+        "header": {
+          "title": "HeaderTitle",
+          "date": "HeaderDate",
+          "month": "HeaderMonth"
+        },
+        "seeds": {
+          "frame": "Seeds",
+          "figure_instance": "FigureCard__seedInstance",
+          "body_instance": "BodyCard__seedInstance"
+        },
+        "figure_component": "FigureCard",
+        "body_component": "BodyCard",
+        "slots": {
+          "figure": {
+            "title": "slot:TITLE",
+            "title_text": "titleText",
+            "image_grid": "slot:IMAGE_GRID", 
+            "source": "slot:SOURCE",
+            "source_text": "sourceText"
+          },
+          "body": {
+            "body": "slot:BODY"
+          },
+          "images": ["imgSlot1", "imgSlot2", "imgSlot3", "imgSlot4"]
+        },
+        "image_slots": ["imgSlot1", "imgSlot2", "imgSlot3", "imgSlot4"]
+      },
+      "grouping": {
+        "group_by": "group_id",
+        "order_by": "group_seq",
+        "paragraph_attach_mode": "standalone"
+      },
+      "images": {
+        "asset_path": "image.asset_id",
+        "count_field": "group_len",
+        "max_images": 4,
+        "height_strategy": "fixed",
+        "fixed_height_px": 260,
+        "visibility_props": {
+          "imgSlot2": "showImg2",
+          "imgSlot3": "showImg3",
+          "imgSlot4": "showImg4"
+        }
+      },
+      "title": {
+        "paths": ["title"],
+        "take": "first_non_empty",
+        "text_prop": "titleText",
+        "visible_prop": "showTitle"
+      },
+      "source": {
+        "paths": ["credit"],
+        "take": "first_non_empty",
+        "text_prop": "sourceText",
+        "visible_prop": "showSource",
+        "mode": "inline",
+        "prefix": "Source: ",
+        "auto_size": "HEIGHT"
+      },
+      "paragraph": {
+        "component": "BodyCard",
+        "text_prop": "bodyText",
+        "text_field": "text"
+      },
+      "figure": {
+        "componentName": "FigureCard",
+        "componentId": "194:56",
+        "componentKey": "fc4afd0baa35964a92683dbd2a31fc8f5ef4cdfb"
+      },
+      "body": {
+        "componentName": "BodyCard", 
+        "componentId": "194:54",
+        "componentKey": "0c445c87a4aa0bc0be40dcfc8f5ef4cdfb"
+      },
+      "fallbacks": {
+        "title_when_missing": "",
+        "source_when_missing": "",
+        "image_when_missing": null
+      }
+    }
+  }
+}
 </file>
 
 <file path="src/workflow_automation_enhanced.js">

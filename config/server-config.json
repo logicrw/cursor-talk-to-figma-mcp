@@ -85,7 +85,8 @@
         "visible_prop": "showSource",
         "mode": "inline",
         "prefix": "Source: ",
-        "auto_size": "HEIGHT"
+        "auto_size": "HEIGHT",
+        "resizeMode": "WIDTH_AND_HEIGHT"
       },
       "paragraph": {
         "component": "BodyCard",

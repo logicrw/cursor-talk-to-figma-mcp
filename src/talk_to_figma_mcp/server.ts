@@ -229,6 +229,49 @@ server.tool(
   }
 );
 
+// Set Layout Sizing Tool (additive)
+server.tool(
+  "set_layout_sizing",
+  "Set layout sizing on auto-layout nodes (horizontal/vertical: HUG | FIXED | FILL)",
+  {
+    nodeId: z.string().describe("ID of the node"),
+    layoutSizingHorizontal: z
+      .enum(["FIXED", "HUG", "FILL"]) 
+      .optional()
+      .describe("Horizontal sizing mode"),
+    layoutSizingVertical: z
+      .enum(["FIXED", "HUG", "FILL"]) 
+      .optional()
+      .describe("Vertical sizing mode"),
+  },
+  async ({ nodeId, layoutSizingHorizontal, layoutSizingVertical }: any) => {
+    try {
+      const result = await sendCommandToFigma("set_layout_sizing", {
+        nodeId,
+        layoutSizingHorizontal,
+        layoutSizingVertical,
+      });
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(result),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error setting layout sizing: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
 // Selection Tool
 server.tool(
   "get_selection",
@@ -3506,4 +3549,3 @@ main().catch(error => {
   logger.error(`Error starting FigmaMCP server: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 });
-

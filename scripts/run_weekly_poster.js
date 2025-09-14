@@ -325,7 +325,7 @@ class WeeklyPosterRunner {
 
   async setText(nodeId, text) {
     await this.sendCommand('set_text_content', { nodeId, text: text || '' });
-    await this.sendCommand('set_text_auto_resize', { nodeId, autoResize: 'HEIGHT' });
+    // caller decides the auto-resize mode
   }
 
   async throttleBase64() {
@@ -382,9 +382,16 @@ class WeeklyPosterRunner {
         text = text.replace(/^(?:Source:\s*)+/i, 'Source: ');
       }
       await this.sendCommand('set_text_content', { nodeId: sourceId, text });
-      const autoSize = (this.mapping.source?.auto_size || 'HEIGHT');
-      await this.sendCommand('set_text_auto_resize', { nodeId: sourceId, autoResize: autoSize });
-      if (autoSize === 'HEIGHT') {
+      const resizeMode = this.mapping.source?.resizeMode || this.mapping.source?.auto_size || 'WIDTH_AND_HEIGHT';
+      if (resizeMode === 'WIDTH_AND_HEIGHT') {
+        await this.sendCommand('set_text_auto_resize', { nodeId: sourceId, autoResize: 'WIDTH_AND_HEIGHT' });
+        // enforce Hug sizing for stable single-row behavior
+        try {
+          await this.sendCommand('set_layout_sizing', { nodeId: sourceId, layoutSizingHorizontal: 'HUG', layoutSizingVertical: 'HUG' });
+          console.log('🧱 Source sizing: horizontal=HUG vertical=HUG');
+        } catch {}
+      } else if (resizeMode === 'HEIGHT') {
+        await this.sendCommand('set_text_auto_resize', { nodeId: sourceId, autoResize: 'HEIGHT' });
         const containerName = slots.figure?.source || 'slot:SOURCE';
         const containerId = await this.dfsFindChildIdByName(instanceId, containerName);
         if (containerId) {
@@ -416,45 +423,35 @@ class WeeklyPosterRunner {
     }
     await this.sendCommand('set_instance_properties_by_base', { nodeId: instanceId, properties: props });
 
-    // images
-    const imageNodeNames = imgSlots;
-    for (let i = 0; i < Math.min(images.length, imageNodeNames.length); i++) {
-      const slotName = imageNodeNames[i];
-      const imgNodeId = await this.dfsFindChildIdByName(instanceId, slotName);
-      if (!imgNodeId) continue;
-      const url = buildAssetUrl(this.staticUrl, this.content.assets || [], images[i].asset_id, this.contentPath);
-      if (await this.httpHeadOk(url)) {
-        await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode: 'FILL', opacity: 1 });
-      } else {
-        // fallback Base64
-        const localPath = path.join(process.cwd(), 'docx2json', 'assets', this.dataset, `${images[i].asset_id}.png`);
+    // images (discover real fill targets; fallback to IMAGE_GRID; try-next on failure)
+    const candidates = await this.discoverImageTargets(instanceId, images);
+    const used = new Set();
+    const scaleMode = (this.mapping.imageFill?.scaleMode || 'FILL');
+    for (let i = 0; i < images.length; i++) {
+      let placed = false;
+      for (let j = 0; j < candidates.length; j++) {
+        const imgNodeId = candidates[j];
+        if (used.has(imgNodeId)) continue;
+        const url = buildAssetUrl(this.staticUrl, this.content.assets || [], images[i].asset_id, this.contentPath);
         try {
-          const buf = await fs.readFile(localPath);
-          const b64 = buf.toString('base64');
-          await this.throttleBase64();
-          await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FILL', opacity: 1 });
+          if (await this.httpHeadOk(url)) {
+            await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode, opacity: 1 });
+          } else {
+            const localPath = path.join(process.cwd(), 'docx2json', 'assets', this.dataset, `${images[i].asset_id}.png`);
+            const buf = await fs.readFile(localPath);
+            const b64 = buf.toString('base64');
+            await this.throttleBase64();
+            await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode, opacity: 1 });
+          }
+          used.add(imgNodeId);
+          placed = true;
+          break;
         } catch (e) {
-          console.warn(`⚠️ Base64 fallback failed for ${images[i].asset_id}: ${e.message}`);
+          console.warn(`⚠️ Fill failed on ${imgNodeId}, trying next candidate: ${e.message}`);
+          continue;
         }
       }
-    }
-    // Fallback: fill image grid when named slots are absent
-    if (images.length > 0 && imageNodeNames.length === 0) {
-      const gridName = slots.figure?.image_grid || 'slot:IMAGE_GRID';
-      const gridId = await this.dfsFindChildIdByName(instanceId, gridName);
-      if (gridId) {
-        console.log('🔍 Fallback: scanned IMAGE_GRID to place images');
-        const gridInfo = await this.sendCommand('get_node_info', { nodeId: gridId });
-        const targets = (gridInfo.children || []).slice(0, images.length);
-        for (let i = 0; i < targets.length; i++) {
-          const url = buildAssetUrl(this.staticUrl, this.content.assets || [], images[i].asset_id, this.contentPath);
-          try {
-            if (await this.httpHeadOk(url)) {
-              await this.sendCommand('set_image_fill', { nodeId: targets[i].id, imageUrl: url, scaleMode: 'FILL', opacity: 1 });
-            }
-          } catch {}
-        }
-      }
+      if (!placed) console.warn(`⚠️ No available target for image #${i+1}`);
     }
   }
 
