@@ -340,6 +340,56 @@ class WeeklyPosterRunner {
     this.base64Sent.push(Date.now());
   }
 
+  // ---- Image target discovery helpers ----
+  isFillType(type) {
+    return ['RECTANGLE','VECTOR','ELLIPSE','POLYGON','STAR','FRAME'].includes(type);
+  }
+
+  async resolveFillTarget(nodeId) {
+    try {
+      const root = await this.sendCommand('get_node_info', { nodeId });
+      if (this.isFillType(root?.type)) return root.id;
+      const q = [root];
+      while (q.length) {
+        const n = q.shift();
+        if (n?.children) q.push(...n.children);
+        if (this.isFillType(n?.type)) return n.id;
+      }
+    } catch {}
+    return null;
+  }
+
+  async discoverImageTargets(instanceId, images) {
+    const slots = this.mapping.anchors?.slots || {};
+    const slotNames = (slots.images || this.mapping.anchors.image_slots || []).slice();
+    const candidates = [];
+    const seen = new Set();
+
+    // 1) explicit slot names
+    for (const name of slotNames) {
+      const id = await this.dfsFindChildIdByName(instanceId, name);
+      const fillId = id ? await this.resolveFillTarget(id) : null;
+      if (fillId && !seen.has(fillId)) { seen.add(fillId); candidates.push(fillId); }
+    }
+    if (candidates.length >= images.length) return candidates;
+
+    // 2) IMAGE_GRID fallback: scan visual order
+    const gridName = slots.figure?.image_grid || 'slot:IMAGE_GRID';
+    const gridId = await this.dfsFindChildIdByName(instanceId, gridName);
+    if (gridId) {
+      const root = await this.sendCommand('get_node_info', { nodeId: gridId });
+      const q = [root];
+      let count = 0;
+      while (q.length) {
+        const n = q.shift();
+        if (n?.children) q.push(...n.children);
+        if (this.isFillType(n?.type) && n.id && !seen.has(n.id)) { seen.add(n.id); candidates.push(n.id); count++; }
+      }
+      console.log(`🔍 Fallback: scanned IMAGE_GRID -> ${count} candidates`);
+    }
+    return candidates;
+  }
+
   async fillFigureCard(instanceId, group) {
     const slots = this.mapping.anchors?.slots || {};
     const figures = group.figures || [];
