@@ -82,7 +82,10 @@
         "paths": ["credit"],
         "take": "first_non_empty",
         "text_prop": "sourceText",
-        "visible_prop": "showSource"
+        "visible_prop": "showSource",
+        "mode": "inline",
+        "prefix": "Source: ",
+        "auto_size": "HEIGHT"
       },
       "paragraph": {
         "component": "BodyCard",

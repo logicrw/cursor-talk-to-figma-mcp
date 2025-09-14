@@ -345,8 +345,24 @@ class WeeklyPosterRunner {
     const figures = group.figures || [];
     const hasTitle = figures.some(f => !!f.title);
     const firstTitle = (figures.find(f => f.title)?.title) || '';
-    const hasSource = figures.some(f => !!f.credit);
-    const firstCredit = (figures.find(f => f.credit)?.credit) || '';
+    // Aggregate credits across figures → unique tokens
+    const sCfg = this.mapping.source || {};
+    const prefix = sCfg.prefix ?? 'Source: ';
+    const mode = sCfg.mode || 'inline'; // inline | label
+    const splitRe = /[、，,;；／/|]+/;
+    const stripPrefix = (t) => String(t||'').replace(/^(?:source|来源)\s*[:：]\s*/i, '').trim();
+    const creditsTokens = [];
+    const seen = new Set();
+    for (const f of figures) {
+      const raw = String(f?.credit || '');
+      if (!raw) continue;
+      for (const tok of raw.split(splitRe)) {
+        const clean = stripPrefix(tok);
+        const key = clean.toLowerCase();
+        if (clean && !seen.has(key)) { seen.add(key); creditsTokens.push(clean); }
+      }
+    }
+    const hasSource = creditsTokens.length > 0;
     const assetPath = this.mapping.images?.asset_path || 'image.asset_id';
     const images = figures.map(f => ({ asset_id: this.getByPath(f, assetPath) })).filter(x => !!x.asset_id);
 
@@ -354,16 +370,44 @@ class WeeklyPosterRunner {
     const titleName = slots.figure?.title_text || 'titleText';
     const titleId = await this.dfsFindChildIdByName(instanceId, titleName);
     if (titleId) await this.setText(titleId, firstTitle);
-    // source
+    // source (renderer-owned labeling)
     const sourceName = slots.figure?.source_text || 'sourceText';
     const sourceId = await this.dfsFindChildIdByName(instanceId, sourceName);
-    if (sourceId) await this.setText(sourceId, firstCredit ? `Source: ${firstCredit}` : '');
+    if (sourceId) {
+      let text = '';
+      if (hasSource) {
+        const inlineText = creditsTokens.join(', ');
+        text = (mode === 'inline') ? (prefix + inlineText) : inlineText;
+        // collapse duplicate prefixes
+        text = text.replace(/^(?:Source:\s*)+/i, 'Source: ');
+      }
+      await this.sendCommand('set_text_content', { nodeId: sourceId, text });
+      const autoSize = (this.mapping.source?.auto_size || 'HEIGHT');
+      await this.sendCommand('set_text_auto_resize', { nodeId: sourceId, autoResize: autoSize });
+      if (autoSize === 'HEIGHT') {
+        const containerName = slots.figure?.source || 'slot:SOURCE';
+        const containerId = await this.dfsFindChildIdByName(instanceId, containerName);
+        if (containerId) {
+          const box = await this.sendCommand('get_node_info', { nodeId: containerId });
+          const srcInfo = await this.sendCommand('get_node_info', { nodeId: sourceId });
+          const w = box?.absoluteBoundingBox?.width;
+          const h = srcInfo?.absoluteBoundingBox?.height;
+          if (w && h) {
+            await this.sendCommand('resize_node', { nodeId: sourceId, width: w, height: h });
+            console.log(`📐 Source resized width=${w}`);
+          }
+        }
+      }
+      console.log(`📄 Source mode=${mode} text="${text}" credits=${JSON.stringify(creditsTokens)}`);
+    }
     // visibility
     const props = {};
     const titleProp = this.mapping.title?.visible_prop || 'showTitle';
     const sourceProp = this.mapping.source?.visible_prop || 'showSource';
     props[titleProp] = !!hasTitle;
     props[sourceProp] = !!hasSource;
+    // optional label visibility (best-effort)
+    props['showSourceLabel'] = (mode === 'label');
     const imgSlots = (slots.images || this.mapping.anchors.image_slots || []);
     for (let i = 2; i <= Math.min(imgSlots.length, this.mapping.images?.max_images || imgSlots.length); i++) {
       const slotName = imgSlots[i-1];
@@ -391,6 +435,24 @@ class WeeklyPosterRunner {
           await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FILL', opacity: 1 });
         } catch (e) {
           console.warn(`⚠️ Base64 fallback failed for ${images[i].asset_id}: ${e.message}`);
+        }
+      }
+    }
+    // Fallback: fill image grid when named slots are absent
+    if (images.length > 0 && imageNodeNames.length === 0) {
+      const gridName = slots.figure?.image_grid || 'slot:IMAGE_GRID';
+      const gridId = await this.dfsFindChildIdByName(instanceId, gridName);
+      if (gridId) {
+        console.log('🔍 Fallback: scanned IMAGE_GRID to place images');
+        const gridInfo = await this.sendCommand('get_node_info', { nodeId: gridId });
+        const targets = (gridInfo.children || []).slice(0, images.length);
+        for (let i = 0; i < targets.length; i++) {
+          const url = buildAssetUrl(this.staticUrl, this.content.assets || [], images[i].asset_id, this.contentPath);
+          try {
+            if (await this.httpHeadOk(url)) {
+              await this.sendCommand('set_image_fill', { nodeId: targets[i].id, imageUrl: url, scaleMode: 'FILL', opacity: 1 });
+            }
+          } catch {}
         }
       }
     }
