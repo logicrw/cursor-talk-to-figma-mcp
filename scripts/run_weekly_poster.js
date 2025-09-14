@@ -313,14 +313,49 @@ class WeeklyPosterRunner {
 
   async dfsFindChildIdByName(nodeId, name) {
     const info = await this.sendCommand('get_node_info', { nodeId });
-    const target = String(name || '').trim();
+    const target = this.normalizeName(name);
     const stack = [info];
     while (stack.length) {
       const n = stack.pop();
-      if (n?.name === target) return n.id;
+      if (this.normalizeName(n?.name) === target) return n.id;
       if (n?.children) for (const ch of n.children) stack.push(ch);
     }
     return null;
+  }
+
+  // Discover image targets: slots → IMAGE_GRID fallback (deep scan of fillable nodes)
+  async discoverImageTargets(instanceId, images) {
+    const slots = this.mapping.anchors?.slots || {};
+    const slotNames = (slots.images || this.mapping.anchors.image_slots || []).slice();
+    const targets = [];
+    const seen = new Set();
+    // 1) Try explicit slots
+    for (const name of slotNames) {
+      const id = await this.dfsFindChildIdByName(instanceId, name);
+      if (id && !seen.has(id)) { seen.add(id); targets.push(id); }
+      if (targets.length >= images.length) return targets;
+    }
+    // 2) IMAGE_GRID fallback: deep-scan for fillable nodes
+    const gridName = slots.figure?.image_grid || 'slot:IMAGE_GRID';
+    const gridId = await this.dfsFindChildIdByName(instanceId, gridName);
+    if (gridId) {
+      const root = await this.sendCommand('get_node_info', { nodeId: gridId });
+      const fillableTypes = new Set(['RECTANGLE','VECTOR','ELLIPSE','POLYGON','STAR','FRAME']);
+      const cand = [];
+      const st = [root];
+      while (st.length) {
+        const n = st.pop();
+        if (n?.children) for (const ch of n.children) st.push(ch);
+        if (n?.type && fillableTypes.has(n.type) && n.id && !seen.has(n.id)) cand.push(n.id);
+      }
+      if (cand.length) console.log(`🔍 Fallback: scanned IMAGE_GRID -> ${cand.length} candidates`);
+      for (const id of cand) {
+        if (!seen.has(id)) { seen.add(id); targets.push(id); }
+        if (targets.length >= images.length) break;
+      }
+    }
+    console.log(`🖼 Filled ${Math.min(targets.length, images.length)}/${images.length} images via targets: ${JSON.stringify(targets)}`);
+    return targets;
   }
 
   async setText(nodeId, text) {
@@ -416,15 +451,14 @@ class WeeklyPosterRunner {
     }
     await this.sendCommand('set_instance_properties_by_base', { nodeId: instanceId, properties: props });
 
-    // images
-    const imageNodeNames = imgSlots;
-    for (let i = 0; i < Math.min(images.length, imageNodeNames.length); i++) {
-      const slotName = imageNodeNames[i];
-      const imgNodeId = await this.dfsFindChildIdByName(instanceId, slotName);
-      if (!imgNodeId) continue;
+    // images (slots → IMAGE_GRID fallback)
+    const targets = await this.discoverImageTargets(instanceId, images);
+    const scaleMode = (this.mapping.imageFill?.scaleMode || 'FILL');
+    for (let i = 0; i < Math.min(images.length, targets.length); i++) {
+      const imgNodeId = targets[i];
       const url = buildAssetUrl(this.staticUrl, this.content.assets || [], images[i].asset_id, this.contentPath);
       if (await this.httpHeadOk(url)) {
-        await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode: 'FILL', opacity: 1 });
+        await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode, opacity: 1 });
       } else {
         // fallback Base64
         const localPath = path.join(process.cwd(), 'docx2json', 'assets', this.dataset, `${images[i].asset_id}.png`);
@@ -432,27 +466,9 @@ class WeeklyPosterRunner {
           const buf = await fs.readFile(localPath);
           const b64 = buf.toString('base64');
           await this.throttleBase64();
-          await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FILL', opacity: 1 });
+          await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode, opacity: 1 });
         } catch (e) {
           console.warn(`⚠️ Base64 fallback failed for ${images[i].asset_id}: ${e.message}`);
-        }
-      }
-    }
-    // Fallback: fill image grid when named slots are absent
-    if (images.length > 0 && imageNodeNames.length === 0) {
-      const gridName = slots.figure?.image_grid || 'slot:IMAGE_GRID';
-      const gridId = await this.dfsFindChildIdByName(instanceId, gridName);
-      if (gridId) {
-        console.log('🔍 Fallback: scanned IMAGE_GRID to place images');
-        const gridInfo = await this.sendCommand('get_node_info', { nodeId: gridId });
-        const targets = (gridInfo.children || []).slice(0, images.length);
-        for (let i = 0; i < targets.length; i++) {
-          const url = buildAssetUrl(this.staticUrl, this.content.assets || [], images[i].asset_id, this.contentPath);
-          try {
-            if (await this.httpHeadOk(url)) {
-              await this.sendCommand('set_image_fill', { nodeId: targets[i].id, imageUrl: url, scaleMode: 'FILL', opacity: 1 });
-            }
-          } catch {}
         }
       }
     }
