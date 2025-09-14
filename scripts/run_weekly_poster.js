@@ -12,7 +12,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { spawn } from 'child_process';
 import http from 'http';
-import { resolveContentPath, inferDataset, buildAssetUrl, computeStaticServerUrl } from '../src/config-resolver.js';
+import { resolveContentPath, inferDataset, buildAssetUrl, computeStaticServerUrl, getAssetExtension } from '../src/config-resolver.js';
 
 class WeeklyPosterRunner {
   constructor() {
@@ -341,8 +341,34 @@ class WeeklyPosterRunner {
   }
 
   // ---- Image target discovery helpers ----
+  // Only shape types count as primary fill targets
   isFillType(type) {
-    return ['RECTANGLE','VECTOR','ELLIPSE','POLYGON','STAR','FRAME'].includes(type);
+    return ['RECTANGLE','VECTOR','ELLIPSE','POLYGON','STAR'].includes(type);
+  }
+
+  // Prefer shape nodes; if no shapes found, fallback to FRAME
+  async resolveFillTargetPreferShape(nodeId) {
+    try {
+      const root = await this.sendCommand('get_node_info', { nodeId });
+      if (!root) return null;
+      // Pass 1: shapes
+      const q1 = [root];
+      while (q1.length) {
+        const n = q1.shift();
+        if (!n) continue;
+        if (this.isFillType(n.type)) return n.id;
+        if (n.children) q1.push(...n.children);
+      }
+      // Pass 2: frame fallback
+      const q2 = [root];
+      while (q2.length) {
+        const n = q2.shift();
+        if (!n) continue;
+        if (n.type === 'FRAME') return n.id;
+        if (n.children) q2.push(...n.children);
+      }
+    } catch {}
+    return null;
   }
 
   async resolveFillTarget(nodeId) {
@@ -368,7 +394,7 @@ class WeeklyPosterRunner {
     // 1) explicit slot names
     for (const name of slotNames) {
       const id = await this.dfsFindChildIdByName(instanceId, name);
-      const fillId = id ? await this.resolveFillTarget(id) : null;
+      const fillId = id ? await this.resolveFillTargetPreferShape(id) : null;
       if (fillId && !seen.has(fillId)) { seen.add(fillId); candidates.push(fillId); }
     }
     if (candidates.length >= images.length) return candidates;
@@ -379,13 +405,28 @@ class WeeklyPosterRunner {
     if (gridId) {
       const root = await this.sendCommand('get_node_info', { nodeId: gridId });
       const q = [root];
-      let count = 0;
+      const shapeIds = [];
+      const frameIds = [];
       while (q.length) {
         const n = q.shift();
-        if (n?.children) q.push(...n.children);
-        if (this.isFillType(n?.type) && n.id && !seen.has(n.id)) { seen.add(n.id); candidates.push(n.id); count++; }
+        if (!n) continue;
+        if (n.children) q.push(...n.children);
+        if (n.id) {
+          if (this.isFillType(n.type)) shapeIds.push(n.id);
+          else if (n.type === 'FRAME') frameIds.push(n.id);
+        }
       }
-      console.log(`🔍 Fallback: scanned IMAGE_GRID -> ${count} candidates`);
+      let added = 0;
+      for (const id of shapeIds) {
+        if (!seen.has(id)) { seen.add(id); candidates.push(id); added++; }
+      }
+      if (candidates.length < images.length) {
+        for (const id of frameIds) {
+          if (!seen.has(id)) { seen.add(id); candidates.push(id); added++; }
+          if (candidates.length >= images.length) break;
+        }
+      }
+      console.log(`🔍 Fallback: scanned IMAGE_GRID -> shapes=${shapeIds.length} frames=${frameIds.length} added=${added}`);
     }
     return candidates;
   }
@@ -485,9 +526,25 @@ class WeeklyPosterRunner {
         const url = buildAssetUrl(this.staticUrl, this.content.assets || [], images[i].asset_id, this.contentPath);
         try {
           if (await this.httpHeadOk(url)) {
-            await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode, opacity: 1 });
+            try {
+              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode, opacity: 1 });
+            } catch (errUrl) {
+              const ext = getAssetExtension(images[i].asset_id, this.content.assets || []);
+              const localPath = path.join(
+                process.cwd(), 'docx2json', 'assets', this.dataset,
+                `${images[i].asset_id}.${ext || 'png'}`
+              );
+              const buf = await fs.readFile(localPath);
+              const b64 = buf.toString('base64');
+              await this.throttleBase64();
+              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode, opacity: 1 });
+            }
           } else {
-            const localPath = path.join(process.cwd(), 'docx2json', 'assets', this.dataset, `${images[i].asset_id}.png`);
+            const ext = getAssetExtension(images[i].asset_id, this.content.assets || []);
+            const localPath = path.join(
+              process.cwd(), 'docx2json', 'assets', this.dataset,
+              `${images[i].asset_id}.${ext || 'png'}`
+            );
             const buf = await fs.readFile(localPath);
             const b64 = buf.toString('base64');
             await this.throttleBase64();
