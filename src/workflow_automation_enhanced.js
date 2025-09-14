@@ -867,8 +867,15 @@ class CardBasedFigmaWorkflowAutomator {
       });
       
       // DFS递归搜索所有层级
+      const normalizeName = (s) => String(s || '')
+        .normalize('NFKC')
+        .replace(/[\s\u200B-\u200D\uFEFF]/g, '')
+        .trim();
+
+      const target = normalizeName(childName);
+
       const dfsSearch = (node) => {
-        if (node.name === childName) {
+        if (normalizeName(node.name) === target) {
           return node.id;
         }
         
