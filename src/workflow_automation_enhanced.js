@@ -47,6 +47,15 @@ class CardBasedFigmaWorkflowAutomator {
     this.mainFrameId = null;
   }
 
+  normalizeName(s) {
+    try {
+      return String(s || '')
+        .normalize('NFKC')
+        .replace(/[\s\u200B-\u200D\uFEFF]/g, '')
+        .trim();
+    } catch { return String(s || ''); }
+  }
+
   async initialize(mcpClient, channelId = null, contentFile = null, dryRun = false) {
     console.log('🚀 Initializing Card-based Figma Workflow Automator...');
     this.mcpClient = mcpClient;
@@ -113,23 +122,22 @@ class CardBasedFigmaWorkflowAutomator {
     if (this.channelManager && this.channelManager.currentChannel) {
       try {
         const documentInfo = await this.mcpClient.call("mcp__talk-to-figma__get_document_info");
-        const mainFrame = documentInfo.children.find(child => child.name === this.workflowMapping.anchors.frame);
+        const targetFrameName = this.normalizeName(this.workflowMapping.anchors.frame);
+        const mainFrame = documentInfo.children.find(child => this.normalizeName(child.name) === targetFrameName);
         if (mainFrame) {
           this.mainFrameId = mainFrame.id;
           const containerInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", {
             nodeId: mainFrame.id
           });
           // Find Cards within ContentContainer
-          const contentContainer = containerInfo.children?.find(child => 
-            child.name === this.workflowMapping.anchors.container
-          );
+          const targetContainerName = this.normalizeName(this.workflowMapping.anchors.container);
+          const contentContainer = containerInfo.children?.find(child => this.normalizeName(child.name) === targetContainerName);
           if (contentContainer) {
             const containerDetail = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", {
               nodeId: contentContainer.id
             });
-            const cardsNode = containerDetail.children?.find(child => 
-              child.name === this.workflowMapping.anchors.cards_stack
-            );
+            const targetCardsName = this.normalizeName(this.workflowMapping.anchors.cards_stack);
+            const cardsNode = containerDetail.children?.find(child => this.normalizeName(child.name) === targetCardsName);
             if (cardsNode) {
               this.workflowMapping.anchors.cards_stack_id = cardsNode.id;
               console.log(`✅ Found Cards container: ${cardsNode.id}`);
@@ -355,12 +363,12 @@ class CardBasedFigmaWorkflowAutomator {
 
   // Helper: DFS search within any node info tree
   dfsFindNodeIdByName(rootInfo, targetName) {
-    const target = String(targetName || '').trim();
+    const target = this.normalizeName(targetName);
     if (!target || !rootInfo) return null;
     const stack = [rootInfo];
     while (stack.length) {
       const node = stack.pop();
-      if (node?.name === target) return node.id || null;
+      if (this.normalizeName(node?.name) === target) return node.id || null;
       if (node?.children && Array.isArray(node.children)) {
         for (const ch of node.children) stack.push(ch);
       }
@@ -568,8 +576,10 @@ class CardBasedFigmaWorkflowAutomator {
         try {
           const info = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", { nodeId: actualCard.id });
           const slots = this.workflowMapping.anchors?.slots ?? {};
-          const hasBody = (info.children || []).some(c => c.name === (slots.body?.body ?? 'slot:BODY'));
-          const hasImageGrid = (info.children || []).some(c => c.name === (slots.figure?.image_grid ?? 'slot:IMAGE_GRID'));
+          const bodyName = this.normalizeName(slots.body?.body ?? 'slot:BODY');
+          const imageGridName = this.normalizeName(slots.figure?.image_grid ?? 'slot:IMAGE_GRID');
+          const hasBody = (info.children || []).some(c => this.normalizeName(c.name) === bodyName);
+          const hasImageGrid = (info.children || []).some(c => this.normalizeName(c.name) === imageGridName);
           const actualType = hasBody ? 'standalone_paragraph' : (hasImageGrid ? 'figure_group' : 'unknown');
           
           // ✅ DEBUG日志 - unknown类型时输出详细信息
@@ -617,7 +627,7 @@ class CardBasedFigmaWorkflowAutomator {
 
     // 查找 Seeds 框架
     const docInfo = await this.mcpClient.call("mcp__talk-to-figma__get_document_info");
-    const seedsFrame = docInfo.children.find(frame => frame.name === seedsMapping.frame);
+    const seedsFrame = docInfo.children.find(frame => this.normalizeName(frame.name) === this.normalizeName(seedsMapping.frame));
     if (!seedsFrame) {
       throw new Error(`Seeds frame "${seedsMapping.frame}" not found`);
     }
@@ -627,8 +637,8 @@ class CardBasedFigmaWorkflowAutomator {
       nodeId: seedsFrame.id
     });
 
-    const figureInstance = seedsInfo.children.find(child => child.name === seedsMapping.figure_instance);
-    const bodyInstance = seedsInfo.children.find(child => child.name === seedsMapping.body_instance);
+    const figureInstance = seedsInfo.children.find(child => this.normalizeName(child.name) === this.normalizeName(seedsMapping.figure_instance));
+    const bodyInstance = seedsInfo.children.find(child => this.normalizeName(child.name) === this.normalizeName(seedsMapping.body_instance));
 
     if (!figureInstance || !bodyInstance) {
       throw new Error(`Seed instances not found: ${seedsMapping.figure_instance} / ${seedsMapping.body_instance}`);
