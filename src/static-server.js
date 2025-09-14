@@ -12,9 +12,23 @@ const __dirname = path.dirname(__filename);
 const CONFIG_PATH = path.join(__dirname, '../config/server-config.json');
 const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
 
-const ASSETS_PATH = path.join(__dirname, config.static_server.assets_path);
-const PORT = process.env.STATIC_PORT || config.static_server.port;
-const HOST = process.env.STATIC_HOST || config.static_server.host;
+// Backward-compatible configuration resolution
+const staticCfg = config.static_server || {};
+const PORT = process.env.STATIC_PORT || staticCfg.port;
+const HOST = process.env.STATIC_HOST || staticCfg.host;
+const PUBLIC_ROUTE = staticCfg.publicRoute || '/assets';
+
+// Determine base directory:
+// 1) Prefer explicit baseDir (e.g., ../docx2json/assets)
+// 2) Fallback to parent of legacy assets_path (which may include dataset subdir)
+// 3) Final fallback to ../docx2json/assets
+const legacyAssetsPath = staticCfg.assets_path
+  ? path.resolve(__dirname, staticCfg.assets_path)
+  : null;
+const BASE_DIR = path.resolve(
+  __dirname,
+  staticCfg.baseDir || (legacyAssetsPath ? path.join(legacyAssetsPath, '..') : '../docx2json/assets')
+);
 
 const server = http.createServer((req, res) => {
   // Enable CORS
@@ -30,38 +44,46 @@ const server = http.createServer((req, res) => {
 
   // Parse URL path
   const urlPath = new URL(req.url, `http://localhost:${PORT}`).pathname;
-  
-  if (urlPath.startsWith('/assets/')) {
-    const filename = path.basename(urlPath);
-    const filepath = path.join(ASSETS_PATH, filename);
-    
-    // Security check - ensure file is within assets directory
-    if (!filepath.startsWith(ASSETS_PATH)) {
+
+  if (urlPath.startsWith(PUBLIC_ROUTE + '/')) {
+    // Strip public route prefix and decode
+    const relUrlPath = decodeURIComponent(urlPath.slice(PUBLIC_ROUTE.length + 1));
+
+    // Normalize and resolve to prevent path traversal
+    const normalizedRel = path.normalize(relUrlPath);
+    const absolutePath = path.resolve(BASE_DIR, normalizedRel);
+    const relToBase = path.relative(BASE_DIR, absolutePath);
+
+    // Security: ensure the final path stays within BASE_DIR
+    if (relToBase.startsWith('..') || path.isAbsolute(relToBase)) {
       res.writeHead(403);
       res.end('Forbidden');
       return;
     }
-    
-    // Check if file exists
-    if (!fs.existsSync(filepath)) {
+
+    // Check file existence
+    if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) {
       res.writeHead(404);
       res.end('Not Found');
       return;
     }
-    
-    // Serve the file
-    const ext = path.extname(filename).toLowerCase();
-    const contentType = ext === '.png' ? 'image/png' : 
-                       ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
-                       'application/octet-stream';
-    
+
+    // Content-Type resolution
+    const ext = path.extname(absolutePath).toLowerCase();
+    const contentType =
+      ext === '.png' ? 'image/png' :
+      ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
+      ext === '.gif' ? 'image/gif' :
+      ext === '.webp' ? 'image/webp' :
+      'application/octet-stream';
+
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'public, max-age=3600'); // 1 hour cache
-    
-    const stream = fs.createReadStream(filepath);
+
+    const stream = fs.createReadStream(absolutePath);
     stream.pipe(res);
-    
-    console.log(`Served: ${filename} (${contentType})`);
+
+    console.log(`Served: ${path.relative(BASE_DIR, absolutePath)} (${contentType})`);
   } else {
     res.writeHead(404);
     res.end('Not Found');
@@ -70,6 +92,7 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`Static file server running on http://${HOST}:${PORT}`);
-  console.log(`Serving files from: ${ASSETS_PATH}`);
+  console.log(`Public route: ${PUBLIC_ROUTE}`);
+  console.log(`Serving base dir: ${BASE_DIR}`);
   console.log(`Config loaded from: ${CONFIG_PATH}`);
 });

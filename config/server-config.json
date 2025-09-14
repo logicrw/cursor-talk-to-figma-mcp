@@ -6,7 +6,9 @@
   "static_server": {
     "port": 3056,
     "host": "127.0.0.1",
-    "assets_path": "../docx2json/assets/250818_summer_break"
+    "assets_path": "../docx2json/assets/250818_summer_break",
+    "baseDir": "../docx2json/assets",
+    "publicRoute": "/assets"
   },
   "logging": {
     "level": "info",
@@ -26,6 +28,11 @@
         "frame": "Odaily特供海报",
         "container": "ContentContainer",
         "cards_stack": "Cards",
+        "header": {
+          "title": "HeaderTitle",
+          "date": "HeaderDate",
+          "month": "HeaderMonth"
+        },
         "seeds": {
           "frame": "Seeds",
           "figure_instance": "FigureCard__seedInstance",
@@ -75,12 +82,25 @@
         "paths": ["credit"],
         "take": "first_non_empty",
         "text_prop": "sourceText",
-        "visible_prop": "showSource"
+        "visible_prop": "showSource",
+        "mode": "inline",
+        "prefix": "Source: ",
+        "auto_size": "HEIGHT"
       },
       "paragraph": {
         "component": "BodyCard",
         "text_prop": "bodyText",
         "text_field": "text"
+      },
+      "figure": {
+        "componentName": "FigureCard",
+        "componentId": "194:56",
+        "componentKey": "fc4afd0baa35964a92683dbd2a31fc8f5ef4cdfb"
+      },
+      "body": {
+        "componentName": "BodyCard", 
+        "componentId": "194:54",
+        "componentKey": "0c445c87a4aa0bc0be40dcfc8f5ef4cdfb"
       },
       "fallbacks": {
         "title_when_missing": "",

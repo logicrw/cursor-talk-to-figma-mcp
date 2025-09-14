@@ -4,6 +4,7 @@
 // Plugin state
 const state = {
   serverPort: 3055, // Default port
+  channel: null,
 };
 
 
@@ -96,9 +97,13 @@ function updateSettings(settings) {
   if (settings.serverPort) {
     state.serverPort = settings.serverPort;
   }
+  if (settings.channel) {
+    state.channel = settings.channel;
+  }
 
   figma.clientStorage.setAsync("settings", {
     serverPort: state.serverPort,
+    channel: state.channel,
   });
 }
 
@@ -180,6 +185,15 @@ async function handleCommand(command, params) {
       // Call without instance node if not provided
       return await getInstanceOverrides();
 
+    case "get_component_property_references":
+      return await getComponentPropertyReferences(params);
+    
+    case "set_instance_properties":
+      return await setInstanceProperties(params);
+    
+    case "set_instance_properties_by_base":
+      return await setInstancePropsByBase(params.nodeId, params.properties);
+    
     case "set_instance_overrides":
       // Check if instanceNodeIds parameter is provided
       if (params && params.targetNodeIds) {
@@ -394,6 +408,55 @@ function filterFigmaNode(node) {
   return filtered;
 }
 
+// Compute absolute bounding box from absoluteTransform + width/height
+function getAbsoluteBoundingBox(node) {
+  try {
+    const t = node.absoluteTransform;
+    const width = typeof node.width === 'number' ? node.width : 0;
+    const height = typeof node.height === 'number' ? node.height : 0;
+    if (t && Array.isArray(t) && t.length >= 2 && t[0].length >= 3) {
+      const x = t[0][2];
+      const y = t[1][2];
+      return { x, y, width, height };
+    }
+  } catch (e) {}
+  return undefined;
+}
+
+// Adapt filter to enrich with plugin-available fields when not present
+const _origFilterFigmaNode = filterFigmaNode;
+filterFigmaNode = function(node) {
+  const filtered = _origFilterFigmaNode(node);
+  if (!filtered) return filtered;
+
+  // Add absoluteBoundingBox if missing and possible
+  if (!filtered.absoluteBoundingBox && node && 'absoluteTransform' in node) {
+    const bbox = getAbsoluteBoundingBox(node);
+    if (bbox) filtered.absoluteBoundingBox = bbox;
+  }
+
+  // Add text style if TEXT node and style missing
+  if (node && node.type === 'TEXT' && !filtered.style) {
+    try {
+      const fontName = node.fontName !== figma.mixed ? node.fontName : { family: 'Mixed', style: 'Mixed' };
+      const lineHeightPx = node.lineHeight && node.lineHeight.unit === 'PIXELS' ? node.lineHeight.value : undefined;
+      filtered.style = {
+        fontFamily: fontName.family,
+        fontStyle: fontName.style,
+        fontWeight: node.fontWeight !== undefined ? node.fontWeight : undefined,
+        fontSize: node.fontSize,
+        textAlignHorizontal: node.textAlignHorizontal,
+        letterSpacing: node.letterSpacing,
+        lineHeightPx: lineHeightPx
+      };
+    } catch (e) {
+      // best effort
+    }
+  }
+
+  return filtered;
+}
+
 async function getNodeInfo(nodeId) {
   const node = await figma.getNodeByIdAsync(nodeId);
 
@@ -401,11 +464,8 @@ async function getNodeInfo(nodeId) {
     throw new Error(`Node not found with ID: ${nodeId}`);
   }
 
-  const response = await node.exportAsync({
-    format: "JSON_REST_V1",
-  });
-
-  return filterFigmaNode(response.document);
+  // Traverse live node graph and build filtered JSON
+  return filterFigmaNode(node);
 }
 
 async function getNodesInfo(nodeIds) {
@@ -418,18 +478,11 @@ async function getNodesInfo(nodeIds) {
     // Filter out any null values (nodes that weren't found)
     const validNodes = nodes.filter((node) => node !== null);
 
-    // Export all valid nodes in parallel
-    const responses = await Promise.all(
-      validNodes.map(async (node) => {
-        const response = await node.exportAsync({
-          format: "JSON_REST_V1",
-        });
-        return {
-          nodeId: node.id,
-          document: filterFigmaNode(response.document),
-        };
-      })
-    );
+    // Build filtered info for each
+    const responses = validNodes.map((node) => ({
+      nodeId: node.id,
+      document: filterFigmaNode(node)
+    }));
 
     return responses;
   } catch (error) {
@@ -624,27 +677,11 @@ async function getReactions(nodeIds) {
 
 async function readMyDesign() {
   try {
-    // Load all selected nodes in parallel
-    const nodes = await Promise.all(
-      figma.currentPage.selection.map((node) => figma.getNodeByIdAsync(node.id))
-    );
-
-    // Filter out any null values (nodes that weren't found)
-    const validNodes = nodes.filter((node) => node !== null);
-
-    // Export all valid nodes in parallel
-    const responses = await Promise.all(
-      validNodes.map(async (node) => {
-        const response = await node.exportAsync({
-          format: "JSON_REST_V1",
-        });
-        return {
-          nodeId: node.id,
-          document: filterFigmaNode(response.document),
-        };
-      })
-    );
-
+    const selection = figma.currentPage.selection || [];
+    const responses = selection.map((node) => ({
+      nodeId: node.id,
+      document: filterFigmaNode(node)
+    }));
     return responses;
   } catch (error) {
     throw new Error(`Error getting nodes info: ${error.message}`);
@@ -1165,35 +1202,6 @@ async function getLocalComponents() {
 //   }
 // }
 
-async function createComponentInstance(params) {
-  const { componentKey, x = 0, y = 0 } = params || {};
-
-  if (!componentKey) {
-    throw new Error("Missing componentKey parameter");
-  }
-
-  try {
-    const component = await figma.importComponentByKeyAsync(componentKey);
-    const instance = component.createInstance();
-
-    instance.x = x;
-    instance.y = y;
-
-    figma.currentPage.appendChild(instance);
-
-    return {
-      id: instance.id,
-      name: instance.name,
-      x: instance.x,
-      y: instance.y,
-      width: instance.width,
-      height: instance.height,
-      componentId: instance.componentId,
-    };
-  } catch (error) {
-    throw new Error(`Error creating component instance: ${error.message}`);
-  }
-}
 
 async function exportNodeAsImage(params) {
   const { nodeId, scale = 1 } = params || {};
@@ -1464,6 +1472,9 @@ async function setTextContent(params) {
       if (savedSettings.serverPort) {
         state.serverPort = savedSettings.serverPort;
       }
+      if (savedSettings.channel) {
+        state.channel = savedSettings.channel;
+      }
     }
 
     // Send initial settings to UI
@@ -1471,6 +1482,7 @@ async function setTextContent(params) {
       type: "init-settings",
       settings: {
         serverPort: state.serverPort,
+        channel: state.channel,
       },
     });
   } catch (error) {
@@ -3006,6 +3018,373 @@ async function deleteMultipleNodes(params) {
     completedInChunks: chunks.length,
     commandId,
   };
+}
+
+// PropertyName#ID adaptation layer - converts base names to full PropertyName#ID
+function buildPropertyKeyMap(instance) {
+  console.log("=== Building PropertyName#ID map ===");
+  const map = {};
+  
+  if (!instance.componentProperties) {
+    console.log("No componentProperties available");
+    return map;
+  }
+  
+  // Map base names to PropertyName#ID format
+  for (const fullKey of Object.keys(instance.componentProperties)) {
+    const baseName = fullKey.split('#')[0];  // 'showTitle#I194:57:showTitle' → 'showTitle'
+    map[baseName] = fullKey;
+    console.log(`Mapped: ${baseName} → ${fullKey}`);
+  }
+  
+  return map;
+}
+
+// Enhanced setProperties using base names (showTitle, showImg2, etc.)
+async function setInstancePropsByBase(instanceId, propsByBase) {
+  console.log("=== setInstancePropsByBase called ===");
+  console.log("Base properties:", JSON.stringify(propsByBase, null, 2));
+  
+  try {
+    const node = await figma.getNodeByIdAsync(instanceId);
+    if (!node) {
+      return { success: false, message: `Node not found: ${instanceId}` };
+    }
+    
+    if (node.type !== "INSTANCE") {
+      return { success: false, message: `Node is not an instance: ${node.type}` };
+    }
+    
+    // Build property key map
+    const keyMap = buildPropertyKeyMap(node);
+    const fullProperties = {};
+    
+    // Convert base names to PropertyName#ID format
+    for (const [baseName, value] of Object.entries(propsByBase)) {
+      const fullKey = keyMap[baseName];
+      if (fullKey) {
+        fullProperties[fullKey] = value;
+        console.log(`✅ Mapped ${baseName} = ${value} → ${fullKey}`);
+      } else {
+        console.log(`⚠️ Base property not found: ${baseName}`);
+      }
+    }
+    
+    if (Object.keys(fullProperties).length === 0) {
+      return { 
+        success: false, 
+        message: "No valid properties to apply",
+        availableProperties: Object.keys(keyMap)
+      };
+    }
+    
+    // Apply using official setProperties API
+    console.log("🎯 Applying properties:", JSON.stringify(fullProperties, null, 2));
+    node.setProperties(fullProperties);
+    
+    const result = {
+      success: true,
+      message: `Applied ${Object.keys(fullProperties).length} properties using official setProperties API`,
+      nodeId: instanceId,
+      appliedProperties: fullProperties,
+      appliedCount: Object.keys(fullProperties).length
+    };
+    
+    figma.notify(`Applied ${Object.keys(fullProperties).length} properties successfully`);
+    return result;
+    
+  } catch (error) {
+    console.error("Error in setInstancePropsByBase:", error);
+    const errorMsg = `Error: ${error.message}`;
+    figma.notify(errorMsg);
+    return {
+      success: false,
+      message: errorMsg
+    };
+  }
+}
+
+// Implementation for getComponentPropertyReferences function
+async function getComponentPropertyReferences(params) {
+  console.log("=== getComponentPropertyReferences called ===");
+  
+  if (!params || !params.nodeId) {
+    const error = "nodeId parameter is required";
+    console.error(error);
+    figma.notify(error);
+    return { success: false, message: error };
+  }
+
+  try {
+    const node = await figma.getNodeByIdAsync(params.nodeId);
+    if (!node) {
+      const error = `Node not found with ID: ${params.nodeId}`;
+      console.error(error);
+      figma.notify(error);
+      return { success: false, message: error };
+    }
+
+    if (node.type !== "INSTANCE") {
+      const error = `Node is not an instance: ${node.type}`;
+      console.error(error);
+      figma.notify(error);
+      return { success: false, message: error };
+    }
+
+    const instance = node;
+    console.log(`Getting component property references for instance: ${instance.name}`);
+
+    // Get component properties directly - this is the official source of PropertyName#ID keys
+    const properties = instance.componentProperties || {};
+    
+    console.log("Component properties available:", Object.keys(properties));
+    console.log("Component property values:", properties);
+
+    // Return the properties directly - keys are already in PropertyName#ID format
+    const result = {
+      success: true,
+      message: `Got ${Object.keys(properties).length} component properties from "${instance.name}"`,
+      nodeId: params.nodeId,
+      properties: properties,
+      propertyKeys: Object.keys(properties)
+    };
+
+    figma.notify(`Got ${Object.keys(properties).length} component properties`);
+    return result;
+
+  } catch (error) {
+    console.error("Error in getComponentPropertyReferences:", error);
+    const errorMsg = `Error: ${error.message}`;
+    figma.notify(errorMsg);
+    return {
+      success: false,
+      message: errorMsg
+    };
+  }
+}
+
+// Implementation for setInstanceProperties function with PropertyName#ID adaptation
+async function setInstanceProperties(params) {
+  console.log("=== setInstanceProperties called ===");
+  
+  if (!params || !params.nodeId) {
+    const error = "nodeId parameter is required";
+    console.error(error);
+    figma.notify(error);
+    return { success: false, message: error };
+  }
+
+  if (!params.properties || typeof params.properties !== 'object') {
+    const error = "properties parameter is required and must be an object";
+    console.error(error);
+    figma.notify(error);
+    return { success: false, message: error };
+  }
+
+  // Check if properties use PropertyName#ID format or base names
+  const propertyKeys = Object.keys(params.properties);
+  const hasFullKeys = propertyKeys.some(key => key.includes('#'));
+  const hasBaseKeys = propertyKeys.some(key => !key.includes('#'));
+  
+  if (hasFullKeys && hasBaseKeys) {
+    console.log("⚠️ Mixed property key formats detected - using direct setProperties");
+    // Mixed formats - use direct setProperties for PropertyName#ID keys
+  } else if (hasBaseKeys) {
+    console.log("🔄 Base property names detected - using adaptation layer");
+    // All base names - use adaptation layer
+    return await setInstancePropsByBase(params.nodeId, params.properties);
+  }
+  
+  // Direct PropertyName#ID format or mixed - use original logic
+  try {
+    const node = await figma.getNodeByIdAsync(params.nodeId);
+    if (!node) {
+      const error = `Node not found with ID: ${params.nodeId}`;
+      console.error(error);
+      figma.notify(error);
+      return { success: false, message: error };
+    }
+
+    if (node.type !== "INSTANCE") {
+      const error = `Node is not an instance: ${node.type}`;
+      console.error(error);
+      figma.notify(error);
+      return { success: false, message: error };
+    }
+
+    const instance = node;
+    console.log(`🎯 Setting properties for instance: ${instance.name}`);
+    console.log("Properties to set (PropertyName#ID format):", params.properties);
+
+    // Apply properties using Figma's official setProperties API
+    instance.setProperties(params.properties);
+
+    // Get the updated properties to confirm application
+    const updatedProperties = instance.componentProperties || {};
+    
+    // Build applied properties result
+    const applied = {};
+    Object.keys(params.properties).forEach(propName => {
+      applied[propName] = updatedProperties[propName];
+    });
+
+    console.log("Properties applied successfully:", applied);
+    
+    const result = {
+      success: true,
+      message: `Applied ${Object.keys(params.properties).length} properties to "${instance.name}"`,
+      nodeId: params.nodeId,
+      applied: applied
+    };
+
+    figma.notify(`Applied ${Object.keys(params.properties).length} properties successfully`);
+    return result;
+
+  } catch (error) {
+    console.error("Error in setInstanceProperties:", error);
+    const errorMsg = `Error: ${error.message}`;
+    figma.notify(errorMsg);
+    return {
+      success: false,
+      message: errorMsg
+    };
+  }
+}
+
+// Implementation for createComponentInstance function (enhanced)
+async function createComponentInstance(params) {
+  console.log("=== createComponentInstance called ===");
+  
+  if (!params) {
+    const error = "params parameter is required";
+    console.error(error);
+    figma.notify(error);
+    return { success: false, message: error };
+  }
+
+  const { componentId, componentKey, parentId, x = 0, y = 0 } = params;
+
+  console.log(`=== Seedless Component Creation ===`);
+  console.log(`componentId: "${componentId}"`);
+  console.log(`componentKey: "${componentKey}"`);
+  
+  // For local components, ONLY use componentId - importComponentByKeyAsync is for published libraries
+  const hasLocalComponentId = componentId && componentId.trim() !== '';
+  const hasLibraryComponentKey = componentKey && componentKey.trim() !== '' && componentKey !== 'null';
+  
+  if (!hasLocalComponentId && !hasLibraryComponentKey) {
+    const error = "Either componentId (local) or componentKey (library) must be provided";
+    console.error(error);
+    figma.notify(error);
+    return { success: false, message: error };
+  }
+  
+  console.log(`Method: ${hasLocalComponentId ? 'LOCAL_COMPONENT_ID' : 'LIBRARY_COMPONENT_KEY'}`)
+
+  try {
+    let parentNode = null;
+    if (parentId) {
+      // Get parent node and validate it can contain children
+      parentNode = await figma.getNodeByIdAsync(parentId);
+      if (!parentNode) {
+        const error = `Parent node not found with ID: ${parentId}`;
+        console.error(error);
+        figma.notify(error);
+        return { success: false, message: error };
+      }
+    }
+
+    if (parentNode && !("children" in parentNode)) {
+      const error = `Parent node cannot contain children: ${parentNode.type}`;
+      console.error(error);
+      figma.notify(error);
+      return { success: false, message: error };
+    }
+
+    let component = null;
+
+    // Priority 1: Local component using componentId
+    if (hasLocalComponentId) {
+      console.log(`🏭 Getting LOCAL component by ID: ${componentId}`);
+      const node = await figma.getNodeByIdAsync(componentId);
+      if (!node) {
+        const error = `Local component not found with ID: ${componentId}`;
+        console.error(error);
+        figma.notify(error);
+        return { success: false, message: error };
+      }
+      
+      if (node.type !== "COMPONENT") {
+        const error = `Node is not a component: ${node.type}`;
+        console.error(error);
+        figma.notify(error);
+        return { success: false, message: error };
+      }
+      
+      component = node;
+      console.log(`✅ Found LOCAL component: ${component.name}`);
+      
+    } else if (hasLibraryComponentKey) {
+      console.log(`📚 Importing LIBRARY component by key: ${componentKey}`);
+      try {
+        component = await figma.importComponentByKeyAsync(componentKey);
+        console.log(`✅ Imported LIBRARY component: ${component.name}`);
+      } catch (importError) {
+        const error = `Failed to import library component by key "${componentKey}": ${importError.message}`;
+        console.error(error);
+        figma.notify(error);
+        return { success: false, message: error };
+      }
+    }
+
+    if (!component) {
+      const error = "Failed to get component";
+      console.error(error);
+      figma.notify(error);
+      return { success: false, message: error };
+    }
+
+    console.log(`🚀 SEEDLESS: Creating instance of ${component.name}...`);
+    
+    // Create the instance directly (no seed cloning)
+    const instance = component.createInstance();
+    instance.x = x;
+    instance.y = y;
+
+    // Append to parent if specified, otherwise add to current page
+    if (parentNode) {
+      parentNode.appendChild(instance);
+      console.log(`📍 Instance placed in: ${parentNode.name}`);
+    } else {
+      figma.currentPage.appendChild(instance);
+      console.log(`📍 Instance placed in: Current Page`);
+    }
+
+    console.log(`✅ SEEDLESS SUCCESS: ${instance.name} (${instance.id})`);
+    
+    const result = {
+      success: true,
+      message: `Seedless creation succeeded: "${instance.name}" from "${component.name}"`,
+      id: instance.id,
+      name: instance.name,
+      parentId: parentId,
+      componentId: component.id,
+      componentName: component.name,
+      method: hasLocalComponentId ? 'direct-local' : 'direct-library'  // Track creation method
+    };
+
+    figma.notify(`Created instance "${instance.name}" successfully`);
+    return result;
+
+  } catch (error) {
+    console.error("Error in createComponentInstance:", error);
+    const errorMsg = `Error: ${error.message}`;
+    figma.notify(errorMsg);
+    return {
+      success: false,
+      message: errorMsg
+    };
+  }
 }
 
 // Implementation for getInstanceOverrides function

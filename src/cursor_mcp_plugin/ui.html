@@ -205,6 +205,18 @@
           </div>
         </div>
 
+        <div class="section">
+          <label for="channel">Channel</label>
+          <div style="display: flex; gap: 8px">
+            <input
+              type="text"
+              id="channel"
+              placeholder="e.g. my-weekly-channel"
+            />
+            <button id="btn-join-channel" class="secondary">Join</button>
+          </div>
+        </div>
+
         <div id="connection-status" class="status disconnected">
           Not connected to Cursor MCP server
         </div>
@@ -267,6 +279,8 @@
       const portInput = document.getElementById("port");
       const connectButton = document.getElementById("btn-connect");
       const disconnectButton = document.getElementById("btn-disconnect");
+      const channelInput = document.getElementById("channel");
+      const joinChannelButton = document.getElementById("btn-join-channel");
       const connectionStatus = document.getElementById("connection-status");
 
       // Tabs
@@ -295,6 +309,8 @@
         connectButton.disabled = isConnected;
         disconnectButton.disabled = !isConnected;
         portInput.disabled = isConnected;
+        channelInput.disabled = !isConnected ? false : false; // allow channel change even when connected
+        joinChannelButton.disabled = !isConnected;
       }
 
       // Connect to WebSocket server
@@ -309,16 +325,21 @@
           state.socket = new WebSocket(`ws://localhost:${port}`);
 
           state.socket.onopen = () => {
-            // Generate random channel name
-            const channelName = generateChannelName();
-            console.log("Joining channel:", channelName);
-            state.channel = channelName;
+            // Determine desired channel: input → saved → random
+            let desired = (channelInput.value || '').trim();
+            if (!desired && state.channel) desired = state.channel;
+            if (!desired) desired = generateChannelName();
+            console.log("Joining channel:", desired);
+            state.channel = desired;
+
+            // Persist channel via plugin clientStorage
+            parent.postMessage({ pluginMessage: { type: 'update-settings', channel: state.channel } }, '*');
 
             // Join the channel using the same format as App.tsx
             state.socket.send(
               JSON.stringify({
                 type: "join",
-                channel: channelName.trim(),
+                channel: desired.trim(),
               })
             );
           };
@@ -348,6 +369,20 @@
                     },
                     "*"
                   );
+                }
+                // Optional: server-instructed channel switch
+                if (data.event === 'system:join-channel' && data.channel) {
+                  const newChan = String(data.channel).trim();
+                  if (newChan && newChan !== state.channel) {
+                    console.log('Switching channel per server instruction:', newChan);
+                    state.channel = newChan;
+                    channelInput.value = newChan;
+                    // Persist
+                    parent.postMessage({ pluginMessage: { type: 'update-settings', channel: state.channel } }, '*');
+                    // Join new channel
+                    state.socket.send(JSON.stringify({ type: 'join', channel: newChan }));
+                    updateConnectionStatus(true, `Connected to server on port ${port} in channel: <strong>${newChan}</strong>`);
+                  }
                 }
               } else if (data.type === "error") {
                 console.error("Error:", data.message);
@@ -381,6 +416,24 @@
           );
         }
       }
+
+      // Join channel on button click
+      joinChannelButton.addEventListener('click', () => {
+        if (!state.connected || !state.socket) {
+          updateConnectionStatus(false, 'Not connected to server');
+          return;
+        }
+        const newChan = (channelInput.value || '').trim();
+        if (!newChan) {
+          updateConnectionStatus(true, 'Please enter a channel name');
+          return;
+        }
+        state.channel = newChan;
+        // Persist
+        parent.postMessage({ pluginMessage: { type: 'update-settings', channel: state.channel } }, '*');
+        state.socket.send(JSON.stringify({ type: 'join', channel: newChan }));
+        updateConnectionStatus(true, `Connected to server on port ${state.serverPort} in channel: <strong>${newChan}</strong>`);
+      });
 
       // Disconnect from websocket server
       function disconnectFromServer() {
@@ -631,6 +684,18 @@
         console.log("Received message from plugin:", message);
 
         switch (message.type) {
+          case "init-settings":
+            if (message.settings) {
+              if (message.settings.serverPort) {
+                state.serverPort = message.settings.serverPort;
+                portInput.value = String(state.serverPort);
+              }
+              if (message.settings.channel) {
+                state.channel = message.settings.channel;
+                channelInput.value = String(state.channel);
+              }
+            }
+            break;
           case "connection-status":
             updateConnectionStatus(message.connected, message.message);
             break;

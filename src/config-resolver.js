@@ -162,3 +162,53 @@ export function resolveContentPath(projectRoot, options = {}) {
   const resolver = new ContentResolver(projectRoot);
   return resolver.resolve(options);
 }
+
+// Infer dataset name from assets list or content filename stem
+export function inferDataset(assets = [], contentFilePath = null) {
+  try {
+    if (Array.isArray(assets) && assets.length > 0 && assets[0]?.filename) {
+      // filename example: "250818_summer_break/img_xxx.png"
+      const parts = String(assets[0].filename).split('/');
+      if (parts.length > 1) return parts[0];
+    }
+    if (contentFilePath) {
+      const base = path.basename(contentFilePath);
+      // Prefer removing suffix _content.json; else trim .json
+      return base.replace(/_content\.json$/i, '').replace(/\.json$/i, '');
+    }
+  } catch {}
+  return 'dataset';
+}
+
+// Derive asset extension from assets[], default 'png'
+export function getAssetExtension(assetId, assets = []) {
+  try {
+    const found = (assets || []).find(a => a.asset_id === assetId);
+    if (found?.filename) {
+      const ext = path.extname(found.filename).toLowerCase().replace(/^\./, '');
+      if (ext) return ext;
+    }
+  } catch {}
+  return 'png';
+}
+
+// Build full asset URL with dataset + ext
+export function buildAssetUrl(staticServerUrl, assets, assetId, contentFilePath = null) {
+  const dataset = inferDataset(assets, contentFilePath);
+  const ext = getAssetExtension(assetId, assets);
+  const base = (staticServerUrl || '').replace(/\/$/, '');
+  return `${base}/${dataset}/${assetId}.${ext}`;
+}
+
+// Compute static server URL from config
+export function computeStaticServerUrl(serverConfig) {
+  try {
+    const cfg = serverConfig?.static_server || {};
+    const host = cfg.host || '127.0.0.1';
+    const port = cfg.port || 3056;
+    const route = cfg.publicRoute || '/assets';
+    return `http://${host}:${port}${route}`;
+  } catch {
+    return 'http://127.0.0.1:3056/assets';
+  }
+}

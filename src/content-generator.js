@@ -10,11 +10,14 @@
  */
 
 import TEMPLATE_STYLES, { getTitleHeight, getImageWidth, getContainerPosition } from './template-styles.js';
+import { buildAssetUrl, inferDataset } from './config-resolver.js';
 
 export default class ContentGenerator {
   constructor(mcpClient) {
     this.mcpClient = mcpClient;
     this.recycleGroupId = null; // 回收站组ID
+    this.assets = [];
+    this.dataset = null;
   }
 
   /**
@@ -81,6 +84,10 @@ export default class ContentGenerator {
     console.log('🏗️ Building content from JSON...');
     
     try {
+      // 保存 assets 与 dataset 供后续图片 URL 构建
+      this.assets = contentData?.assets || [];
+      this.dataset = inferDataset(this.assets, null);
+
       // 按组聚合内容
       const groups = this.groupContentByGroupId(contentData.blocks);
       console.log(`📊 Found ${groups.length} content groups`);
@@ -319,12 +326,12 @@ export default class ContentGenerator {
     
     // 填充图片内容 (如果有asset_id)
     if (figure.image?.asset_id) {
-      const imageUrl = `http://localhost:3056/assets/250818_summer_break/${figure.image.asset_id}.png`;
-      
+      const staticServerUrl = 'http://127.0.0.1:3056/assets';
+      const imageUrl = buildAssetUrl(staticServerUrl, this.assets || [], figure.image.asset_id, null);
       try {
         await this.mcpClient.call("mcp__talk-to-figma__set_image_fill", {
           nodeId: imageNode.id,
-          imageBase64: imageUrl,
+          imageUrl: imageUrl,
           scaleMode: TEMPLATE_STYLES.IMAGE.scaleMode
         });
         console.log(`✅ Image filled: ${figure.image.asset_id}`);

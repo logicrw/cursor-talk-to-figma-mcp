@@ -15,7 +15,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import FigmaChannelManager from './figma-channel-manager.js';
-import { resolveContentPath, parseArgs } from './config-resolver.js';
+import { resolveContentPath, parseArgs, buildAssetUrl, computeStaticServerUrl, inferDataset } from './config-resolver.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,7 +24,7 @@ const __dirname = path.dirname(__filename);
 const CONFIG = {
   serverConfigPath: path.join(__dirname, '../config/server-config.json'),
   runStatePath: path.join(__dirname, '../config/run_state.json'),
-  staticServerUrl: 'http://localhost:3056/assets'
+  staticServerUrl: 'http://127.0.0.1:3056/assets'
 };
 
 // utils: get value by "a.b.c" path
@@ -39,6 +39,21 @@ class CardBasedFigmaWorkflowAutomator {
     this.channelManager = null;
     this.mcpClient = null;
     this.dryRun = false;
+    this.boolPropIds = null; // Cache for component boolean property IDs
+    this.seedInstanceIds = null; // Cache for seed instance IDs
+    this.staticServerUrl = CONFIG.staticServerUrl; // will be recomputed from config
+    this.contentPath = null;
+    this.dataset = null;
+    this.mainFrameId = null;
+  }
+
+  normalizeName(s) {
+    try {
+      return String(s || '')
+        .normalize('NFKC')
+        .replace(/[\s\u200B-\u200D\uFEFF]/g, '')
+        .trim();
+    } catch { return String(s || ''); }
   }
 
   async initialize(mcpClient, channelId = null, contentFile = null, dryRun = false) {
@@ -46,6 +61,30 @@ class CardBasedFigmaWorkflowAutomator {
     this.mcpClient = mcpClient;
     this.channelManager = new FigmaChannelManager(mcpClient);
     this.dryRun = dryRun;
+    
+    // Helper to unwrap MCP responses with robust error handling (follows MCP spec)
+    this.unwrapMcpResponse = (r) => {
+      // Standard MCP response structure: content array with text/image/resource items
+      if (r?.content?.[0]?.text) {
+        try {
+          // Try to parse as JSON first (most common case for our tools)
+          return JSON.parse(r.content[0].text);
+        } catch (parseError) {
+          // Not JSON or malformed - return structured error response
+          console.warn('MCP response parse warning:', parseError.message);
+          return { 
+            success: false, 
+            error: 'JSON parse failed', 
+            rawText: r.content[0].text,
+            parseError: parseError.message 
+          };
+        }
+      }
+      
+      // For non-text content or missing content, return as-is
+      // This handles cases where tools return other MCP content types
+      return r || { success: false, error: 'Empty MCP response' };
+    };
     
     // Connect to channel
     if (channelId) {
@@ -60,6 +99,11 @@ class CardBasedFigmaWorkflowAutomator {
     this.config = serverConfig; // ✅ 修复：保存完整配置
     this.workflowMapping = serverConfig.workflow.mapping;
     console.log('✅ Loaded workflow.mapping from server-config.json');
+    // compute static server url from config
+    try {
+      this.staticServerUrl = computeStaticServerUrl(serverConfig);
+      console.log(`🌐 Static server: ${this.staticServerUrl}`);
+    } catch {}
     
     // Resolve and load content data
     const cliArgs = parseArgs();
@@ -69,41 +113,41 @@ class CardBasedFigmaWorkflowAutomator {
       envVar: process.env.CONTENT_JSON_PATH,
       configDefault: serverConfig.workflow.current_content_file
     });
-    
+    this.contentPath = contentPath;
     this.contentData = JSON.parse(await fs.readFile(contentPath, 'utf8'));
+    // infer dataset for later asset url building
+    this.dataset = inferDataset(this.contentData?.assets || [], this.contentPath);
     
     // Get Cards container nodeId for instance creation
     if (this.channelManager && this.channelManager.currentChannel) {
       try {
         const documentInfo = await this.mcpClient.call("mcp__talk-to-figma__get_document_info");
-        const cardsContainer = documentInfo.children.find(child => 
-          child.name === this.workflowMapping.anchors.frame
-        );
-        if (cardsContainer) {
+        const targetFrameName = this.normalizeName(this.workflowMapping.anchors.frame);
+        const mainFrame = documentInfo.children.find(child => this.normalizeName(child.name) === targetFrameName);
+        if (mainFrame) {
+          this.mainFrameId = mainFrame.id;
           const containerInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", {
-            nodeId: cardsContainer.id
+            nodeId: mainFrame.id
           });
           // Find Cards within ContentContainer
-          const contentContainer = containerInfo.children?.find(child => 
-            child.name === this.workflowMapping.anchors.container
-          );
+          const targetContainerName = this.normalizeName(this.workflowMapping.anchors.container);
+          const contentContainer = containerInfo.children?.find(child => this.normalizeName(child.name) === targetContainerName);
           if (contentContainer) {
             const containerDetail = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", {
               nodeId: contentContainer.id
             });
-            const cardsNode = containerDetail.children?.find(child => 
-              child.name === this.workflowMapping.anchors.cards_stack
-            );
+            const targetCardsName = this.normalizeName(this.workflowMapping.anchors.cards_stack);
+            const cardsNode = containerDetail.children?.find(child => this.normalizeName(child.name) === targetCardsName);
             if (cardsNode) {
               this.workflowMapping.anchors.cards_stack_id = cardsNode.id;
               console.log(`✅ Found Cards container: ${cardsNode.id}`);
             }
           }
-        }
-      } catch (error) {
-        console.warn('⚠️ Could not auto-detect Cards container, using fallback ID');
-        this.workflowMapping.anchors.cards_stack_id = "180:53";
       }
+    } catch (error) {
+      console.warn('⚠️ Could not auto-detect Cards container, using fallback ID');
+      this.workflowMapping.anchors.cards_stack_id = "180:53";
+    }
     }
     
     // Initialize run state
@@ -118,8 +162,143 @@ class CardBasedFigmaWorkflowAutomator {
       };
     }
     
+    // Initialize component property IDs discovery
+    if (this.channelManager && this.channelManager.currentChannel) {
+      await this.discoverComponentPropertyIds();
+    }
+    
     console.log(`📄 Loaded content with ${this.contentData.blocks.length} blocks`);
     console.log(`🎯 Mode: ${this.dryRun ? 'DRY-RUN' : 'PRODUCTION'}`);
+  }
+
+  // Helper methods for enhanced error handling
+  categorizeComponentError(errorMessage) {
+    const msg = errorMessage.toLowerCase();
+    if (msg.includes('not found') || msg.includes('404')) return 'Component Not Found';
+    if (msg.includes('permission') || msg.includes('access') || msg.includes('unauthorized')) return 'Permission Denied';
+    if (msg.includes('library') || msg.includes('publish')) return 'Library Access Issue';
+    if (msg.includes('key') && msg.includes('invalid')) return 'Invalid Component Key';
+    if (msg.includes('parent') || msg.includes('container')) return 'Parent Container Issue';
+    return 'Component Creation Error';
+  }
+
+  explainComponentError(errorMessage) {
+    const msg = errorMessage.toLowerCase();
+    if (msg.includes('permission') || msg.includes('access')) {
+      return 'Component library access denied. Check if: 1) Library is enabled in this file, 2) Component is published, 3) You have team access rights';
+    }
+    if (msg.includes('not found') || msg.includes('404')) {
+      return 'Component not found. Verify componentKey/componentId is correct and component exists';
+    }
+    if (msg.includes('library') || msg.includes('publish')) {
+      return 'Library issue. Component may not be published or library not enabled in this file';
+    }
+    return errorMessage; // Return original message if no specific explanation
+  }
+
+  // Instance Creation Factory - supports both seedless creation and fallback to seed cloning
+  async createCardInstance(parentId, cardType = 'figure') {
+    console.log(`🏭 Creating ${cardType} card instance...`);
+    
+    const config = this.workflowMapping[cardType] || {};
+    
+    // Try direct component instantiation first (B+ approach)
+    try {
+      if (config.componentId || config.componentKey) {
+        console.log(`  📦 Attempting direct component instantiation...`);
+        
+        const rawResult = await this.mcpClient.call("mcp__talk-to-figma__create_component_instance", {
+          parentId: parentId,
+          componentId: config.componentId || undefined,
+          componentKey: config.componentKey || undefined,
+          x: 0,
+          y: 0
+        });
+        const result = this.unwrapMcpResponse(rawResult);
+        
+        if (result.success) {
+          console.log(`  ✅ Direct creation succeeded: ${result.name} (${result.id})`);
+          return { id: result.id, name: result.name, method: 'direct' };
+        } else {
+          // Enhanced error categorization for common component creation failures
+          const errorMsg = result.message || result.error || 'Direct creation failed';
+          const errorType = this.categorizeComponentError(errorMsg);
+          throw new Error(`${errorType}: ${errorMsg}`);
+        }
+      }
+    } catch (error) {
+      const friendlyError = this.explainComponentError(error.message);
+      console.warn(`  ⚠️ Direct creation failed: ${friendlyError}`);
+      console.warn(`  🔄 Falling back to seed cloning...`);
+    }
+    
+    // Fallback to seed cloning (existing approach)
+    try {
+      const result = await this.cloneCardFromSeed(parentId, cardType);
+      console.log(`  ✅ Seed cloning succeeded: ${result.name} (${result.id})`);
+      return { ...result, method: 'seed-clone' };
+    } catch (error) {
+      console.error(`  ❌ Both direct creation and seed cloning failed`);
+      throw new Error(`Failed to create ${cardType} card: Direct creation failed (${error.message}), seed cloning also failed`);
+    }
+  }
+
+  async cloneCardFromSeed(parentId, cardType) {
+    // This method handles the existing seed-based cloning logic
+    // Implementation depends on your current seed cloning approach
+    const seedInstances = await this.resolveSeedInstances();
+    const seedId = cardType === 'figure' ? seedInstances.figureInstanceId : seedInstances.bodyInstanceId;
+    
+    // Use existing append_card_to_container API
+    const rawResult = await this.mcpClient.call("mcp__talk-to-figma__append_card_to_container", {
+      containerId: parentId,
+      templateId: seedId,
+      insertIndex: -1
+    });
+    const parsed = this.unwrapMcpResponse(rawResult);
+
+    // Normalize different return shapes:
+    // - Plugin data via server text message (contains "New card ID: <id>" and name inside quotes)
+    // - Potential JSON object with { newNodeId, newNodeName } or { id, name } or { instanceId, instanceName }
+    const normalize = (objOrText) => {
+      if (!objOrText) return null;
+      // Object-like
+      if (typeof objOrText === 'object') {
+        const id = objOrText.newNodeId || objOrText.instanceId || objOrText.id;
+        const name = objOrText.newNodeName || objOrText.instanceName || objOrText.name || 'Cloned Card';
+        if (id) return { id, name };
+      }
+      // Text fallback
+      if (typeof objOrText === 'string') {
+        // Extract name between first quotes after 'appended card'
+        let nameMatch = objOrText.match(/appended card \"([^\"]+)\"/i);
+        // Extract ID after 'New card ID:'
+        let idMatch = objOrText.match(/New card ID:\s*([^\s]+)/i);
+        if (idMatch) {
+          return { id: idMatch[1], name: (nameMatch && nameMatch[1]) || 'Cloned Card' };
+        }
+      }
+      return null;
+    };
+
+    let normalized = null;
+    if (parsed && parsed.success && typeof parsed === 'object') {
+      normalized = normalize(parsed);
+    }
+    if (!normalized && parsed && parsed.rawText) {
+      normalized = normalize(parsed.rawText);
+    }
+    if (!normalized) {
+      // Try using the raw MCP response directly if available
+      normalized = normalize(rawResult?.content?.[0]?.text || rawResult);
+    }
+
+    if (!normalized) {
+      const msg = parsed?.message || parsed?.error || 'Unknown append result';
+      throw new Error(`Seed cloning failed: ${msg}`);
+    }
+
+    return normalized;
   }
 
   async processWorkflow() {
@@ -136,6 +315,7 @@ class CardBasedFigmaWorkflowAutomator {
     
     try {
       // Step 1: Create ordered content flow
+      await this.fillHeader(this.contentData?.doc || {});
       const orderedContent = this.createOrderedContentFlow();
       console.log(`📋 Generated ordered content flow: ${orderedContent.length} items`);
       
@@ -179,6 +359,73 @@ class CardBasedFigmaWorkflowAutomator {
       await this.updateRunState();
       throw error;
     }
+  }
+
+  // Helper: DFS search within any node info tree
+  dfsFindNodeIdByName(rootInfo, targetName) {
+    const target = this.normalizeName(targetName);
+    if (!target || !rootInfo) return null;
+    const stack = [rootInfo];
+    while (stack.length) {
+      const node = stack.pop();
+      if (this.normalizeName(node?.name) === target) return node.id || null;
+      if (node?.children && Array.isArray(node.children)) {
+        for (const ch of node.children) stack.push(ch);
+      }
+    }
+    return null;
+  }
+
+  async fillHeader(docMeta = {}) {
+    try {
+      const headerCfg = this.workflowMapping?.anchors?.header || {};
+      if (!this.mainFrameId) {
+        // Try to resolve main frame again if missing
+        const documentInfo = await this.mcpClient.call("mcp__talk-to-figma__get_document_info");
+        const mainFrame = documentInfo.children.find(child => child.name === this.workflowMapping.anchors.frame);
+        if (mainFrame) this.mainFrameId = mainFrame.id;
+      }
+      if (!this.mainFrameId) {
+        console.warn('⚠️ No main frame detected, skipping header fill');
+        return;
+      }
+
+      const frameInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", { nodeId: this.mainFrameId });
+      const setIfFound = async (nodeName, text) => {
+        if (!nodeName) return;
+        const nodeId = this.dfsFindNodeIdByName(frameInfo, nodeName);
+        if (!nodeId) return;
+        try {
+          await this.mcpClient.call("mcp__talk-to-figma__set_text_content", { nodeId, text: text || '' });
+          await this.mcpClient.call("mcp__talk-to-figma__set_text_auto_resize", { nodeId, autoResize: 'HEIGHT' });
+          console.log(`🧭 Header set ${nodeName}: "${(text || '').toString().substring(0, 60)}"`);
+        } catch (e) {
+          console.warn(`⚠️ Failed to set header ${nodeName}: ${e.message}`);
+        }
+      };
+
+      const title = docMeta.title || '';
+      const dateStr = docMeta.date || '';
+      const month = this.formatMonthFromDate(dateStr);
+
+      await setIfFound(headerCfg.title, title);
+      await setIfFound(headerCfg.date, dateStr);
+      await setIfFound(headerCfg.month, month);
+    } catch (error) {
+      console.warn('⚠️ fillHeader failed:', error.message);
+    }
+  }
+
+  formatMonthFromDate(dateStr) {
+    try {
+      if (!dateStr) return '';
+      const m = String(dateStr).match(/\d{4}-(\d{2})-\d{2}/);
+      if (m) return m[1];
+      // try compact yyyyMMdd
+      const m2 = String(dateStr).match(/\d{4}(\d{2})\d{2}/);
+      if (m2) return m2[1];
+      return '';
+    } catch { return ''; }
   }
 
   createOrderedContentFlow() {
@@ -260,28 +507,29 @@ class CardBasedFigmaWorkflowAutomator {
         : `${String(i+1).padStart(2,'0')}_Body_${i}`;
       
       try {
-        // ✅ 种子实例克隆法：直接从种子追加到 Cards，确保插入顺序
-        const appendResult = await this.mcpClient.call("mcp__talk-to-figma__append_card_to_container", {
-          containerId: cardsContainerId,
-          templateId: seedId,
-          newName: newName,
-          insertIndex: i  // ← 关键：卡片在 Cards 内的确切位置
-        });
+        console.log(`  🏭 Creating ${componentName} card ${i + 1}/${orderedContent.length}: ${newName}`);
         
-        // ✅ 改进2: 增强绑定关系，便于按索引对齐
+        // Use the new instance creation factory (B+ approach with fallback)
+        const cardType = item.type === 'figure_group' ? 'figure' : 'body';
+        const cardInstance = await this.createCardInstance(cardsContainerId, cardType);
+        
+        console.log(`    📝 Card created: ${cardInstance.name} via ${cardInstance.method}`);
+        
+        // ✅ Enhanced binding relationship for index alignment
         this.runState.cards_created.push({
           index: i,               // ← 与 orderedContent 的位置一一对应
-          instanceId: appendResult.newCardId,
+          instanceId: cardInstance.id,
+          creationMethod: cardInstance.method, // Track how it was created
           kind: item.type,        // 'figure_group' | 'standalone_paragraph'
           type: item.type,        // ← 向后兼容，别删
           component: componentName,
-          name: newName,
+          name: cardInstance.name,
           ref: item.type === 'figure_group'
             ? { group_id: item.group_id }                // grp_0010 / grp_0011…
             : { original_index: item.original_index }    // 段落在JSON中的原始索引
         });
         
-        console.log(`✅ Created ${componentName} instance ${i + 1} (ID: ${appendResult.newCardId})`);
+        console.log(`✅ Created ${componentName} instance ${i + 1} via ${cardInstance.method} (ID: ${cardInstance.id})`);
         
       } catch (error) {
         console.error(`❌ Failed to create ${componentName} instance ${i + 1}:`, error);
@@ -328,8 +576,10 @@ class CardBasedFigmaWorkflowAutomator {
         try {
           const info = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", { nodeId: actualCard.id });
           const slots = this.workflowMapping.anchors?.slots ?? {};
-          const hasBody = (info.children || []).some(c => c.name === (slots.body?.body ?? 'slot:BODY'));
-          const hasImageGrid = (info.children || []).some(c => c.name === (slots.figure?.image_grid ?? 'slot:IMAGE_GRID'));
+          const bodyName = this.normalizeName(slots.body?.body ?? 'slot:BODY');
+          const imageGridName = this.normalizeName(slots.figure?.image_grid ?? 'slot:IMAGE_GRID');
+          const hasBody = (info.children || []).some(c => this.normalizeName(c.name) === bodyName);
+          const hasImageGrid = (info.children || []).some(c => this.normalizeName(c.name) === imageGridName);
           const actualType = hasBody ? 'standalone_paragraph' : (hasImageGrid ? 'figure_group' : 'unknown');
           
           // ✅ DEBUG日志 - unknown类型时输出详细信息
@@ -366,6 +616,10 @@ class CardBasedFigmaWorkflowAutomator {
 
   // 🎯 种子实例解析方法
   async resolveSeedInstances() {
+    if (this.seedInstanceIds) {
+      return this.seedInstanceIds;
+    }
+    
     const seedsMapping = this.workflowMapping.anchors.seeds;
     if (!seedsMapping) {
       throw new Error('Seeds configuration not found in mapping.anchors.seeds');
@@ -373,7 +627,7 @@ class CardBasedFigmaWorkflowAutomator {
 
     // 查找 Seeds 框架
     const docInfo = await this.mcpClient.call("mcp__talk-to-figma__get_document_info");
-    const seedsFrame = docInfo.children.find(frame => frame.name === seedsMapping.frame);
+    const seedsFrame = docInfo.children.find(frame => this.normalizeName(frame.name) === this.normalizeName(seedsMapping.frame));
     if (!seedsFrame) {
       throw new Error(`Seeds frame "${seedsMapping.frame}" not found`);
     }
@@ -383,8 +637,8 @@ class CardBasedFigmaWorkflowAutomator {
       nodeId: seedsFrame.id
     });
 
-    const figureInstance = seedsInfo.children.find(child => child.name === seedsMapping.figure_instance);
-    const bodyInstance = seedsInfo.children.find(child => child.name === seedsMapping.body_instance);
+    const figureInstance = seedsInfo.children.find(child => this.normalizeName(child.name) === this.normalizeName(seedsMapping.figure_instance));
+    const bodyInstance = seedsInfo.children.find(child => this.normalizeName(child.name) === this.normalizeName(seedsMapping.body_instance));
 
     if (!figureInstance || !bodyInstance) {
       throw new Error(`Seed instances not found: ${seedsMapping.figure_instance} / ${seedsMapping.body_instance}`);
@@ -392,10 +646,170 @@ class CardBasedFigmaWorkflowAutomator {
 
     console.log(`🌱 Seed instances resolved: FigureCard=${figureInstance.id}, BodyCard=${bodyInstance.id}`);
 
-    return {
+    this.seedInstanceIds = {
       figureInstanceId: figureInstance.id,
       bodyInstanceId: bodyInstance.id
     };
+    
+    return this.seedInstanceIds;
+  }
+  
+  // ✨ 新增：自动发现组件属性的 propertyId (使用官方API)
+  async discoverComponentPropertyIds() {
+    console.log('🔍 Discovering component property IDs...');
+    
+    try {
+      // Try B+ approach first: create a temporary instance for property discovery
+      let discoveryInstanceId = null;
+      let shouldCleanupInstance = false;
+      
+      try {
+        console.log('  🆕 Attempting property discovery via direct instance creation...');
+        let cardsStackId = this.workflowMapping.anchors?.cards_stack_id;
+        if (!cardsStackId) {
+          // Resolve by names: frame → container → cards_stack
+          const docInfo = await this.mcpClient.call("mcp__talk-to-figma__get_document_info");
+          const frameNode = docInfo.children.find(child => child.name === this.workflowMapping.anchors.frame);
+          if (!frameNode) throw new Error('Main frame not found for property discovery');
+          const frameInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", { nodeId: frameNode.id });
+          const containerNode = frameInfo.children?.find(child => child.name === this.workflowMapping.anchors.container);
+          if (!containerNode) throw new Error('Content container not found for property discovery');
+          const containerInfo = await this.mcpClient.call("mcp__talk-to-figma__get_node_info", { nodeId: containerNode.id });
+          const cardsNode = containerInfo.children?.find(child => child.name === this.workflowMapping.anchors.cards_stack);
+          if (!cardsNode) throw new Error('Cards stack not found for property discovery');
+          cardsStackId = cardsNode.id;
+          this.workflowMapping.anchors.cards_stack_id = cardsStackId;
+          console.log(`  🔗 Resolved cards stack id by name: ${cardsStackId}`);
+        }
+        
+        const tempInstance = await this.createCardInstance(cardsStackId, 'figure');
+        discoveryInstanceId = tempInstance.id;
+        // Clean up only if we created an instance directly (covers variants like 'direct-local')
+        shouldCleanupInstance = (typeof tempInstance.method === 'string' && tempInstance.method.startsWith('direct'));
+        
+        console.log(`  📍 Using instance ${discoveryInstanceId} for property discovery (method: ${tempInstance.method})`);
+      } catch (error) {
+        console.warn(`  ⚠️ Direct instance creation failed, falling back to seed discovery: ${error.message}`);
+        
+        // Fallback: use existing seed-based discovery
+        const seedInstances = await this.resolveSeedInstances();
+        discoveryInstanceId = seedInstances.figureInstanceId;
+        shouldCleanupInstance = false;
+      }
+      
+      // Perform property discovery on the chosen instance
+      const rawResponse = await this.mcpClient.call("mcp__talk-to-figma__get_component_property_references", {
+        nodeId: discoveryInstanceId
+      });
+      const referencesResult = this.unwrapMcpResponse(rawResponse);
+      
+      console.log('📋 Component properties result:', JSON.stringify(referencesResult, null, 2));
+      
+      if (!referencesResult.success || !referencesResult.properties) {
+        throw new Error(`Failed to get component properties: ${referencesResult.message || 'Unknown error'}`);
+      }
+      
+      // Get configuration for expected property names
+      const visibilityMapping = this.workflowMapping.images?.visibility_props || {};
+      const titleVisibleProp = this.workflowMapping.title?.visible_prop || 'showTitle';
+      const sourceVisibleProp = this.workflowMapping.source?.visible_prop || 'showSource';
+
+      this.boolPropIds = { figure: {} };
+
+      // Get available property keys (already in PropertyName#ID format)
+      const availableKeys = referencesResult.propertyKeys || Object.keys(referencesResult.properties);
+      console.log('🔍 Available property keys:', availableKeys);
+
+      // Build normalized baseName → actualKey map for robust matching
+      const normalize = (s) => String(s || '')
+        .toLowerCase()
+        .replace(/\s+/g, '')
+        .replace(/[_\-]+/g, '');
+
+      const keyByNormalizedBase = {};
+      for (const key of availableKeys) {
+        const base = String(key).split('#')[0];
+        const norm = normalize(base);
+        if (!keyByNormalizedBase[norm]) keyByNormalizedBase[norm] = key;
+      }
+
+      const findProperty = (friendlyName) => {
+        const exactPrefix = availableKeys.find(key => key.startsWith(`${friendlyName}#`));
+        if (exactPrefix) return exactPrefix;
+        const norm = normalize(friendlyName);
+        return keyByNormalizedBase[norm] || null;
+      };
+
+      // Map title property
+      const titleKey = findProperty(titleVisibleProp);
+      if (titleKey) {
+        this.boolPropIds.figure[titleVisibleProp] = titleKey;
+        console.log(`📌 Mapped title property: ${titleVisibleProp} -> ${titleKey}`);
+      } else {
+        console.error(`❌ Title property not found: ${titleVisibleProp}`);
+      }
+
+      // Map source property  
+      const sourceKey = findProperty(sourceVisibleProp);
+      if (sourceKey) {
+        this.boolPropIds.figure[sourceVisibleProp] = sourceKey;
+        console.log(`📌 Mapped source property: ${sourceVisibleProp} -> ${sourceKey}`);
+      } else {
+        console.error(`❌ Source property not found: ${sourceVisibleProp}`);
+      }
+
+      // Map image slot properties (optional, do not fail workflow if missing)
+      const missingImageProps = [];
+      Object.entries(visibilityMapping).forEach(([slotName, propName]) => {
+        const imageKey = findProperty(propName);
+        if (imageKey) {
+          this.boolPropIds.figure[propName] = imageKey;
+          console.log(`📌 Mapped image property: ${propName} (${slotName}) -> ${imageKey}`);
+        } else {
+          console.warn(`⚠️ Image visibility property not found: ${propName} (${slotName}). Will treat as hidden by default.`);
+          missingImageProps.push(propName);
+        }
+      });
+
+      // Fail-fast validation: essential properties must be present
+      const essentialMissing = [titleVisibleProp, sourceVisibleProp].filter(prop => !this.boolPropIds.figure[prop]);
+      if (essentialMissing.length > 0) {
+        const availableBases = availableKeys.map(k => k.split('#')[0]);
+        const errorMsg = `❌ Essential component properties missing: ${essentialMissing.join(', ')}. Available base names: ${availableBases.join(', ')}`;
+        console.error(errorMsg);
+        if (shouldCleanupInstance && discoveryInstanceId) {
+          try {
+            await this.mcpClient.call("mcp__talk-to-figma__delete_node", { nodeId: discoveryInstanceId });
+            console.log(`  🧹 Cleaned up temporary instance: ${discoveryInstanceId}`);
+          } catch (cleanupError) {
+            console.warn(`  ⚠️ Failed to cleanup temporary instance: ${cleanupError.message}`);
+          }
+        }
+        throw new Error(errorMsg);
+      }
+
+      if (missingImageProps.length > 0) {
+        console.warn(`ℹ️ Proceeding with defaults: missing image visibility props will be treated as hidden: ${missingImageProps.join(', ')}`);
+      }
+
+      console.log('✅ Component property IDs discovered:', this.boolPropIds);
+      
+      // Cleanup temporary instance if we created it for discovery
+      if (shouldCleanupInstance && discoveryInstanceId) {
+        try {
+          await this.mcpClient.call("mcp__talk-to-figma__delete_node", { nodeId: discoveryInstanceId });
+          console.log(`  🧹 Cleaned up temporary discovery instance: ${discoveryInstanceId}`);
+        } catch (cleanupError) {
+          console.warn(`  ⚠️ Failed to cleanup temporary instance: ${cleanupError.message}`);
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ Failed to discover property IDs:', error.message);
+      
+      // Fail fast - don't use fallback mapping
+      throw new Error(`Property ID discovery failed: ${error.message}. Please check Figma component boolean properties setup.`);
+    }
   }
 
   async clearCardsContainer() {
@@ -463,8 +877,15 @@ class CardBasedFigmaWorkflowAutomator {
       });
       
       // DFS递归搜索所有层级
+      const normalizeName = (s) => String(s || '')
+        .normalize('NFKC')
+        .replace(/[\s\u200B-\u200D\uFEFF]/g, '')
+        .trim();
+
+      const target = normalizeName(childName);
+
       const dfsSearch = (node) => {
-        if (node.name === childName) {
+        if (normalizeName(node.name) === target) {
           return node.id;
         }
         
@@ -524,6 +945,10 @@ class CardBasedFigmaWorkflowAutomator {
           nodeId: titleNodeId,
           text: firstTitle || ''  // ✅ 空内容设为空字符串，依赖Auto-layout收缩
         });
+        await this.mcpClient.call("mcp__talk-to-figma__set_text_auto_resize", {
+          nodeId: titleNodeId,
+          autoResize: 'HEIGHT'
+        });
         console.log(`    ✅ Set title: "${firstTitle || '(empty)'}"`);
       } catch (error) {
         console.error(`    ❌ Failed to set title:`, error.message);
@@ -540,13 +965,17 @@ class CardBasedFigmaWorkflowAutomator {
           nodeId: sourceNodeId,
           text: sourceText  // ✅ 空内容设为空字符串
         });
+        await this.mcpClient.call("mcp__talk-to-figma__set_text_auto_resize", {
+          nodeId: sourceNodeId,
+          autoResize: 'HEIGHT'
+        });
         console.log(`    ✅ Set source: "${sourceText || '(empty)'}"`);
       } catch (error) {
         console.error(`    ❌ Failed to set source:`, error.message);
       }
     }
     
-    // Advanced visibility control with multi-layer fallback
+    // Apply official Figma setProperties API for visibility control
     await this.applyVisibilityControl(instanceId, {
       hasTitle: !!firstTitle,
       hasSource: !!firstCredit, 
@@ -562,7 +991,7 @@ class CardBasedFigmaWorkflowAutomator {
       const imageNodeId = await this.findChildByName(instanceId, imageSlotName);
       
       if (imageNodeId && images[i].asset_id) {
-        const imageUrl = `${CONFIG.staticServerUrl}/${images[i].asset_id}.png`;
+        const imageUrl = buildAssetUrl(this.staticServerUrl, this.contentData?.assets || [], images[i].asset_id, this.contentPath);
         try {
           await this.mcpClient.call("mcp__talk-to-figma__set_image_fill", {
             nodeId: imageNodeId,
@@ -581,44 +1010,75 @@ class CardBasedFigmaWorkflowAutomator {
   async applyVisibilityControl(instanceId, { hasTitle, hasSource, imageCount }) {
     console.log(`    🎯 Visibility control: title:${hasTitle}, source:${hasSource}, images:${imageCount}`);
 
-    // 路线A：直接对槽位容器层做 set_node_visible
-    // 1. 控制标题槽位容器
-    const titleSlotName = this.workflowMapping.anchors?.slots?.figure?.title || 'slot:TITLE';
-    await this.setSlotVisibility(instanceId, titleSlotName, hasTitle, 'title slot');
-
-    // 2. 控制来源槽位容器  
-    const sourceSlotName = this.workflowMapping.anchors?.slots?.figure?.source || 'slot:SOURCE';
-    await this.setSlotVisibility(instanceId, sourceSlotName, hasSource, 'source slot');
-
-    // 3. 控制图片槽位容器
-    const imageSlotNames = this.workflowMapping.anchors?.slots?.images || this.workflowMapping.anchors.image_slots || [];
-    const maxImages = this.workflowMapping.images?.max_images ?? 4;
-    
-    for (let i = 2; i <= maxImages && i-1 < imageSlotNames.length; i++) {
-      const shouldShow = imageCount >= i;
-      const slotName = imageSlotNames[i-1]; // imgSlot2 is at index 1
-      await this.setSlotVisibility(instanceId, slotName, shouldShow, `image slot ${i}`);
-    }
-  }
-
-  async setSlotVisibility(instanceId, slotName, visible, description) {
-    const slotNodeId = await this.findChildByName(instanceId, slotName);
-    if (!slotNodeId) {
-      console.warn(`    ⚠️ ${description} container '${slotName}' not found`);
-      return;
+    if (!this.boolPropIds?.figure) {
+      const error = 'Boolean property IDs not discovered - cannot apply visibility control';
+      console.error(`    ❌ ${error}`);
+      throw new Error(error);
     }
 
     try {
-      // 直接设置容器层可见性，Auto-layout会自动调整布局
-      await this.mcpClient.call("mcp__talk-to-figma__set_node_visible", {
-        nodeId: slotNodeId,
-        visible: visible
-      });
-      console.log(`    ✅ ${description} ${visible ? 'shown' : 'hidden'}`);
+      // 计算各布尔位的目标值
+      const titleVisibleProp = this.workflowMapping.title?.visible_prop || 'showTitle';
+      const sourceVisibleProp = this.workflowMapping.source?.visible_prop || 'showSource';
+      const visibilityMapping = this.workflowMapping.images?.visibility_props || {};
+      
+      // 构造properties对象 - 使用PropertyName#ID格式的键
+      const properties = {};
+      
+      // 设置标题显示
+      if (this.boolPropIds.figure[titleVisibleProp]) {
+        properties[this.boolPropIds.figure[titleVisibleProp]] = hasTitle;
+        console.log(`    📝 ${titleVisibleProp} -> ${this.boolPropIds.figure[titleVisibleProp]} = ${hasTitle}`);
+      }
+      
+      // 设置来源显示
+      if (this.boolPropIds.figure[sourceVisibleProp]) {
+        properties[this.boolPropIds.figure[sourceVisibleProp]] = hasSource;
+        console.log(`    📝 ${sourceVisibleProp} -> ${this.boolPropIds.figure[sourceVisibleProp]} = ${hasSource}`);
+      }
+      
+      // 设置图片显示 - 动态从配置读取
+      const imageSlotNames = this.workflowMapping.anchors?.slots?.images || this.workflowMapping.anchors.image_slots || [];
+      const maxImages = this.workflowMapping.images?.max_images ?? imageSlotNames.length;
+      
+      for (let i = 2; i <= maxImages && i-1 < imageSlotNames.length; i++) {
+        const slotName = imageSlotNames[i-1]; // imgSlot2 is at index 1
+        const visibilityProp = visibilityMapping[slotName];
+        
+        if (visibilityProp && this.boolPropIds.figure[visibilityProp]) {
+          const shouldShow = imageCount >= i;
+          properties[this.boolPropIds.figure[visibilityProp]] = shouldShow;
+          console.log(`    📝 ${visibilityProp} (${slotName}) -> ${this.boolPropIds.figure[visibilityProp]} = ${shouldShow}`);
+        }
+      }
+      
+      // 使用官方setProperties API直接设置实例属性
+      if (Object.keys(properties).length > 0) {
+        console.log(`    🔧 Applying properties using setProperties:`, properties);
+        
+        const rawResult = await this.mcpClient.call("mcp__talk-to-figma__set_instance_properties", {
+          nodeId: instanceId,
+          properties: properties
+        });
+        const result = this.unwrapMcpResponse(rawResult);
+        
+        if (result.success) {
+          console.log(`    ✅ Applied ${Object.keys(properties).length} properties to instance ${instanceId}`);
+          console.log(`    📋 Applied properties:`, result.applied);
+        } else {
+          throw new Error(`Failed to set properties: ${result.message}`);
+        }
+      } else {
+        console.warn(`    ⚠️ No properties to apply - check component property mapping`);
+      }
+      
     } catch (error) {
-      console.warn(`    ⚠️ Failed to set visibility for ${description}: ${error.message}`);
+      console.error(`    ❌ Failed to apply visibility control:`, error.message);
+      console.error(`    📋 Error details:`, error);
+      throw error; // Re-throw to fail fast as requested
     }
   }
+
 
   async processBodyCard(standaloneItem, cardIndex) {
     const cardInstance = this.runState.cards_created[cardIndex];
@@ -645,6 +1105,10 @@ class CardBasedFigmaWorkflowAutomator {
         await this.mcpClient.call("mcp__talk-to-figma__set_text_content", {
           nodeId: bodyTextNodeId,
           text: paragraphText
+        });
+        await this.mcpClient.call("mcp__talk-to-figma__set_text_auto_resize", {
+          nodeId: bodyTextNodeId,
+          autoResize: 'HEIGHT'
         });
         console.log(`    ✅ Set body text: "${paragraphText.substring(0, 60)}..."`);
       } catch (error) {
