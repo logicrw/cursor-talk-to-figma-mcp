@@ -4424,7 +4424,7 @@ function traverseByIndexPath(root, indexPath) {
 
 // Helper: ensure editable target by detaching nearest instance containing the node
 function nearestInstanceAncestor(n) {
-  let cur = n?.parent;
+  let cur = n ? n.parent : null;
   while (cur) {
     if (cur.type === 'INSTANCE') return cur;
     cur = cur.parent;
