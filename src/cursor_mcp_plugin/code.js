@@ -4475,6 +4475,9 @@ async function setImageFill(params) {
       bytes = customBase64Decode(base64Data);
     }
 
+    // Preserve original visibility
+    const wasVisible = !!targetNode.visible;
+
     // Create image in Figma
     const image = figma.createImage(bytes);
     const imageHash = image.hash;
@@ -4496,23 +4499,22 @@ async function setImageFill(params) {
     // Apply the fill first
     targetNode.fills = [imageFill];
 
-    // Compute width/height based on slot width or provided targetWidth
-    const currentW = Math.max(1, Math.round(Number(targetNode.width) || 0));
-    const w = (Number.isFinite(targetWidth) && targetWidth > 0) ? targetWidth : currentW;
-    const h = (naturalW > 0 && naturalH > 0)
-      ? Math.max(1, Math.round(w * naturalH / Math.max(1, naturalW)))
-      : Math.max(1, Math.round(Number(targetNode.height) || 1));
-
-    // Let width be controlled by container (Fill), height fixed by plugin
+    // Ensure horizontal Fill/vertical Fixed BEFORE reading slot width
     try {
       if ("layoutSizingHorizontal" in targetNode) targetNode.layoutSizingHorizontal = "FILL";
       if ("layoutSizingVertical" in targetNode)   targetNode.layoutSizingVertical   = "FIXED";
     } catch (e) {}
 
-    // Set initial height (width uses current/target width for proportional calc)
-    try {
-      targetNode.resize(w, h);
-    } catch (e) {}
+    // Compute width/height based on final slot width or provided targetWidth
+    let slotWidth = Math.max(1, Math.round(Number(targetNode.width) || 0));
+    if (!Number.isFinite(slotWidth) || slotWidth <= 0) slotWidth = 1;
+    const w = (Number.isFinite(targetWidth) && targetWidth > 0) ? targetWidth : slotWidth;
+    const h = (naturalW > 0 && naturalH > 0)
+      ? Math.max(1, Math.round(w * naturalH / Math.max(1, naturalW)))
+      : Math.max(1, Math.round(Number(targetNode.height) || 1));
+
+    // Apply initial resize (width controlled by Fill, height fixed)
+    try { targetNode.resize(w, h); } catch (e) {}
 
     // Lock aspect ratio so future width changes adjust height proportionally
     try {
@@ -4523,6 +4525,9 @@ async function setImageFill(params) {
         try { targetNode.targetAspectRatio = ratio; } catch (e) {}
       }
     } catch (e) {}
+
+    // Restore original visibility (avoid waking hidden slots)
+    try { targetNode.visible = wasVisible; } catch (e) {}
 
     return {
       success: true,
