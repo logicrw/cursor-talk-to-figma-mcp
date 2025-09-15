@@ -527,7 +527,7 @@ class WeeklyPosterRunner {
         try {
           if (await this.httpHeadOk(url)) {
             try {
-              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode: 'FIT', opacity: 1 });
+              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode: 'FIT', opacity: 1, autoDetach: true });
             } catch (errUrl) {
               const ext = getAssetExtension(images[i].asset_id, this.content.assets || []);
               const localPath = path.join(
@@ -537,7 +537,7 @@ class WeeklyPosterRunner {
               const buf = await fs.readFile(localPath);
               const b64 = buf.toString('base64');
               await this.throttleBase64();
-              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FIT', opacity: 1 });
+              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FIT', opacity: 1, autoDetach: true });
             }
           } else {
             const ext = getAssetExtension(images[i].asset_id, this.content.assets || []);
@@ -548,7 +548,7 @@ class WeeklyPosterRunner {
             const buf = await fs.readFile(localPath);
             const b64 = buf.toString('base64');
             await this.throttleBase64();
-            await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FIT', opacity: 1 });
+            await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FIT', opacity: 1, autoDetach: true });
           }
           used.add(imgNodeId);
           placed = true;

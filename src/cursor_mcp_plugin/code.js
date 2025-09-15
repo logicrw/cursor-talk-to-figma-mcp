@@ -4423,18 +4423,28 @@ function traverseByIndexPath(root, indexPath) {
 }
 
 // Helper: ensure editable target by detaching nearest instance containing the node
-function ensureEditableTarget(node) {
-  let cur = node;
-  let inst = null;
+function nearestInstanceAncestor(n) {
+  let cur = n?.parent;
   while (cur) {
-    if (cur.type === 'INSTANCE') { inst = cur; break; }
+    if (cur.type === 'INSTANCE') return cur;
     cur = cur.parent;
   }
-  if (!inst) return node; // already editable
-  const path = collectIndexPath(node, inst);
-  const frame = inst.detachInstance(); // returns FrameNode
-  const mapped = traverseByIndexPath(frame, path);
-  return mapped || frame;
+  return null;
+}
+
+function detachAllInstanceAncestors(n) {
+  let cur = n;
+  let count = 0;
+  for (let guard = 0; guard < 10; guard++) {
+    const inst = nearestInstanceAncestor(cur);
+    if (!inst) break;
+    const path = collectIndexPath(cur, inst);
+    const frame = inst.detachInstance();
+    const mapped = traverseByIndexPath(frame, path);
+    cur = mapped || frame;
+    count++;
+  }
+  return { node: cur, count };
 }
 
 async function setImageFill(params) {
@@ -4465,8 +4475,12 @@ async function setImageFill(params) {
   }
 
   // Optional: detach nearest instance so we can resize freely
-  if (autoDetach) {
-    try { node = ensureEditableTarget(node); } catch (e) {}
+  if (autoDetach !== false) {
+    try {
+      const res = detachAllInstanceAncestors(node);
+      node = res.node;
+      try { console.log('[set_image_fill] autoDetach enabled, detachedTimes:', res.count, 'newNodeId:', node.id); } catch (e) {}
+    } catch (e) {}
   }
 
   // Auto-drill down to find fillable node (paintNode)
