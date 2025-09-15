@@ -4506,17 +4506,36 @@ async function setImageFill(params) {
       if ("layoutSizingHorizontal" in slotNode) slotNode.layoutSizingHorizontal = "FILL";
       if ("layoutSizingVertical"   in slotNode) slotNode.layoutSizingVertical   = "FIXED";
     } catch (e) {}
+    // Force a layout refresh so width reflects the Fill setting
+    try { if (typeof figma.flushAsync === 'function') { await figma.flushAsync(); } } catch (e) {}
 
     // Compute width/height based on final slot width or provided targetWidth
-    let slotWidth = Math.max(1, Math.round(Number(slotNode.width) || 0));
+    let slotWidth = Math.round(Number(targetWidth) || Number(slotNode.width) || 0);
     if (!Number.isFinite(slotWidth) || slotWidth <= 0) slotWidth = 1;
-    const w = (Number.isFinite(targetWidth) && targetWidth > 0) ? targetWidth : slotWidth;
+    // If width is still unreliable, fallback to parent inner width (parent width - horizontal paddings)
+    if (slotWidth <= 1) {
+      const p = slotNode.parent;
+      if (p && typeof p === 'object' && 'width' in p) {
+        const pw = (p && typeof p.width === 'number') ? p.width : 0;
+        const pl = (p && typeof p.paddingLeft  === 'number') ? p.paddingLeft  : 0;
+        const pr = (p && typeof p.paddingRight === 'number') ? p.paddingRight : 0;
+        const inner = Math.max(1, Math.round(pw - pl - pr));
+        if (inner > slotWidth) slotWidth = inner;
+      } else {
+        const pnw = Math.max(1, Math.round(Number(paintNode.width) || 1));
+        if (pnw > slotWidth) slotWidth = pnw;
+      }
+    }
+    const tW = Number(targetWidth);
+    const w = (Number.isFinite(tW) && tW > 0) ? tW : slotWidth;
     const h = (naturalW > 0 && naturalH > 0)
       ? Math.max(1, Math.round(w * naturalH / Math.max(1, naturalW)))
       : Math.max(1, Math.round(Number(slotNode.height) || 1));
 
     // D) Resize slot container itself
     try { slotNode.resize(w, h); } catch (e) {}
+    // Ensure layout is settled before sizing child to fill
+    try { if (typeof figma.flushAsync === 'function') { await figma.flushAsync(); } } catch (e) {}
 
     // E) Make paint node fill inside slot; optional: clear strokes to avoid 1px visual border
     try {
