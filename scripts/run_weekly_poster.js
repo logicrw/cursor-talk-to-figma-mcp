@@ -23,7 +23,7 @@ class WeeklyPosterRunner {
     this.channel = process.env.CHANNEL || '';
     this.config = null;
     this.mapping = null;
-    this.staticUrl = 'http://127.0.0.1:3056/assets';
+    this.staticUrl = 'http://localhost:3056/assets';
     this.staticServerProc = null;
     this.content = null;
     this.contentPath = null;
@@ -101,7 +101,7 @@ class WeeklyPosterRunner {
   }
 
   async connectWS() {
-    const host = this.config.websocket.host || '127.0.0.1';
+    const host = this.config.websocket.host || 'localhost';
     const port = this.config.websocket.port || 3055;
     const url = `ws://${host}:${port}`;
     await new Promise((resolve, reject) => {

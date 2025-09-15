@@ -204,11 +204,11 @@ export function buildAssetUrl(staticServerUrl, assets, assetId, contentFilePath 
 export function computeStaticServerUrl(serverConfig) {
   try {
     const cfg = serverConfig?.static_server || {};
-    const host = cfg.host || '127.0.0.1';
+    const host = cfg.host || 'localhost';
     const port = cfg.port || 3056;
     const route = cfg.publicRoute || '/assets';
     return `http://${host}:${port}${route}`;
   } catch {
-    return 'http://127.0.0.1:3056/assets';
+    return 'http://localhost:3056/assets';
   }
 }

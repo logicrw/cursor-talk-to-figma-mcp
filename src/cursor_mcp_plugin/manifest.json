@@ -10,15 +10,14 @@
   ],
   "permissions": [],
   "networkAccess": {
-    "reasoning": "Connect to local MCP WebSocket and local static asset server during automation.",
+    "reasoning": "Connect to local MCP WebSocket and local static asset server during development.",
     "allowedDomains": [
-      "none"
+      "ws://localhost:3055",
+      "http://localhost:3056"
     ],
     "devAllowedDomains": [
-      "http://localhost:*",
-      "http://127.0.0.1:*",
-      "ws://localhost:*",
-      "ws://127.0.0.1:*"
+      "ws://localhost:3055",
+      "http://localhost:3056"
     ]
   },
   "documentAccess": "dynamic-page",

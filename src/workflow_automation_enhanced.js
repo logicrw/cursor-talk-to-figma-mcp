@@ -24,7 +24,7 @@ const __dirname = path.dirname(__filename);
 const CONFIG = {
   serverConfigPath: path.join(__dirname, '../config/server-config.json'),
   runStatePath: path.join(__dirname, '../config/run_state.json'),
-  staticServerUrl: 'http://127.0.0.1:3056/assets'
+  staticServerUrl: 'http://localhost:3056/assets'
 };
 
 // utils: get value by "a.b.c" path

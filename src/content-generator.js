@@ -326,7 +326,7 @@ export default class ContentGenerator {
     
     // 填充图片内容 (如果有asset_id)
     if (figure.image?.asset_id) {
-      const staticServerUrl = 'http://127.0.0.1:3056/assets';
+      const staticServerUrl = 'http://localhost:3056/assets';
       const imageUrl = buildAssetUrl(staticServerUrl, this.assets || [], figure.image.asset_id, null);
       try {
         await this.mcpClient.call("mcp__talk-to-figma__set_image_fill", {
