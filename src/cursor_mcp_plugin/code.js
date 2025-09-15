@@ -4424,7 +4424,7 @@ async function setImageFill(params) {
     throw new Error(`Node not found with ID: ${nodeId}`);
   }
 
-  // Auto-drill down to find fillable node
+  // Auto-drill down to find fillable node (paintNode)
   let targetNode = node;
   if (!("fills" in node)) {
     // For GROUP/INSTANCE nodes, find first child that supports fills
@@ -4475,8 +4475,11 @@ async function setImageFill(params) {
       bytes = customBase64Decode(base64Data);
     }
 
-    // Preserve original visibility
-    const wasVisible = !!targetNode.visible;
+    // A) paintNode & slotNode
+    const paintNode = targetNode;
+    const slotNode = (paintNode && paintNode.parent && "resize" in paintNode.parent) ? paintNode.parent : paintNode;
+    const wasVisiblePaint = !!paintNode.visible;
+    const wasVisibleSlot  = !!slotNode.visible;
 
     // Create image in Figma
     const image = figma.createImage(bytes);
@@ -4488,7 +4491,7 @@ async function setImageFill(params) {
       naturalH = size.height;
     } catch (e) {}
 
-    // Create image fill (prefer FIT by default to avoid cropping)
+    // B) Apply image fill to paintNode (prefer FIT; caller can override)
     const imageFill = {
       type: "IMAGE",
       imageHash: imageHash,
@@ -4496,45 +4499,52 @@ async function setImageFill(params) {
       opacity: opacity !== undefined ? opacity : 1
     };
 
-    // Apply the fill first
-    targetNode.fills = [imageFill];
+    paintNode.fills = [imageFill];
 
-    // Ensure horizontal Fill/vertical Fixed BEFORE reading slot width
+    // C) Slot container horizontal=Fill, vertical=Fixed; then read final slot width
     try {
-      if ("layoutSizingHorizontal" in targetNode) targetNode.layoutSizingHorizontal = "FILL";
-      if ("layoutSizingVertical" in targetNode)   targetNode.layoutSizingVertical   = "FIXED";
+      if ("layoutSizingHorizontal" in slotNode) slotNode.layoutSizingHorizontal = "FILL";
+      if ("layoutSizingVertical"   in slotNode) slotNode.layoutSizingVertical   = "FIXED";
     } catch (e) {}
 
     // Compute width/height based on final slot width or provided targetWidth
-    let slotWidth = Math.max(1, Math.round(Number(targetNode.width) || 0));
+    let slotWidth = Math.max(1, Math.round(Number(slotNode.width) || 0));
     if (!Number.isFinite(slotWidth) || slotWidth <= 0) slotWidth = 1;
     const w = (Number.isFinite(targetWidth) && targetWidth > 0) ? targetWidth : slotWidth;
     const h = (naturalW > 0 && naturalH > 0)
       ? Math.max(1, Math.round(w * naturalH / Math.max(1, naturalW)))
-      : Math.max(1, Math.round(Number(targetNode.height) || 1));
+      : Math.max(1, Math.round(Number(slotNode.height) || 1));
 
-    // Apply initial resize (width controlled by Fill, height fixed)
-    try { targetNode.resize(w, h); } catch (e) {}
+    // D) Resize slot container itself
+    try { slotNode.resize(w, h); } catch (e) {}
 
-    // Lock aspect ratio so future width changes adjust height proportionally
+    // E) Make paint node fill inside slot; optional: clear strokes to avoid 1px visual border
     try {
-      if ("lockAspectRatio" in targetNode && typeof targetNode.lockAspectRatio === "function") {
-        targetNode.lockAspectRatio();
-      } else if ("targetAspectRatio" in targetNode) {
+      if ("layoutSizingHorizontal" in paintNode) paintNode.layoutSizingHorizontal = "FILL";
+      if ("layoutSizingVertical"   in paintNode) paintNode.layoutSizingVertical   = "FILL";
+    } catch (e) {}
+    try { if ("strokes" in paintNode) paintNode.strokes = []; } catch (e) {}
+
+    // F) Lock aspect ratio on slot container so future width changes adjust height proportionally
+    try {
+      if ("lockAspectRatio" in slotNode && typeof slotNode.lockAspectRatio === "function") {
+        slotNode.lockAspectRatio();
+      } else if ("targetAspectRatio" in slotNode) {
         const ratio = h > 0 ? (w / h) : 0;
-        try { targetNode.targetAspectRatio = ratio; } catch (e) {}
+        try { slotNode.targetAspectRatio = ratio; } catch (e) {}
       }
     } catch (e) {}
 
-    // Restore original visibility (avoid waking hidden slots)
-    try { targetNode.visible = wasVisible; } catch (e) {}
+    // Restore original visibility (avoid waking hidden nodes)
+    try { paintNode.visible = wasVisiblePaint; } catch (e) {}
+    try { slotNode.visible  = wasVisibleSlot;  } catch (e) {}
 
     return {
       success: true,
       nodeId: node.id,
-      targetNodeId: targetNode.id,
+      targetNodeId: paintNode.id,
       nodeName: node.name,
-      targetNodeName: targetNode.name,
+      targetNodeName: paintNode.name,
       scaleMode: imageFill.scaleMode,
       opacity: opacity !== undefined ? opacity : 1
     };
