@@ -4397,8 +4397,48 @@ async function createConnections(params) {
 }
 
 // Set Image Fill - Fill a node with Base64 image data or URL
+// Helper: collect child index path from ancestor to node
+function collectIndexPath(node, ancestor) {
+  const path = [];
+  let cur = node;
+  while (cur && cur !== ancestor) {
+    const parent = cur.parent;
+    if (!parent || !('children' in parent)) break;
+    const idx = parent.children.indexOf(cur);
+    path.unshift(idx);
+    cur = parent;
+  }
+  return path;
+}
+
+// Helper: traverse by index path under root
+function traverseByIndexPath(root, indexPath) {
+  let cur = root;
+  for (const idx of indexPath) {
+    if (!cur || !('children' in cur)) return null;
+    if (idx < 0 || idx >= cur.children.length) return null;
+    cur = cur.children[idx];
+  }
+  return cur;
+}
+
+// Helper: ensure editable target by detaching nearest instance containing the node
+function ensureEditableTarget(node) {
+  let cur = node;
+  let inst = null;
+  while (cur) {
+    if (cur.type === 'INSTANCE') { inst = cur; break; }
+    cur = cur.parent;
+  }
+  if (!inst) return node; // already editable
+  const path = collectIndexPath(node, inst);
+  const frame = inst.detachInstance(); // returns FrameNode
+  const mapped = traverseByIndexPath(frame, path);
+  return mapped || frame;
+}
+
 async function setImageFill(params) {
-  const { nodeId, imageBase64, imageUrl, scaleMode, opacity, targetWidth } = params || {};
+  const { nodeId, imageBase64, imageUrl, scaleMode, opacity, targetWidth, autoDetach } = params || {};
 
   if (!nodeId) {
     throw new Error("Missing nodeId parameter");
@@ -4419,9 +4459,14 @@ async function setImageFill(params) {
     actualImageBase64 = null;
   }
 
-  const node = await figma.getNodeByIdAsync(nodeId);
+  let node = await figma.getNodeByIdAsync(nodeId);
   if (!node) {
     throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  // Optional: detach nearest instance so we can resize freely
+  if (autoDetach) {
+    try { node = ensureEditableTarget(node); } catch (e) {}
   }
 
   // Auto-drill down to find fillable node (paintNode)
