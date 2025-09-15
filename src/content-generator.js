@@ -309,9 +309,8 @@ export default class ContentGenerator {
    * @returns {number} 图片高度
    */
   async createSingleImage(figure, x, y, width = TEMPLATE_STYLES.IMAGE.width) {
-    // 根据宽度按比例计算高度 (这里使用固定比例，实际可能需要从资源获取)
-    const aspectRatio = 0.6; // 临时使用的宽高比
-    const height = Math.round(width * aspectRatio);
+    // 占位高度，将由插件按原图比例在填充时等比修正到 targetWidth
+    const height = 10;
     
     console.log(`🖼️ Creating image: ${figure.image?.asset_id} (${width}x${height})`);
     
@@ -332,7 +331,8 @@ export default class ContentGenerator {
         await this.mcpClient.call("mcp__talk-to-figma__set_image_fill", {
           nodeId: imageNode.id,
           imageUrl: imageUrl,
-          scaleMode: TEMPLATE_STYLES.IMAGE.scaleMode
+          scaleMode: 'FIT',
+          targetWidth: 1604
         });
         console.log(`✅ Image filled: ${figure.image.asset_id}`);
       } catch (error) {

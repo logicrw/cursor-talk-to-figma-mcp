@@ -1,0 +1,1021 @@
+🚀 Weekly Poster Orchestration starting...
+🔍 Auto-discovery: Found 2 date-pattern files, choosing latest date: 250818_summer_break_content.json
+📄 Using content: /Users/chenrongwei/Projects/cursor-talk-to-figma-mcp/docx2json/250818_summer_break_content.json (via server-config.json)
+✅ Static server reachable: http://127.0.0.1:3056/assets/250818_summer_break/img_76f7bfb095b6.png
+✅ WebSocket connected: ws://127.0.0.1:3055
+📡 Joined channel: 3fspxu5k
+📤 Sending command: get_document_info (id: 1)
+📨 Received message type: system
+📨 Received message type: system
+📨 Received message type: system
+✅ Channel confirmed: 3fspxu5k
+📨 Received message type: broadcast (id: 1)
+📨 Received message type: broadcast (id: 1)
+✅ Got result for command id: 1
+📤 Sending command: get_node_info (id: 2)
+📨 Received message type: broadcast (id: 2)
+📨 Received message type: broadcast (id: 2)
+✅ Got result for command id: 2
+📤 Sending command: scan_nodes_by_types (id: 3)
+📨 Received message type: broadcast (id: 3)
+📨 Received message type: broadcast (id: 3)
+✅ Got result for command id: 3
+📤 Sending command: get_node_info (id: 4)
+📨 Received message type: broadcast (id: 4)
+📨 Received message type: broadcast (id: 4)
+✅ Got result for command id: 4
+🔗 Resolved cards stack id by name: 194:51
+📤 Sending command: scan_nodes_by_types (id: 5)
+📨 Received message type: broadcast (id: 5)
+📨 Received message type: broadcast (id: 5)
+✅ Got result for command id: 5
+📤 Sending command: get_document_info (id: 6)
+📨 Received message type: broadcast (id: 6)
+📨 Received message type: broadcast (id: 6)
+✅ Got result for command id: 6
+📤 Sending command: get_node_info (id: 7)
+📨 Received message type: broadcast (id: 7)
+📨 Received message type: broadcast (id: 7)
+✅ Got result for command id: 7
+📤 Sending command: get_node_info (id: 8)
+📨 Received message type: broadcast (id: 8)
+📨 Received message type: broadcast (id: 8)
+✅ Got result for command id: 8
+📤 Sending command: get_node_info (id: 9)
+📨 Received message type: broadcast (id: 9)
+📨 Received message type: broadcast (id: 9)
+✅ Got result for command id: 9
+📤 Sending command: get_node_info (id: 10)
+📨 Received message type: broadcast (id: 10)
+📨 Received message type: broadcast (id: 10)
+✅ Got result for command id: 10
+📋 Content flow items: 19
+📤 Sending command: create_component_instance (id: 11)
+📨 Received message type: broadcast (id: 11)
+📨 Received message type: broadcast (id: 11)
+✅ Got result for command id: 11
+📤 Sending command: get_node_info (id: 12)
+📨 Received message type: broadcast (id: 12)
+📨 Received message type: broadcast (id: 12)
+✅ Got result for command id: 12
+📤 Sending command: set_text_content (id: 13)
+📨 Received message type: broadcast (id: 13)
+📨 Received message type: broadcast (id: 13)
+✅ Got result for command id: 13
+📤 Sending command: get_node_info (id: 14)
+📨 Received message type: broadcast (id: 14)
+📨 Received message type: broadcast (id: 14)
+✅ Got result for command id: 14
+📤 Sending command: set_text_content (id: 15)
+📨 Received message type: broadcast (id: 15)
+📨 Received message type: broadcast (id: 15)
+✅ Got result for command id: 15
+📤 Sending command: set_text_auto_resize (id: 16)
+📨 Received message type: broadcast (id: 16)
+📨 Received message type: broadcast (id: 16)
+✅ Got result for command id: 16
+📤 Sending command: set_layout_sizing (id: 17)
+📨 Received message type: broadcast (id: 17)
+📨 Received message type: broadcast (id: 17)
+✅ Got result for command id: 17
+🧱 Source sizing: horizontal=HUG vertical=HUG
+📄 Source mode=inline text="" credits=[]
+📤 Sending command: set_instance_properties_by_base (id: 18)
+📨 Received message type: broadcast (id: 18)
+📨 Received message type: broadcast (id: 18)
+✅ Got result for command id: 18
+📤 Sending command: get_node_info (id: 19)
+📨 Received message type: broadcast (id: 19)
+📨 Received message type: broadcast (id: 19)
+✅ Got result for command id: 19
+📤 Sending command: get_node_info (id: 20)
+📨 Received message type: broadcast (id: 20)
+📨 Received message type: broadcast (id: 20)
+✅ Got result for command id: 20
+📤 Sending command: get_node_info (id: 21)
+📨 Received message type: broadcast (id: 21)
+📨 Received message type: broadcast (id: 21)
+✅ Got result for command id: 21
+📤 Sending command: get_node_info (id: 22)
+📨 Received message type: broadcast (id: 22)
+📨 Received message type: broadcast (id: 22)
+✅ Got result for command id: 22
+📤 Sending command: get_node_info (id: 23)
+📨 Received message type: broadcast (id: 23)
+📨 Received message type: broadcast (id: 23)
+✅ Got result for command id: 23
+📤 Sending command: get_node_info (id: 24)
+📨 Received message type: broadcast (id: 24)
+📨 Received message type: broadcast (id: 24)
+✅ Got result for command id: 24
+📤 Sending command: get_node_info (id: 25)
+📨 Received message type: broadcast (id: 25)
+📨 Received message type: broadcast (id: 25)
+✅ Got result for command id: 25
+📤 Sending command: get_node_info (id: 26)
+📨 Received message type: broadcast (id: 26)
+📨 Received message type: broadcast (id: 26)
+✅ Got result for command id: 26
+📤 Sending command: set_image_fill (id: 27)
+📨 Received message type: broadcast (id: 27)
+📨 Received message type: broadcast (id: 27)
+✅ Got result for command id: 27
+✅ Filled #1 figure card
+📤 Sending command: create_component_instance (id: 28)
+📨 Received message type: broadcast (id: 28)
+📨 Received message type: broadcast (id: 28)
+✅ Got result for command id: 28
+📤 Sending command: get_node_info (id: 29)
+📨 Received message type: broadcast (id: 29)
+📨 Received message type: broadcast (id: 29)
+✅ Got result for command id: 29
+📤 Sending command: set_text_content (id: 30)
+📨 Received message type: broadcast (id: 30)
+📨 Received message type: broadcast (id: 30)
+✅ Got result for command id: 30
+📤 Sending command: get_node_info (id: 31)
+📨 Received message type: broadcast (id: 31)
+📨 Received message type: broadcast (id: 31)
+✅ Got result for command id: 31
+📤 Sending command: set_text_content (id: 32)
+📨 Received message type: broadcast (id: 32)
+📨 Received message type: broadcast (id: 32)
+✅ Got result for command id: 32
+📤 Sending command: set_text_auto_resize (id: 33)
+📨 Received message type: broadcast (id: 33)
+📨 Received message type: broadcast (id: 33)
+✅ Got result for command id: 33
+📤 Sending command: set_layout_sizing (id: 34)
+📨 Received message type: broadcast (id: 34)
+📨 Received message type: broadcast (id: 34)
+✅ Got result for command id: 34
+🧱 Source sizing: horizontal=HUG vertical=HUG
+📄 Source mode=inline text="Source: FT, Reddit" credits=["FT","Reddit"]
+📤 Sending command: set_instance_properties_by_base (id: 35)
+📨 Received message type: broadcast (id: 35)
+📨 Received message type: broadcast (id: 35)
+✅ Got result for command id: 35
+📤 Sending command: get_node_info (id: 36)
+📨 Received message type: broadcast (id: 36)
+📨 Received message type: broadcast (id: 36)
+✅ Got result for command id: 36
+📤 Sending command: get_node_info (id: 37)
+📨 Received message type: broadcast (id: 37)
+📨 Received message type: broadcast (id: 37)
+✅ Got result for command id: 37
+📤 Sending command: get_node_info (id: 38)
+📨 Received message type: broadcast (id: 38)
+📨 Received message type: broadcast (id: 38)
+✅ Got result for command id: 38
+📤 Sending command: get_node_info (id: 39)
+📨 Received message type: broadcast (id: 39)
+📨 Received message type: broadcast (id: 39)
+✅ Got result for command id: 39
+📤 Sending command: get_node_info (id: 40)
+📨 Received message type: broadcast (id: 40)
+📨 Received message type: broadcast (id: 40)
+✅ Got result for command id: 40
+📤 Sending command: get_node_info (id: 41)
+📨 Received message type: broadcast (id: 41)
+📨 Received message type: broadcast (id: 41)
+✅ Got result for command id: 41
+📤 Sending command: get_node_info (id: 42)
+📨 Received message type: broadcast (id: 42)
+📨 Received message type: broadcast (id: 42)
+✅ Got result for command id: 42
+📤 Sending command: get_node_info (id: 43)
+📨 Received message type: broadcast (id: 43)
+📨 Received message type: broadcast (id: 43)
+✅ Got result for command id: 43
+📤 Sending command: set_image_fill (id: 44)
+📨 Received message type: broadcast (id: 44)
+📨 Received message type: broadcast (id: 44)
+✅ Got result for command id: 44
+📤 Sending command: set_image_fill (id: 45)
+📨 Received message type: broadcast (id: 45)
+📨 Received message type: broadcast (id: 45)
+✅ Got result for command id: 45
+✅ Filled #2 figure card
+📤 Sending command: create_component_instance (id: 46)
+📨 Received message type: broadcast (id: 46)
+📨 Received message type: broadcast (id: 46)
+✅ Got result for command id: 46
+📤 Sending command: get_node_info (id: 47)
+📨 Received message type: broadcast (id: 47)
+📨 Received message type: broadcast (id: 47)
+✅ Got result for command id: 47
+📤 Sending command: set_text_content (id: 48)
+📨 Received message type: broadcast (id: 48)
+📨 Received message type: broadcast (id: 48)
+✅ Got result for command id: 48
+✅ Filled #3 body card
+📤 Sending command: create_component_instance (id: 49)
+📨 Received message type: broadcast (id: 49)
+📨 Received message type: broadcast (id: 49)
+✅ Got result for command id: 49
+📤 Sending command: get_node_info (id: 50)
+📨 Received message type: broadcast (id: 50)
+📨 Received message type: broadcast (id: 50)
+✅ Got result for command id: 50
+📤 Sending command: set_text_content (id: 51)
+📨 Received message type: broadcast (id: 51)
+📨 Received message type: broadcast (id: 51)
+✅ Got result for command id: 51
+📤 Sending command: get_node_info (id: 52)
+📨 Received message type: broadcast (id: 52)
+📨 Received message type: broadcast (id: 52)
+✅ Got result for command id: 52
+📤 Sending command: set_text_content (id: 53)
+📨 Received message type: broadcast (id: 53)
+📨 Received message type: broadcast (id: 53)
+✅ Got result for command id: 53
+📤 Sending command: set_text_auto_resize (id: 54)
+📨 Received message type: broadcast (id: 54)
+📨 Received message type: broadcast (id: 54)
+✅ Got result for command id: 54
+📤 Sending command: set_layout_sizing (id: 55)
+📨 Received message type: broadcast (id: 55)
+📨 Received message type: broadcast (id: 55)
+✅ Got result for command id: 55
+🧱 Source sizing: horizontal=HUG vertical=HUG
+📄 Source mode=inline text="" credits=[]
+📤 Sending command: set_instance_properties_by_base (id: 56)
+📨 Received message type: broadcast (id: 56)
+📨 Received message type: broadcast (id: 56)
+✅ Got result for command id: 56
+📤 Sending command: get_node_info (id: 57)
+📨 Received message type: broadcast (id: 57)
+📨 Received message type: broadcast (id: 57)
+✅ Got result for command id: 57
+📤 Sending command: get_node_info (id: 58)
+📨 Received message type: broadcast (id: 58)
+📨 Received message type: broadcast (id: 58)
+✅ Got result for command id: 58
+📤 Sending command: get_node_info (id: 59)
+📨 Received message type: broadcast (id: 59)
+📨 Received message type: broadcast (id: 59)
+✅ Got result for command id: 59
+📤 Sending command: get_node_info (id: 60)
+📨 Received message type: broadcast (id: 60)
+📨 Received message type: broadcast (id: 60)
+✅ Got result for command id: 60
+📤 Sending command: get_node_info (id: 61)
+📨 Received message type: broadcast (id: 61)
+📨 Received message type: broadcast (id: 61)
+✅ Got result for command id: 61
+📤 Sending command: get_node_info (id: 62)
+📨 Received message type: broadcast (id: 62)
+📨 Received message type: broadcast (id: 62)
+✅ Got result for command id: 62
+📤 Sending command: get_node_info (id: 63)
+📨 Received message type: broadcast (id: 63)
+📨 Received message type: broadcast (id: 63)
+✅ Got result for command id: 63
+📤 Sending command: get_node_info (id: 64)
+📨 Received message type: broadcast (id: 64)
+📨 Received message type: broadcast (id: 64)
+✅ Got result for command id: 64
+📤 Sending command: set_image_fill (id: 65)
+📨 Received message type: broadcast (id: 65)
+📨 Received message type: broadcast (id: 65)
+✅ Got result for command id: 65
+✅ Filled #4 figure card
+📤 Sending command: create_component_instance (id: 66)
+📨 Received message type: broadcast (id: 66)
+📨 Received message type: broadcast (id: 66)
+✅ Got result for command id: 66
+📤 Sending command: get_node_info (id: 67)
+📨 Received message type: broadcast (id: 67)
+📨 Received message type: broadcast (id: 67)
+✅ Got result for command id: 67
+📤 Sending command: set_text_content (id: 68)
+📨 Received message type: broadcast (id: 68)
+📨 Received message type: broadcast (id: 68)
+✅ Got result for command id: 68
+✅ Filled #5 body card
+📤 Sending command: create_component_instance (id: 69)
+📨 Received message type: broadcast (id: 69)
+📨 Received message type: broadcast (id: 69)
+✅ Got result for command id: 69
+📤 Sending command: get_node_info (id: 70)
+📨 Received message type: broadcast (id: 70)
+📨 Received message type: broadcast (id: 70)
+✅ Got result for command id: 70
+📤 Sending command: set_text_content (id: 71)
+📨 Received message type: broadcast (id: 71)
+📨 Received message type: broadcast (id: 71)
+✅ Got result for command id: 71
+📤 Sending command: get_node_info (id: 72)
+📨 Received message type: broadcast (id: 72)
+📨 Received message type: broadcast (id: 72)
+✅ Got result for command id: 72
+📤 Sending command: set_text_content (id: 73)
+📨 Received message type: broadcast (id: 73)
+📨 Received message type: broadcast (id: 73)
+✅ Got result for command id: 73
+📤 Sending command: set_text_auto_resize (id: 74)
+📨 Received message type: broadcast (id: 74)
+📨 Received message type: broadcast (id: 74)
+✅ Got result for command id: 74
+📤 Sending command: set_layout_sizing (id: 75)
+📨 Received message type: broadcast (id: 75)
+📨 Received message type: broadcast (id: 75)
+✅ Got result for command id: 75
+🧱 Source sizing: horizontal=HUG vertical=HUG
+📄 Source mode=inline text="Source: Bloomberg" credits=["Bloomberg"]
+📤 Sending command: set_instance_properties_by_base (id: 76)
+📨 Received message type: broadcast (id: 76)
+📨 Received message type: broadcast (id: 76)
+✅ Got result for command id: 76
+📤 Sending command: get_node_info (id: 77)
+📨 Received message type: broadcast (id: 77)
+📨 Received message type: broadcast (id: 77)
+✅ Got result for command id: 77
+📤 Sending command: get_node_info (id: 78)
+📨 Received message type: broadcast (id: 78)
+📨 Received message type: broadcast (id: 78)
+✅ Got result for command id: 78
+📤 Sending command: get_node_info (id: 79)
+📨 Received message type: broadcast (id: 79)
+📨 Received message type: broadcast (id: 79)
+✅ Got result for command id: 79
+📤 Sending command: get_node_info (id: 80)
+📨 Received message type: broadcast (id: 80)
+📨 Received message type: broadcast (id: 80)
+✅ Got result for command id: 80
+📤 Sending command: get_node_info (id: 81)
+📨 Received message type: broadcast (id: 81)
+📨 Received message type: broadcast (id: 81)
+✅ Got result for command id: 81
+📤 Sending command: get_node_info (id: 82)
+📨 Received message type: broadcast (id: 82)
+📨 Received message type: broadcast (id: 82)
+✅ Got result for command id: 82
+📤 Sending command: get_node_info (id: 83)
+📨 Received message type: broadcast (id: 83)
+📨 Received message type: broadcast (id: 83)
+✅ Got result for command id: 83
+📤 Sending command: get_node_info (id: 84)
+📨 Received message type: broadcast (id: 84)
+📨 Received message type: broadcast (id: 84)
+✅ Got result for command id: 84
+📤 Sending command: set_image_fill (id: 85)
+📨 Received message type: broadcast (id: 85)
+📨 Received message type: broadcast (id: 85)
+✅ Got result for command id: 85
+✅ Filled #6 figure card
+📤 Sending command: create_component_instance (id: 86)
+📨 Received message type: broadcast (id: 86)
+📨 Received message type: broadcast (id: 86)
+✅ Got result for command id: 86
+📤 Sending command: get_node_info (id: 87)
+📨 Received message type: broadcast (id: 87)
+📨 Received message type: broadcast (id: 87)
+✅ Got result for command id: 87
+📤 Sending command: set_text_content (id: 88)
+📨 Received message type: broadcast (id: 88)
+📨 Received message type: broadcast (id: 88)
+✅ Got result for command id: 88
+📤 Sending command: get_node_info (id: 89)
+📨 Received message type: broadcast (id: 89)
+📨 Received message type: broadcast (id: 89)
+✅ Got result for command id: 89
+📤 Sending command: set_text_content (id: 90)
+📨 Received message type: broadcast (id: 90)
+📨 Received message type: broadcast (id: 90)
+✅ Got result for command id: 90
+📤 Sending command: set_text_auto_resize (id: 91)
+📨 Received message type: broadcast (id: 91)
+📨 Received message type: broadcast (id: 91)
+✅ Got result for command id: 91
+📤 Sending command: set_layout_sizing (id: 92)
+📨 Received message type: broadcast (id: 92)
+📨 Received message type: broadcast (id: 92)
+✅ Got result for command id: 92
+🧱 Source sizing: horizontal=HUG vertical=HUG
+📄 Source mode=inline text="Source: Forbes, CNBC" credits=["Forbes","CNBC"]
+📤 Sending command: set_instance_properties_by_base (id: 93)
+📨 Received message type: broadcast (id: 93)
+📨 Received message type: broadcast (id: 93)
+✅ Got result for command id: 93
+📤 Sending command: get_node_info (id: 94)
+📨 Received message type: broadcast (id: 94)
+📨 Received message type: broadcast (id: 94)
+✅ Got result for command id: 94
+📤 Sending command: get_node_info (id: 95)
+📨 Received message type: broadcast (id: 95)
+📨 Received message type: broadcast (id: 95)
+✅ Got result for command id: 95
+📤 Sending command: get_node_info (id: 96)
+📨 Received message type: broadcast (id: 96)
+📨 Received message type: broadcast (id: 96)
+✅ Got result for command id: 96
+📤 Sending command: get_node_info (id: 97)
+📨 Received message type: broadcast (id: 97)
+📨 Received message type: broadcast (id: 97)
+✅ Got result for command id: 97
+📤 Sending command: get_node_info (id: 98)
+📨 Received message type: broadcast (id: 98)
+📨 Received message type: broadcast (id: 98)
+✅ Got result for command id: 98
+📤 Sending command: get_node_info (id: 99)
+📨 Received message type: broadcast (id: 99)
+📨 Received message type: broadcast (id: 99)
+✅ Got result for command id: 99
+📤 Sending command: get_node_info (id: 100)
+📨 Received message type: broadcast (id: 100)
+📨 Received message type: broadcast (id: 100)
+✅ Got result for command id: 100
+📤 Sending command: get_node_info (id: 101)
+📨 Received message type: broadcast (id: 101)
+📨 Received message type: broadcast (id: 101)
+✅ Got result for command id: 101
+📤 Sending command: set_image_fill (id: 102)
+📨 Received message type: broadcast (id: 102)
+📨 Received message type: broadcast (id: 102)
+✅ Got result for command id: 102
+✅ Filled #7 figure card
+📤 Sending command: create_component_instance (id: 103)
+📨 Received message type: broadcast (id: 103)
+📨 Received message type: broadcast (id: 103)
+✅ Got result for command id: 103
+📤 Sending command: get_node_info (id: 104)
+📨 Received message type: broadcast (id: 104)
+📨 Received message type: broadcast (id: 104)
+✅ Got result for command id: 104
+📤 Sending command: set_text_content (id: 105)
+📨 Received message type: broadcast (id: 105)
+📨 Received message type: broadcast (id: 105)
+✅ Got result for command id: 105
+✅ Filled #8 body card
+📤 Sending command: create_component_instance (id: 106)
+📨 Received message type: broadcast (id: 106)
+📨 Received message type: broadcast (id: 106)
+✅ Got result for command id: 106
+📤 Sending command: get_node_info (id: 107)
+📨 Received message type: broadcast (id: 107)
+📨 Received message type: broadcast (id: 107)
+✅ Got result for command id: 107
+📤 Sending command: set_text_content (id: 108)
+📨 Received message type: broadcast (id: 108)
+📨 Received message type: broadcast (id: 108)
+✅ Got result for command id: 108
+📤 Sending command: get_node_info (id: 109)
+📨 Received message type: broadcast (id: 109)
+📨 Received message type: broadcast (id: 109)
+✅ Got result for command id: 109
+📤 Sending command: set_text_content (id: 110)
+📨 Received message type: broadcast (id: 110)
+📨 Received message type: broadcast (id: 110)
+✅ Got result for command id: 110
+📤 Sending command: set_text_auto_resize (id: 111)
+📨 Received message type: broadcast (id: 111)
+📨 Received message type: broadcast (id: 111)
+✅ Got result for command id: 111
+📤 Sending command: set_layout_sizing (id: 112)
+📨 Received message type: broadcast (id: 112)
+📨 Received message type: broadcast (id: 112)
+✅ Got result for command id: 112
+🧱 Source sizing: horizontal=HUG vertical=HUG
+📄 Source mode=inline text="Source: Citi" credits=["Citi"]
+📤 Sending command: set_instance_properties_by_base (id: 113)
+📨 Received message type: broadcast (id: 113)
+📨 Received message type: broadcast (id: 113)
+✅ Got result for command id: 113
+📤 Sending command: get_node_info (id: 114)
+📨 Received message type: broadcast (id: 114)
+📨 Received message type: broadcast (id: 114)
+✅ Got result for command id: 114
+📤 Sending command: get_node_info (id: 115)
+📨 Received message type: broadcast (id: 115)
+📨 Received message type: broadcast (id: 115)
+✅ Got result for command id: 115
+📤 Sending command: get_node_info (id: 116)
+📨 Received message type: broadcast (id: 116)
+📨 Received message type: broadcast (id: 116)
+✅ Got result for command id: 116
+📤 Sending command: get_node_info (id: 117)
+📨 Received message type: broadcast (id: 117)
+📨 Received message type: broadcast (id: 117)
+✅ Got result for command id: 117
+📤 Sending command: get_node_info (id: 118)
+📨 Received message type: broadcast (id: 118)
+📨 Received message type: broadcast (id: 118)
+✅ Got result for command id: 118
+📤 Sending command: get_node_info (id: 119)
+📨 Received message type: broadcast (id: 119)
+📨 Received message type: broadcast (id: 119)
+✅ Got result for command id: 119
+📤 Sending command: get_node_info (id: 120)
+📨 Received message type: broadcast (id: 120)
+📨 Received message type: broadcast (id: 120)
+✅ Got result for command id: 120
+📤 Sending command: get_node_info (id: 121)
+📨 Received message type: broadcast (id: 121)
+📨 Received message type: broadcast (id: 121)
+✅ Got result for command id: 121
+📤 Sending command: set_image_fill (id: 122)
+📨 Received message type: broadcast (id: 122)
+📨 Received message type: broadcast (id: 122)
+✅ Got result for command id: 122
+✅ Filled #9 figure card
+📤 Sending command: create_component_instance (id: 123)
+📨 Received message type: broadcast (id: 123)
+📨 Received message type: broadcast (id: 123)
+✅ Got result for command id: 123
+📤 Sending command: get_node_info (id: 124)
+📨 Received message type: broadcast (id: 124)
+📨 Received message type: broadcast (id: 124)
+✅ Got result for command id: 124
+📤 Sending command: set_text_content (id: 125)
+📨 Received message type: broadcast (id: 125)
+📨 Received message type: broadcast (id: 125)
+✅ Got result for command id: 125
+✅ Filled #10 body card
+📤 Sending command: create_component_instance (id: 126)
+📨 Received message type: broadcast (id: 126)
+📨 Received message type: broadcast (id: 126)
+✅ Got result for command id: 126
+📤 Sending command: get_node_info (id: 127)
+📨 Received message type: broadcast (id: 127)
+📨 Received message type: broadcast (id: 127)
+✅ Got result for command id: 127
+📤 Sending command: set_text_content (id: 128)
+📨 Received message type: broadcast (id: 128)
+📨 Received message type: broadcast (id: 128)
+✅ Got result for command id: 128
+📤 Sending command: get_node_info (id: 129)
+📨 Received message type: broadcast (id: 129)
+📨 Received message type: broadcast (id: 129)
+✅ Got result for command id: 129
+📤 Sending command: set_text_content (id: 130)
+📨 Received message type: broadcast (id: 130)
+📨 Received message type: broadcast (id: 130)
+✅ Got result for command id: 130
+📤 Sending command: set_text_auto_resize (id: 131)
+📨 Received message type: broadcast (id: 131)
+📨 Received message type: broadcast (id: 131)
+✅ Got result for command id: 131
+📤 Sending command: set_layout_sizing (id: 132)
+📨 Received message type: broadcast (id: 132)
+📨 Received message type: broadcast (id: 132)
+✅ Got result for command id: 132
+🧱 Source sizing: horizontal=HUG vertical=HUG
+📄 Source mode=inline text="Source: Yahoo Finance, Arkham" credits=["Yahoo Finance","Arkham"]
+📤 Sending command: set_instance_properties_by_base (id: 133)
+📨 Received message type: broadcast (id: 133)
+📨 Received message type: broadcast (id: 133)
+✅ Got result for command id: 133
+📤 Sending command: get_node_info (id: 134)
+📨 Received message type: broadcast (id: 134)
+📨 Received message type: broadcast (id: 134)
+✅ Got result for command id: 134
+📤 Sending command: get_node_info (id: 135)
+📨 Received message type: broadcast (id: 135)
+📨 Received message type: broadcast (id: 135)
+✅ Got result for command id: 135
+📤 Sending command: get_node_info (id: 136)
+📨 Received message type: broadcast (id: 136)
+📨 Received message type: broadcast (id: 136)
+✅ Got result for command id: 136
+📤 Sending command: get_node_info (id: 137)
+📨 Received message type: broadcast (id: 137)
+📨 Received message type: broadcast (id: 137)
+✅ Got result for command id: 137
+📤 Sending command: get_node_info (id: 138)
+📨 Received message type: broadcast (id: 138)
+📨 Received message type: broadcast (id: 138)
+✅ Got result for command id: 138
+📤 Sending command: get_node_info (id: 139)
+📨 Received message type: broadcast (id: 139)
+📨 Received message type: broadcast (id: 139)
+✅ Got result for command id: 139
+📤 Sending command: get_node_info (id: 140)
+📨 Received message type: broadcast (id: 140)
+📨 Received message type: broadcast (id: 140)
+✅ Got result for command id: 140
+📤 Sending command: get_node_info (id: 141)
+📨 Received message type: broadcast (id: 141)
+📨 Received message type: broadcast (id: 141)
+✅ Got result for command id: 141
+📤 Sending command: set_image_fill (id: 142)
+📨 Received message type: broadcast (id: 142)
+📨 Received message type: broadcast (id: 142)
+✅ Got result for command id: 142
+📤 Sending command: set_image_fill (id: 143)
+📨 Received message type: broadcast (id: 143)
+📨 Received message type: broadcast (id: 143)
+✅ Got result for command id: 143
+✅ Filled #11 figure card
+📤 Sending command: create_component_instance (id: 144)
+📨 Received message type: broadcast (id: 144)
+📨 Received message type: broadcast (id: 144)
+✅ Got result for command id: 144
+📤 Sending command: get_node_info (id: 145)
+📨 Received message type: broadcast (id: 145)
+📨 Received message type: broadcast (id: 145)
+✅ Got result for command id: 145
+📤 Sending command: set_text_content (id: 146)
+📨 Received message type: broadcast (id: 146)
+📨 Received message type: broadcast (id: 146)
+✅ Got result for command id: 146
+✅ Filled #12 body card
+📤 Sending command: create_component_instance (id: 147)
+📨 Received message type: broadcast (id: 147)
+📨 Received message type: broadcast (id: 147)
+✅ Got result for command id: 147
+📤 Sending command: get_node_info (id: 148)
+📨 Received message type: broadcast (id: 148)
+📨 Received message type: broadcast (id: 148)
+✅ Got result for command id: 148
+📤 Sending command: set_text_content (id: 149)
+📨 Received message type: broadcast (id: 149)
+📨 Received message type: broadcast (id: 149)
+✅ Got result for command id: 149
+📤 Sending command: get_node_info (id: 150)
+📨 Received message type: broadcast (id: 150)
+📨 Received message type: broadcast (id: 150)
+✅ Got result for command id: 150
+📤 Sending command: set_text_content (id: 151)
+📨 Received message type: broadcast (id: 151)
+📨 Received message type: broadcast (id: 151)
+✅ Got result for command id: 151
+📤 Sending command: set_text_auto_resize (id: 152)
+📨 Received message type: broadcast (id: 152)
+📨 Received message type: broadcast (id: 152)
+✅ Got result for command id: 152
+📤 Sending command: set_layout_sizing (id: 153)
+📨 Received message type: broadcast (id: 153)
+📨 Received message type: broadcast (id: 153)
+✅ Got result for command id: 153
+🧱 Source sizing: horizontal=HUG vertical=HUG
+📄 Source mode=inline text="Source: Bloomberg, X" credits=["Bloomberg","X"]
+📤 Sending command: set_instance_properties_by_base (id: 154)
+📨 Received message type: broadcast (id: 154)
+📨 Received message type: broadcast (id: 154)
+✅ Got result for command id: 154
+📤 Sending command: get_node_info (id: 155)
+📨 Received message type: broadcast (id: 155)
+📨 Received message type: broadcast (id: 155)
+✅ Got result for command id: 155
+📤 Sending command: get_node_info (id: 156)
+📨 Received message type: broadcast (id: 156)
+📨 Received message type: broadcast (id: 156)
+✅ Got result for command id: 156
+📤 Sending command: get_node_info (id: 157)
+📨 Received message type: broadcast (id: 157)
+📨 Received message type: broadcast (id: 157)
+✅ Got result for command id: 157
+📤 Sending command: get_node_info (id: 158)
+📨 Received message type: broadcast (id: 158)
+📨 Received message type: broadcast (id: 158)
+✅ Got result for command id: 158
+📤 Sending command: get_node_info (id: 159)
+📨 Received message type: broadcast (id: 159)
+📨 Received message type: broadcast (id: 159)
+✅ Got result for command id: 159
+📤 Sending command: get_node_info (id: 160)
+📨 Received message type: broadcast (id: 160)
+📨 Received message type: broadcast (id: 160)
+✅ Got result for command id: 160
+📤 Sending command: get_node_info (id: 161)
+📨 Received message type: broadcast (id: 161)
+📨 Received message type: broadcast (id: 161)
+✅ Got result for command id: 161
+📤 Sending command: get_node_info (id: 162)
+📨 Received message type: broadcast (id: 162)
+📨 Received message type: broadcast (id: 162)
+✅ Got result for command id: 162
+📤 Sending command: set_image_fill (id: 163)
+📨 Received message type: broadcast (id: 163)
+📨 Received message type: broadcast (id: 163)
+✅ Got result for command id: 163
+✅ Filled #13 figure card
+📤 Sending command: create_component_instance (id: 164)
+📨 Received message type: broadcast (id: 164)
+📨 Received message type: broadcast (id: 164)
+✅ Got result for command id: 164
+📤 Sending command: get_node_info (id: 165)
+📨 Received message type: broadcast (id: 165)
+📨 Received message type: broadcast (id: 165)
+✅ Got result for command id: 165
+📤 Sending command: set_text_content (id: 166)
+📨 Received message type: broadcast (id: 166)
+📨 Received message type: broadcast (id: 166)
+✅ Got result for command id: 166
+📤 Sending command: get_node_info (id: 167)
+📨 Received message type: broadcast (id: 167)
+📨 Received message type: broadcast (id: 167)
+✅ Got result for command id: 167
+📤 Sending command: set_text_content (id: 168)
+📨 Received message type: broadcast (id: 168)
+📨 Received message type: broadcast (id: 168)
+✅ Got result for command id: 168
+📤 Sending command: set_text_auto_resize (id: 169)
+📨 Received message type: broadcast (id: 169)
+📨 Received message type: broadcast (id: 169)
+✅ Got result for command id: 169
+📤 Sending command: set_layout_sizing (id: 170)
+📨 Received message type: broadcast (id: 170)
+📨 Received message type: broadcast (id: 170)
+✅ Got result for command id: 170
+🧱 Source sizing: horizontal=HUG vertical=HUG
+📄 Source mode=inline text="" credits=[]
+📤 Sending command: set_instance_properties_by_base (id: 171)
+📨 Received message type: broadcast (id: 171)
+📨 Received message type: broadcast (id: 171)
+✅ Got result for command id: 171
+📤 Sending command: get_node_info (id: 172)
+📨 Received message type: broadcast (id: 172)
+📨 Received message type: broadcast (id: 172)
+✅ Got result for command id: 172
+📤 Sending command: get_node_info (id: 173)
+📨 Received message type: broadcast (id: 173)
+📨 Received message type: broadcast (id: 173)
+✅ Got result for command id: 173
+📤 Sending command: get_node_info (id: 174)
+📨 Received message type: broadcast (id: 174)
+📨 Received message type: broadcast (id: 174)
+✅ Got result for command id: 174
+📤 Sending command: get_node_info (id: 175)
+📨 Received message type: broadcast (id: 175)
+📨 Received message type: broadcast (id: 175)
+✅ Got result for command id: 175
+📤 Sending command: get_node_info (id: 176)
+📨 Received message type: broadcast (id: 176)
+📨 Received message type: broadcast (id: 176)
+✅ Got result for command id: 176
+📤 Sending command: get_node_info (id: 177)
+📨 Received message type: broadcast (id: 177)
+📨 Received message type: broadcast (id: 177)
+✅ Got result for command id: 177
+📤 Sending command: get_node_info (id: 178)
+📨 Received message type: broadcast (id: 178)
+📨 Received message type: broadcast (id: 178)
+✅ Got result for command id: 178
+📤 Sending command: get_node_info (id: 179)
+📨 Received message type: broadcast (id: 179)
+📨 Received message type: broadcast (id: 179)
+✅ Got result for command id: 179
+📤 Sending command: set_image_fill (id: 180)
+📨 Received message type: broadcast (id: 180)
+📨 Received message type: broadcast (id: 180)
+✅ Got result for command id: 180
+✅ Filled #14 figure card
+📤 Sending command: create_component_instance (id: 181)
+📨 Received message type: broadcast (id: 181)
+📨 Received message type: broadcast (id: 181)
+✅ Got result for command id: 181
+📤 Sending command: get_node_info (id: 182)
+📨 Received message type: broadcast (id: 182)
+📨 Received message type: broadcast (id: 182)
+✅ Got result for command id: 182
+📤 Sending command: set_text_content (id: 183)
+📨 Received message type: broadcast (id: 183)
+📨 Received message type: broadcast (id: 183)
+✅ Got result for command id: 183
+✅ Filled #15 body card
+📤 Sending command: create_component_instance (id: 184)
+📨 Received message type: broadcast (id: 184)
+📨 Received message type: broadcast (id: 184)
+✅ Got result for command id: 184
+📤 Sending command: get_node_info (id: 185)
+📨 Received message type: broadcast (id: 185)
+📨 Received message type: broadcast (id: 185)
+✅ Got result for command id: 185
+📤 Sending command: set_text_content (id: 186)
+📨 Received message type: broadcast (id: 186)
+📨 Received message type: broadcast (id: 186)
+✅ Got result for command id: 186
+✅ Filled #16 body card
+📤 Sending command: create_component_instance (id: 187)
+📨 Received message type: broadcast (id: 187)
+📨 Received message type: broadcast (id: 187)
+✅ Got result for command id: 187
+📤 Sending command: get_node_info (id: 188)
+📨 Received message type: broadcast (id: 188)
+📨 Received message type: broadcast (id: 188)
+✅ Got result for command id: 188
+📤 Sending command: set_text_content (id: 189)
+📨 Received message type: broadcast (id: 189)
+📨 Received message type: broadcast (id: 189)
+✅ Got result for command id: 189
+📤 Sending command: get_node_info (id: 190)
+📨 Received message type: broadcast (id: 190)
+📨 Received message type: broadcast (id: 190)
+✅ Got result for command id: 190
+📤 Sending command: set_text_content (id: 191)
+📨 Received message type: broadcast (id: 191)
+📨 Received message type: broadcast (id: 191)
+✅ Got result for command id: 191
+📤 Sending command: set_text_auto_resize (id: 192)
+📨 Received message type: broadcast (id: 192)
+📨 Received message type: broadcast (id: 192)
+✅ Got result for command id: 192
+📤 Sending command: set_layout_sizing (id: 193)
+📨 Received message type: broadcast (id: 193)
+📨 Received message type: broadcast (id: 193)
+✅ Got result for command id: 193
+🧱 Source sizing: horizontal=HUG vertical=HUG
+📄 Source mode=inline text="Source: DB" credits=["DB"]
+📤 Sending command: set_instance_properties_by_base (id: 194)
+📨 Received message type: broadcast (id: 194)
+📨 Received message type: broadcast (id: 194)
+✅ Got result for command id: 194
+📤 Sending command: get_node_info (id: 195)
+📨 Received message type: broadcast (id: 195)
+📨 Received message type: broadcast (id: 195)
+✅ Got result for command id: 195
+📤 Sending command: get_node_info (id: 196)
+📨 Received message type: broadcast (id: 196)
+📨 Received message type: broadcast (id: 196)
+✅ Got result for command id: 196
+📤 Sending command: get_node_info (id: 197)
+📨 Received message type: broadcast (id: 197)
+📨 Received message type: broadcast (id: 197)
+✅ Got result for command id: 197
+📤 Sending command: get_node_info (id: 198)
+📨 Received message type: broadcast (id: 198)
+📨 Received message type: broadcast (id: 198)
+✅ Got result for command id: 198
+📤 Sending command: get_node_info (id: 199)
+📨 Received message type: broadcast (id: 199)
+📨 Received message type: broadcast (id: 199)
+✅ Got result for command id: 199
+📤 Sending command: get_node_info (id: 200)
+📨 Received message type: broadcast (id: 200)
+📨 Received message type: broadcast (id: 200)
+✅ Got result for command id: 200
+📤 Sending command: get_node_info (id: 201)
+📨 Received message type: broadcast (id: 201)
+📨 Received message type: broadcast (id: 201)
+✅ Got result for command id: 201
+📤 Sending command: get_node_info (id: 202)
+📨 Received message type: broadcast (id: 202)
+📨 Received message type: broadcast (id: 202)
+✅ Got result for command id: 202
+📤 Sending command: set_image_fill (id: 203)
+📨 Received message type: broadcast (id: 203)
+📨 Received message type: broadcast (id: 203)
+✅ Got result for command id: 203
+📤 Sending command: set_image_fill (id: 204)
+📨 Received message type: broadcast (id: 204)
+📨 Received message type: broadcast (id: 204)
+✅ Got result for command id: 204
+✅ Filled #17 figure card
+📤 Sending command: create_component_instance (id: 205)
+📨 Received message type: broadcast (id: 205)
+📨 Received message type: broadcast (id: 205)
+✅ Got result for command id: 205
+📤 Sending command: get_node_info (id: 206)
+📨 Received message type: broadcast (id: 206)
+📨 Received message type: broadcast (id: 206)
+✅ Got result for command id: 206
+📤 Sending command: set_text_content (id: 207)
+📨 Received message type: broadcast (id: 207)
+📨 Received message type: broadcast (id: 207)
+✅ Got result for command id: 207
+📤 Sending command: get_node_info (id: 208)
+📨 Received message type: broadcast (id: 208)
+📨 Received message type: broadcast (id: 208)
+✅ Got result for command id: 208
+📤 Sending command: set_text_content (id: 209)
+📨 Received message type: broadcast (id: 209)
+📨 Received message type: broadcast (id: 209)
+✅ Got result for command id: 209
+📤 Sending command: set_text_auto_resize (id: 210)
+📨 Received message type: broadcast (id: 210)
+📨 Received message type: broadcast (id: 210)
+✅ Got result for command id: 210
+📤 Sending command: set_layout_sizing (id: 211)
+📨 Received message type: broadcast (id: 211)
+📨 Received message type: broadcast (id: 211)
+✅ Got result for command id: 211
+🧱 Source sizing: horizontal=HUG vertical=HUG
+📄 Source mode=inline text="" credits=[]
+📤 Sending command: set_instance_properties_by_base (id: 212)
+📨 Received message type: broadcast (id: 212)
+📨 Received message type: broadcast (id: 212)
+✅ Got result for command id: 212
+📤 Sending command: get_node_info (id: 213)
+📨 Received message type: broadcast (id: 213)
+📨 Received message type: broadcast (id: 213)
+✅ Got result for command id: 213
+📤 Sending command: get_node_info (id: 214)
+📨 Received message type: broadcast (id: 214)
+📨 Received message type: broadcast (id: 214)
+✅ Got result for command id: 214
+📤 Sending command: get_node_info (id: 215)
+📨 Received message type: broadcast (id: 215)
+📨 Received message type: broadcast (id: 215)
+✅ Got result for command id: 215
+📤 Sending command: get_node_info (id: 216)
+📨 Received message type: broadcast (id: 216)
+📨 Received message type: broadcast (id: 216)
+✅ Got result for command id: 216
+📤 Sending command: get_node_info (id: 217)
+📨 Received message type: broadcast (id: 217)
+📨 Received message type: broadcast (id: 217)
+✅ Got result for command id: 217
+📤 Sending command: get_node_info (id: 218)
+📨 Received message type: broadcast (id: 218)
+📨 Received message type: broadcast (id: 218)
+✅ Got result for command id: 218
+📤 Sending command: get_node_info (id: 219)
+📨 Received message type: broadcast (id: 219)
+📨 Received message type: broadcast (id: 219)
+✅ Got result for command id: 219
+📤 Sending command: get_node_info (id: 220)
+📨 Received message type: broadcast (id: 220)
+📨 Received message type: broadcast (id: 220)
+✅ Got result for command id: 220
+📤 Sending command: set_image_fill (id: 221)
+📨 Received message type: broadcast (id: 221)
+📨 Received message type: broadcast (id: 221)
+✅ Got result for command id: 221
+✅ Filled #18 figure card
+📤 Sending command: create_component_instance (id: 222)
+📨 Received message type: broadcast (id: 222)
+📨 Received message type: broadcast (id: 222)
+✅ Got result for command id: 222
+📤 Sending command: get_node_info (id: 223)
+📨 Received message type: broadcast (id: 223)
+📨 Received message type: broadcast (id: 223)
+✅ Got result for command id: 223
+📤 Sending command: set_text_content (id: 224)
+📨 Received message type: broadcast (id: 224)
+📨 Received message type: broadcast (id: 224)
+✅ Got result for command id: 224
+✅ Filled #19 body card
+
+📊 Run Summary:
+{
+  "dataset": "250818_summer_break",
+  "staticServer": "http://127.0.0.1:3056/assets",
+  "channel": "3fspxu5k",
+  "total": 19,
+  "created": 19,
+  "errors": 0,
+  "createdDetails": [
+    {
+      "index": 0,
+      "id": "390:335",
+      "method": "direct-local",
+      "kind": "figure"
+    },
+    {
+      "index": 1,
+      "id": "390:345",
+      "method": "direct-local",
+      "kind": "figure"
+    },
+    {
+      "index": 2,
+      "id": "390:355",
+      "method": "direct-local",
+      "kind": "body"
+    },
+    {
+      "index": 3,
+      "id": "390:357",
+      "method": "direct-local",
+      "kind": "figure"
+    },
+    {
+      "index": 4,
+      "id": "390:367",
+      "method": "direct-local",
+      "kind": "body"
+    },
+    {
+      "index": 5,
+      "id": "390:369",
+      "method": "direct-local",
+      "kind": "figure"
+    },
+    {
+      "index": 6,
+      "id": "390:379",
+      "method": "direct-local",
+      "kind": "figure"
+    },
+    {
+      "index": 7,
+      "id": "390:389",
+      "method": "direct-local",
+      "kind": "body"
+    },
+    {
+      "index": 8,
+      "id": "390:391",
+      "method": "direct-local",
+      "kind": "figure"
+    },
+    {
+      "index": 9,
+      "id": "390:401",
+      "method": "direct-local",
+      "kind": "body"
+    }
+  ]
+}

@@ -4398,7 +4398,7 @@ async function createConnections(params) {
 
 // Set Image Fill - Fill a node with Base64 image data or URL
 async function setImageFill(params) {
-  const { nodeId, imageBase64, imageUrl, scaleMode, opacity } = params || {};
+  const { nodeId, imageBase64, imageUrl, scaleMode, opacity, targetWidth } = params || {};
 
   if (!nodeId) {
     throw new Error("Missing nodeId parameter");
@@ -4478,17 +4478,36 @@ async function setImageFill(params) {
     // Create image in Figma
     const image = figma.createImage(bytes);
     const imageHash = image.hash;
+    let naturalW = 0, naturalH = 0;
+    try {
+      const size = await image.getSizeAsync();
+      naturalW = size.width;
+      naturalH = size.height;
+    } catch {}
 
-    // Create image fill
+    // Create image fill (prefer FIT by default to avoid cropping)
     const imageFill = {
       type: "IMAGE",
       imageHash: imageHash,
-      scaleMode: scaleMode || "FILL",
+      scaleMode: scaleMode || "FIT",
       opacity: opacity !== undefined ? opacity : 1
     };
 
-    // Apply the fill
+    // Apply the fill first
     targetNode.fills = [imageFill];
+
+    // Optional: resize node to targetWidth with proportional height
+    if (targetWidth && naturalW > 0 && "resize" in targetNode) {
+      const w = targetWidth;
+      const h = Math.max(1, Math.round((naturalH * w) / Math.max(1, naturalW)));
+      try {
+        if ("layoutSizingHorizontal" in targetNode) targetNode.layoutSizingHorizontal = "FIXED";
+        if ("layoutSizingVertical" in targetNode) targetNode.layoutSizingVertical = "FIXED";
+      } catch {}
+      try {
+        targetNode.resize(w, h);
+      } catch {}
+    }
 
     return {
       success: true,
@@ -4496,7 +4515,7 @@ async function setImageFill(params) {
       targetNodeId: targetNode.id,
       nodeName: node.name,
       targetNodeName: targetNode.name,
-      scaleMode: scaleMode || "FILL",
+      scaleMode: imageFill.scaleMode,
       opacity: opacity !== undefined ? opacity : 1
     };
   } catch (error) {

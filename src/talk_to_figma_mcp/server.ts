@@ -3033,6 +3033,7 @@ type CommandParams = {
     imageUrl?: string;
     scaleMode?: 'FILL' | 'FIT';
     opacity?: number;
+    targetWidth?: number;
   };
   set_text_auto_resize: {
     nodeId: string;
@@ -3346,8 +3347,9 @@ server.tool(
     imageUrl: z.string().optional().describe("URL to fetch image from (alternative to imageBase64)"),
     scaleMode: z.enum(['FILL', 'FIT']).optional().default('FILL').describe("Image scaling mode"),
     opacity: z.number().min(0).max(1).optional().default(1).describe("Image opacity (0-1)"),
+    targetWidth: z.number().optional().describe("If provided, plugin will resize node to this width and proportional height"),
   },
-  async ({ nodeId, imageBase64, imageUrl, scaleMode, opacity }: any) => {
+  async ({ nodeId, imageBase64, imageUrl, scaleMode, opacity, targetWidth }: any) => {
     // Validate that at least one image source is provided
     if (!imageBase64 && !imageUrl) {
       return {
@@ -3368,6 +3370,7 @@ server.tool(
           imageBase64,
           scaleMode: scaleMode || 'FILL',
           opacity: opacity ?? 1,
+          targetWidth,
         });
         const typedResult = result as any;
         return {
@@ -3387,6 +3390,7 @@ server.tool(
         imageUrl,
         scaleMode: scaleMode || 'FILL',
         opacity: opacity ?? 1,
+        targetWidth,
       });
       const typedResult = result as any;
       return {
@@ -3428,6 +3432,7 @@ server.tool(
           imageBase64: b64,
           scaleMode: scaleMode || 'FILL',
           opacity: opacity ?? 1,
+          targetWidth,
         });
         const typed2 = result2 as any;
         return {
