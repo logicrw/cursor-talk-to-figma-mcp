@@ -4496,18 +4496,33 @@ async function setImageFill(params) {
     // Apply the fill first
     targetNode.fills = [imageFill];
 
-    // Optional: resize node to targetWidth with proportional height
-    if (targetWidth && naturalW > 0 && "resize" in targetNode) {
-      const w = targetWidth;
-      const h = Math.max(1, Math.round((naturalH * w) / Math.max(1, naturalW)));
-      try {
-        if ("layoutSizingHorizontal" in targetNode) targetNode.layoutSizingHorizontal = "FIXED";
-        if ("layoutSizingVertical" in targetNode) targetNode.layoutSizingVertical = "FIXED";
-      } catch (e) {}
-      try {
-        targetNode.resize(w, h);
-      } catch (e) {}
-    }
+    // Compute width/height based on slot width or provided targetWidth
+    const currentW = Math.max(1, Math.round(Number(targetNode.width) || 0));
+    const w = (Number.isFinite(targetWidth) && targetWidth > 0) ? targetWidth : currentW;
+    const h = (naturalW > 0 && naturalH > 0)
+      ? Math.max(1, Math.round(w * naturalH / Math.max(1, naturalW)))
+      : Math.max(1, Math.round(Number(targetNode.height) || 1));
+
+    // Let width be controlled by container (Fill), height fixed by plugin
+    try {
+      if ("layoutSizingHorizontal" in targetNode) targetNode.layoutSizingHorizontal = "FILL";
+      if ("layoutSizingVertical" in targetNode)   targetNode.layoutSizingVertical   = "FIXED";
+    } catch (e) {}
+
+    // Set initial height (width uses current/target width for proportional calc)
+    try {
+      targetNode.resize(w, h);
+    } catch (e) {}
+
+    // Lock aspect ratio so future width changes adjust height proportionally
+    try {
+      if ("lockAspectRatio" in targetNode && typeof targetNode.lockAspectRatio === "function") {
+        targetNode.lockAspectRatio();
+      } else if ("targetAspectRatio" in targetNode) {
+        const ratio = h > 0 ? (w / h) : 0;
+        try { targetNode.targetAspectRatio = ratio; } catch (e) {}
+      }
+    } catch (e) {}
 
     return {
       success: true,
