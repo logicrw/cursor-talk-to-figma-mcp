@@ -4483,7 +4483,7 @@ async function setImageFill(params) {
       const size = await image.getSizeAsync();
       naturalW = size.width;
       naturalH = size.height;
-    } catch {}
+    } catch (e) {}
 
     // Create image fill (prefer FIT by default to avoid cropping)
     const imageFill = {
@@ -4503,10 +4503,10 @@ async function setImageFill(params) {
       try {
         if ("layoutSizingHorizontal" in targetNode) targetNode.layoutSizingHorizontal = "FIXED";
         if ("layoutSizingVertical" in targetNode) targetNode.layoutSizingVertical = "FIXED";
-      } catch {}
+      } catch (e) {}
       try {
         targetNode.resize(w, h);
-      } catch {}
+      } catch (e) {}
     }
 
     return {
