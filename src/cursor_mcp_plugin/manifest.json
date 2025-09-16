@@ -12,8 +12,7 @@
   "networkAccess": {
     "reasoning": "Connect to local MCP WebSocket and local static asset server during development.",
     "allowedDomains": [
-      "ws://localhost:3055",
-      "http://localhost:3056"
+      "none"
     ],
     "devAllowedDomains": [
       "ws://localhost:3055",

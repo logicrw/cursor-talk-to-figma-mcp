@@ -14,6 +14,8 @@ import { spawn } from 'child_process';
 import http from 'http';
 import { resolveContentPath, inferDataset, buildAssetUrl, computeStaticServerUrl, getAssetExtension } from '../src/config-resolver.js';
 
+const THROTTLE_MS = 0;
+
 class WeeklyPosterRunner {
   constructor() {
     this.ws = null;
@@ -177,6 +179,40 @@ class WeeklyPosterRunner {
         }
       }, 30000);
     });
+  }
+
+  parsePrepareCardRootResult(raw) {
+    if (!raw) return null;
+    let direct = raw;
+    if (typeof raw === 'string') {
+      try {
+        direct = JSON.parse(raw);
+      } catch (error) {
+        console.warn('⚠️ prepare_card_root string payload parse failed:', error.message || error);
+        return null;
+      }
+    }
+    if (typeof direct === 'object') {
+      if (direct && typeof direct.rootId === 'string') {
+        return direct;
+      }
+      if (direct && Array.isArray(direct.content)) {
+        for (let i = 0; i < direct.content.length; i++) {
+          const entry = direct.content[i];
+          if (entry && typeof entry.text === 'string') {
+            try {
+              const parsed = JSON.parse(entry.text);
+              if (parsed && typeof parsed.rootId === 'string') {
+                return parsed;
+              }
+            } catch (error) {
+              console.warn('⚠️ prepare_card_root legacy text parse failed:', error.message || error);
+            }
+          }
+        }
+      }
+    }
+    return null;
   }
 
   // Robust name normalization: remove spaces/zero-width chars and normalize width
@@ -385,7 +421,7 @@ class WeeklyPosterRunner {
     return null;
   }
 
-  async discoverImageTargets(instanceId, images) {
+  async discoverImageTargets(rootNodeId, images) {
     const slots = this.mapping.anchors?.slots || {};
     const slotNames = (slots.images || this.mapping.anchors.image_slots || []).slice();
     const candidates = [];
@@ -393,15 +429,26 @@ class WeeklyPosterRunner {
 
     // 1) explicit slot names
     for (const name of slotNames) {
-      const id = await this.dfsFindChildIdByName(instanceId, name);
+      const id = await this.dfsFindChildIdByName(rootNodeId, name);
       const fillId = id ? await this.resolveFillTargetPreferShape(id) : null;
-      if (fillId && !seen.has(fillId)) { seen.add(fillId); candidates.push(fillId); }
+      if (!fillId || seen.has(fillId)) continue;
+      let info = null;
+      try {
+        info = await this.sendCommand('get_node_info', { nodeId: fillId });
+      } catch (error) {
+        console.warn('⚠️ get_node_info failed for candidate slot:', error.message || error);
+      }
+      if (info && info.visible === false) {
+        continue;
+      }
+      seen.add(fillId);
+      candidates.push(fillId);
     }
     if (candidates.length >= images.length) return candidates;
 
     // 2) IMAGE_GRID fallback: scan visual order
     const gridName = slots.figure?.image_grid || 'slot:IMAGE_GRID';
-    const gridId = await this.dfsFindChildIdByName(instanceId, gridName);
+    const gridId = await this.dfsFindChildIdByName(rootNodeId, gridName);
     if (gridId) {
       const root = await this.sendCommand('get_node_info', { nodeId: gridId });
       const q = [root];
@@ -410,6 +457,7 @@ class WeeklyPosterRunner {
       while (q.length) {
         const n = q.shift();
         if (!n) continue;
+        if (n.visible === false) continue;
         if (n.children) q.push(...n.children);
         if (n.id) {
           if (this.isFillType(n.type)) shapeIds.push(n.id);
@@ -432,101 +480,124 @@ class WeeklyPosterRunner {
   }
 
   async fillFigureCard(instanceId, group) {
-    // Detach card root once and use the new root id for all operations
-    let rootId = instanceId;
-    try {
-      const prep = await this.sendCommand('prepare_card_root', { nodeId: instanceId });
-      if (prep && (prep.rootId || (prep.result && prep.result.rootId))) {
-        rootId = prep.rootId || prep.result.rootId;
-        console.log(`🔧 Card root prepared (detached). New root id: ${rootId}`);
-      }
-    } catch (e) { console.warn('prepare_card_root failed or unavailable, continuing without detach'); }
     const slots = this.mapping.anchors?.slots || {};
     const figures = group.figures || [];
     const hasTitle = figures.some(f => !!f.title);
-    const firstTitle = (figures.find(f => f.title)?.title) || '';
-    // Aggregate credits across figures → unique tokens
+    const firstWithTitle = figures.find(f => !!f.title);
+    const firstTitle = firstWithTitle ? firstWithTitle.title : '';
+
     const sCfg = this.mapping.source || {};
-    const prefix = sCfg.prefix ?? 'Source: ';
-    const mode = sCfg.mode || 'inline'; // inline | label
+    const prefix = typeof sCfg.prefix === 'string' ? sCfg.prefix : 'Source: ';
+    const mode = sCfg.mode || 'inline';
     const splitRe = /[、，,;；／/|]+/;
-    const stripPrefix = (t) => String(t||'').replace(/^(?:source|来源)\s*[:：]\s*/i, '').trim();
+    const stripPrefix = (t) => String(t || '').replace(/^(?:source|来源)\s*[:：]\s*/i, '').trim();
     const creditsTokens = [];
     const seen = new Set();
-    for (const f of figures) {
-      const raw = String(f?.credit || '');
+    for (let idx = 0; idx < figures.length; idx++) {
+      const raw = String((figures[idx] && figures[idx].credit) || '');
       if (!raw) continue;
-      for (const tok of raw.split(splitRe)) {
-        const clean = stripPrefix(tok);
+      const pieces = raw.split(splitRe);
+      for (let j = 0; j < pieces.length; j++) {
+        const clean = stripPrefix(pieces[j]);
         const key = clean.toLowerCase();
-        if (clean && !seen.has(key)) { seen.add(key); creditsTokens.push(clean); }
+        if (clean && !seen.has(key)) {
+          seen.add(key);
+          creditsTokens.push(clean);
+        }
       }
     }
     const hasSource = creditsTokens.length > 0;
-    const assetPath = this.mapping.images?.asset_path || 'image.asset_id';
-    const images = figures.map(f => ({ asset_id: this.getByPath(f, assetPath) })).filter(x => !!x.asset_id);
 
-    // title
+    const assetPath = this.mapping.images?.asset_path || 'image.asset_id';
+    const images = figures
+      .map((f) => ({ asset_id: this.getByPath(f, assetPath) }))
+      .filter((entry) => !!entry.asset_id);
+
+    const props = {};
+    const titleProp = this.mapping.title?.visible_prop || 'showTitle';
+    const sourceProp = this.mapping.source?.visible_prop || 'showSource';
+    props[titleProp] = !!hasTitle;
+    props[sourceProp] = !!hasSource;
+    props['showSourceLabel'] = mode === 'label';
+    const imgSlots = (slots.images || this.mapping.anchors.image_slots || []);
+    const maxImages = this.mapping.images?.max_images || imgSlots.length;
+    for (let i = 2; i <= Math.min(imgSlots.length, maxImages); i++) {
+      const slotName = imgSlots[i - 1];
+      const visibilityProp = (this.mapping.images?.visibility_props || {})[slotName];
+      if (visibilityProp) {
+        props[visibilityProp] = images.length >= i;
+      }
+    }
+    try {
+      await this.sendCommand('set_instance_properties_by_base', { nodeId: instanceId, properties: props });
+    } catch (error) {
+      console.warn('⚠️ set_instance_properties_by_base failed:', error.message || error);
+    }
+
+    let rootId = instanceId;
+    try {
+      const raw = await this.sendCommand('prepare_card_root', { nodeId: instanceId });
+      const prep = this.parsePrepareCardRootResult(raw);
+      if (prep && prep.rootId) {
+        rootId = prep.rootId;
+        const times = typeof prep.detachedTimes === 'number' ? prep.detachedTimes : 'unknown';
+        console.log(`[prepare_card_root] figure root prepared rootId=${rootId} detachedTimes=${times}`);
+      } else {
+        console.warn('⚠️ prepare_card_root returned unexpected payload, using instanceId');
+      }
+    } catch (error) {
+      console.warn('⚠️ prepare_card_root failed, continuing without detach:', error.message || error);
+    }
+
     const titleName = slots.figure?.title_text || 'titleText';
     const titleId = await this.dfsFindChildIdByName(rootId, titleName);
-    if (titleId) await this.setText(titleId, firstTitle);
-    // source (renderer-owned labeling)
+    if (titleId) {
+      await this.setText(titleId, firstTitle);
+    }
+
     const sourceName = slots.figure?.source_text || 'sourceText';
     const sourceId = await this.dfsFindChildIdByName(rootId, sourceName);
     if (sourceId) {
       let text = '';
       if (hasSource) {
         const inlineText = creditsTokens.join(', ');
-        text = (mode === 'inline') ? (prefix + inlineText) : inlineText;
-        // collapse duplicate prefixes
+        text = mode === 'inline' ? (prefix + inlineText) : inlineText;
         text = text.replace(/^(?:Source:\s*)+/i, 'Source: ');
       }
       await this.sendCommand('set_text_content', { nodeId: sourceId, text });
       const resizeMode = this.mapping.source?.resizeMode || this.mapping.source?.auto_size || 'WIDTH_AND_HEIGHT';
       if (resizeMode === 'WIDTH_AND_HEIGHT') {
         await this.sendCommand('set_text_auto_resize', { nodeId: sourceId, autoResize: 'WIDTH_AND_HEIGHT' });
-        // enforce Hug sizing for stable single-row behavior
         try {
           await this.sendCommand('set_layout_sizing', { nodeId: sourceId, layoutSizingHorizontal: 'HUG', layoutSizingVertical: 'HUG' });
           console.log('🧱 Source sizing: horizontal=HUG vertical=HUG');
-        } catch {}
+        } catch (error) {
+          console.warn('⚠️ set_layout_sizing failed for source:', error.message || error);
+        }
       } else if (resizeMode === 'HEIGHT') {
         await this.sendCommand('set_text_auto_resize', { nodeId: sourceId, autoResize: 'HEIGHT' });
         const containerName = slots.figure?.source || 'slot:SOURCE';
         const containerId = await this.dfsFindChildIdByName(rootId, containerName);
         if (containerId) {
-          const box = await this.sendCommand('get_node_info', { nodeId: containerId });
-          const srcInfo = await this.sendCommand('get_node_info', { nodeId: sourceId });
-          const w = box?.absoluteBoundingBox?.width;
-          const h = srcInfo?.absoluteBoundingBox?.height;
-          if (w && h) {
-            await this.sendCommand('resize_node', { nodeId: sourceId, width: w, height: h });
-            console.log(`📐 Source resized width=${w}`);
+          try {
+            const box = await this.sendCommand('get_node_info', { nodeId: containerId });
+            const srcInfo = await this.sendCommand('get_node_info', { nodeId: sourceId });
+            const w = box && box.absoluteBoundingBox ? box.absoluteBoundingBox.width : null;
+            const h = srcInfo && srcInfo.absoluteBoundingBox ? srcInfo.absoluteBoundingBox.height : null;
+            if (w && h) {
+              await this.sendCommand('resize_node', { nodeId: sourceId, width: w, height: h });
+              console.log(`📐 Source resized width=${w}`);
+            }
+          } catch (error) {
+            console.warn('⚠️ resize_node failed for source:', error.message || error);
           }
         }
       }
       console.log(`📄 Source mode=${mode} text="${text}" credits=${JSON.stringify(creditsTokens)}`);
     }
-    // visibility
-    const props = {};
-    const titleProp = this.mapping.title?.visible_prop || 'showTitle';
-    const sourceProp = this.mapping.source?.visible_prop || 'showSource';
-    props[titleProp] = !!hasTitle;
-    props[sourceProp] = !!hasSource;
-    // optional label visibility (best-effort)
-    props['showSourceLabel'] = (mode === 'label');
-    const imgSlots = (slots.images || this.mapping.anchors.image_slots || []);
-    for (let i = 2; i <= Math.min(imgSlots.length, this.mapping.images?.max_images || imgSlots.length); i++) {
-      const slotName = imgSlots[i-1];
-      const visibilityProp = (this.mapping.images?.visibility_props || {})[slotName];
-      if (visibilityProp) props[visibilityProp] = images.length >= i;
-    }
-    await this.sendCommand('set_instance_properties_by_base', { nodeId: instanceId, properties: props });
 
-    // images (discover real fill targets; fallback to IMAGE_GRID; try-next on failure)
     const candidates = await this.discoverImageTargets(rootId, images);
     const used = new Set();
-    const scaleMode = (this.mapping.imageFill?.scaleMode || 'FILL');
     for (let i = 0; i < images.length; i++) {
       let placed = false;
       for (let j = 0; j < candidates.length; j++) {
@@ -536,38 +607,36 @@ class WeeklyPosterRunner {
         try {
           if (await this.httpHeadOk(url)) {
             try {
-              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode: 'FIT', opacity: 1, autoDetach: true });
+              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode: 'FIT', opacity: 1 });
             } catch (errUrl) {
               const ext = getAssetExtension(images[i].asset_id, this.content.assets || []);
-              const localPath = path.join(
-                process.cwd(), 'docx2json', 'assets', this.dataset,
-                `${images[i].asset_id}.${ext || 'png'}`
-              );
+              const localPath = path.join(process.cwd(), 'docx2json', 'assets', this.dataset, `${images[i].asset_id}.${ext || 'png'}`);
               const buf = await fs.readFile(localPath);
               const b64 = buf.toString('base64');
               await this.throttleBase64();
-              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FIT', opacity: 1, autoDetach: true });
+              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FIT', opacity: 1 });
             }
           } else {
             const ext = getAssetExtension(images[i].asset_id, this.content.assets || []);
-            const localPath = path.join(
-              process.cwd(), 'docx2json', 'assets', this.dataset,
-              `${images[i].asset_id}.${ext || 'png'}`
-            );
+            const localPath = path.join(process.cwd(), 'docx2json', 'assets', this.dataset, `${images[i].asset_id}.${ext || 'png'}`);
             const buf = await fs.readFile(localPath);
             const b64 = buf.toString('base64');
             await this.throttleBase64();
-            await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FIT', opacity: 1, autoDetach: true });
+            await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FIT', opacity: 1 });
           }
           used.add(imgNodeId);
           placed = true;
+          if (THROTTLE_MS > 0) {
+            await this.sleep(THROTTLE_MS);
+          }
           break;
-        } catch (e) {
-          console.warn(`⚠️ Fill failed on ${imgNodeId}, trying next candidate: ${e.message}`);
-          continue;
+        } catch (error) {
+          console.warn(`⚠️ Fill failed on ${imgNodeId}, trying next candidate: ${error.message || error}`);
         }
       }
-      if (!placed) console.warn(`⚠️ No available target for image #${i+1}`);
+      if (!placed) {
+        console.warn(`⚠️ No available target for image #${i + 1}`);
+      }
     }
   }
 
@@ -575,12 +644,18 @@ class WeeklyPosterRunner {
     // Detach card root for body card as well
     let rootId = instanceId;
     try {
-      const prep = await this.sendCommand('prepare_card_root', { nodeId: instanceId });
-      if (prep && (prep.rootId || (prep.result && prep.result.rootId))) {
-        rootId = prep.rootId || prep.result.rootId;
-        console.log(`🔧 Body card root prepared (detached). New root id: ${rootId}`);
+      const raw = await this.sendCommand('prepare_card_root', { nodeId: instanceId });
+      const prep = this.parsePrepareCardRootResult(raw);
+      if (prep && prep.rootId) {
+        rootId = prep.rootId;
+        const times = typeof prep.detachedTimes === 'number' ? prep.detachedTimes : 'unknown';
+        console.log(`[prepare_card_root] body root prepared rootId=${rootId} detachedTimes=${times}`);
+      } else {
+        console.warn('⚠️ prepare_card_root returned unexpected payload for body, using instanceId');
       }
-    } catch (e) { console.warn('prepare_card_root failed for body, continuing'); }
+    } catch (error) {
+      console.warn('⚠️ prepare_card_root failed for body, continuing:', error.message || error);
+    }
     const slots = this.mapping.anchors?.slots || {};
     const bodySlot = slots.body?.body || 'slot:BODY';
     const bodyId = await this.dfsFindChildIdByName(rootId, bodySlot);

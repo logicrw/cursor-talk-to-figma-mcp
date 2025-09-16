@@ -3465,12 +3465,11 @@ server.tool(
   async ({ nodeId }: any) => {
     try {
       const result = await sendCommandToFigma("prepare_card_root", { nodeId });
-      return {
-        content: [{ type: "text", text: JSON.stringify(result) }]
-      };
+      return result;
     } catch (error) {
       return {
-        content: [{ type: "text", text: `Error preparing card root: ${error instanceof Error ? error.message : String(error)}` }]
+        success: false,
+        message: `Error preparing card root: ${error instanceof Error ? error.message : String(error)}`
       };
     }
   }
