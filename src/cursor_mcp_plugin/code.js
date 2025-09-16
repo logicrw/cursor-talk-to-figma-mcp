@@ -110,6 +110,8 @@ function updateSettings(settings) {
 // Handle commands from UI
 async function handleCommand(command, params) {
   switch (command) {
+    case "prepare_card_root":
+      return await prepareCardRoot(params);
     case "get_document_info":
       return await getDocumentInfo();
     case "get_selection":
@@ -4588,8 +4590,8 @@ async function setImageFill(params) {
     const tW = Number(targetWidth);
     const w = (Number.isFinite(tW) && tW > 0) ? tW : slotWidth;
     const h = (naturalW > 0 && naturalH > 0)
-      ? Math.max(1, Math.round(w * naturalH / Math.max(1, naturalW)))
-      : Math.max(1, Math.round(Number(slotNode.height) || 1));
+      ? Math.max(1, (w * naturalH / Math.max(1, naturalW)))
+      : Math.max(1, Number(slotNode.height) || 1);
 
     // D) Resize slot container itself
     try { slotNode.resize(w, h); } catch (e) {}
@@ -4601,7 +4603,11 @@ async function setImageFill(params) {
       if ("layoutSizingHorizontal" in paintNode) paintNode.layoutSizingHorizontal = "FILL";
       if ("layoutSizingVertical"   in paintNode) paintNode.layoutSizingVertical   = "FILL";
     } catch (e) {}
-    try { if ("strokes" in paintNode) paintNode.strokes = []; } catch (e) {}
+    try {
+      if ("strokes" in paintNode) paintNode.strokes = [];
+      if ("effects" in paintNode) paintNode.effects = [];
+      if ("strokeWeight" in paintNode) paintNode.strokeWeight = 0;
+    } catch (e) {}
 
     // F) Lock aspect ratio on slot container so future width changes adjust height proportionally
     try {
@@ -4732,5 +4738,19 @@ async function appendCardToContainer(params) {
     };
   } catch (error) {
     throw new Error(`Failed to append card to container: ${error.message}`);
+  }
+}
+// Prepare card root: detach all instance ancestors and return new root id
+async function prepareCardRoot(params) {
+  const { nodeId } = params || {};
+  if (!nodeId) throw new Error("Missing nodeId parameter");
+  let node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) throw new Error(`Node not found with ID: ${nodeId}`);
+  try {
+    const res = detachAllInstanceAncestors(node);
+    node = res.node;
+    return { success: true, rootId: node.id, detachedTimes: res.count };
+  } catch (e) {
+    return { success: false, message: e && e.message ? e.message : 'prepareCardRoot failed' };
   }
 }

@@ -432,6 +432,15 @@ class WeeklyPosterRunner {
   }
 
   async fillFigureCard(instanceId, group) {
+    // Detach card root once and use the new root id for all operations
+    let rootId = instanceId;
+    try {
+      const prep = await this.sendCommand('prepare_card_root', { nodeId: instanceId });
+      if (prep && (prep.rootId || (prep.result && prep.result.rootId))) {
+        rootId = prep.rootId || prep.result.rootId;
+        console.log(`🔧 Card root prepared (detached). New root id: ${rootId}`);
+      }
+    } catch (e) { console.warn('prepare_card_root failed or unavailable, continuing without detach'); }
     const slots = this.mapping.anchors?.slots || {};
     const figures = group.figures || [];
     const hasTitle = figures.some(f => !!f.title);
@@ -459,11 +468,11 @@ class WeeklyPosterRunner {
 
     // title
     const titleName = slots.figure?.title_text || 'titleText';
-    const titleId = await this.dfsFindChildIdByName(instanceId, titleName);
+    const titleId = await this.dfsFindChildIdByName(rootId, titleName);
     if (titleId) await this.setText(titleId, firstTitle);
     // source (renderer-owned labeling)
     const sourceName = slots.figure?.source_text || 'sourceText';
-    const sourceId = await this.dfsFindChildIdByName(instanceId, sourceName);
+    const sourceId = await this.dfsFindChildIdByName(rootId, sourceName);
     if (sourceId) {
       let text = '';
       if (hasSource) {
@@ -484,7 +493,7 @@ class WeeklyPosterRunner {
       } else if (resizeMode === 'HEIGHT') {
         await this.sendCommand('set_text_auto_resize', { nodeId: sourceId, autoResize: 'HEIGHT' });
         const containerName = slots.figure?.source || 'slot:SOURCE';
-        const containerId = await this.dfsFindChildIdByName(instanceId, containerName);
+        const containerId = await this.dfsFindChildIdByName(rootId, containerName);
         if (containerId) {
           const box = await this.sendCommand('get_node_info', { nodeId: containerId });
           const srcInfo = await this.sendCommand('get_node_info', { nodeId: sourceId });
@@ -515,7 +524,7 @@ class WeeklyPosterRunner {
     await this.sendCommand('set_instance_properties_by_base', { nodeId: instanceId, properties: props });
 
     // images (discover real fill targets; fallback to IMAGE_GRID; try-next on failure)
-    const candidates = await this.discoverImageTargets(instanceId, images);
+    const candidates = await this.discoverImageTargets(rootId, images);
     const used = new Set();
     const scaleMode = (this.mapping.imageFill?.scaleMode || 'FILL');
     for (let i = 0; i < images.length; i++) {
@@ -563,9 +572,18 @@ class WeeklyPosterRunner {
   }
 
   async fillBodyCard(instanceId, item) {
+    // Detach card root for body card as well
+    let rootId = instanceId;
+    try {
+      const prep = await this.sendCommand('prepare_card_root', { nodeId: instanceId });
+      if (prep && (prep.rootId || (prep.result && prep.result.rootId))) {
+        rootId = prep.rootId || prep.result.rootId;
+        console.log(`🔧 Body card root prepared (detached). New root id: ${rootId}`);
+      }
+    } catch (e) { console.warn('prepare_card_root failed for body, continuing'); }
     const slots = this.mapping.anchors?.slots || {};
     const bodySlot = slots.body?.body || 'slot:BODY';
-    const bodyId = await this.dfsFindChildIdByName(instanceId, bodySlot);
+    const bodyId = await this.dfsFindChildIdByName(rootId, bodySlot);
     if (bodyId) await this.setText(bodyId, item.block?.text || '');
   }
 

@@ -3036,6 +3036,9 @@ type CommandParams = {
     targetWidth?: number;
     autoDetach?: boolean;
   };
+  prepare_card_root: {
+    nodeId: string;
+  };
   set_text_auto_resize: {
     nodeId: string;
     autoResize: 'NONE' | 'HEIGHT' | 'WIDTH_AND_HEIGHT';
@@ -3448,6 +3451,27 @@ server.tool(
           content: [{ type: "text", text: `Fallback failed: ${e2 instanceof Error ? e2.message : String(e2)}` }]
         };
       }
+    }
+  }
+);
+
+// Prepare Card Root Tool
+server.tool(
+  "prepare_card_root",
+  "Detach nearest instance ancestors and return new root id",
+  {
+    nodeId: z.string().describe("Any node id within the card to be detached"),
+  },
+  async ({ nodeId }: any) => {
+    try {
+      const result = await sendCommandToFigma("prepare_card_root", { nodeId });
+      return {
+        content: [{ type: "text", text: JSON.stringify(result) }]
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: `Error preparing card root: ${error instanceof Error ? error.message : String(error)}` }]
+      };
     }
   }
 );

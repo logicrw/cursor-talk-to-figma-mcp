@@ -6,7 +6,7 @@
   "static_server": {
     "port": 3056,
     "host": "localhost",
-    "assets_path": "../docx2json/assets/250818_summer_break",
+    "assets_path": "../docx2json/assets/250915_up_only",
     "baseDir": "../docx2json/assets",
     "publicRoute": "/assets"
   },
@@ -21,7 +21,7 @@
   },
   "workflow": {
     "cleanup_on_start": true,
-    "current_content_file": "250818_summer_break_content.json",
+    "current_content_file": "250915_up_only_content.json",
     "content_directory": "../docx2json",
     "mapping": {
       "anchors": {
