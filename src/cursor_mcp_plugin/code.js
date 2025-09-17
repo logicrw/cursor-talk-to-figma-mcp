@@ -4489,6 +4489,7 @@ async function setImageFill(params) {
   const imageBase64 = options.imageBase64;
   const imageUrl = options.imageUrl;
   const opacity = options.opacity;
+  const scaleMode = options.scaleMode;
 
   if (!nodeId) {
     throw new Error("Missing nodeId parameter");

@@ -12,7 +12,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { spawn } from 'child_process';
 import http from 'http';
-import { resolveContentPath, inferDataset, buildAssetUrl, computeStaticServerUrl } from '../src/config-resolver.js';
+import { resolveContentPath, inferDataset, buildAssetUrl, computeStaticServerUrl, getAssetExtension } from '../src/config-resolver.js';
 
 const THROTTLE_MS = 0;
 
@@ -33,6 +33,9 @@ class WeeklyPosterRunner {
     this.cardsContainerId = null;
     this.seeds = { figure: null, body: null };
     this.report = { created: [], errors: [] };
+    this.base64Rate = 30;
+    this.base64Sent = [];
+    this.fetchImpl = typeof fetch === 'function' ? fetch.bind(globalThis) : null;
   }
 
   async loadConfig() {
@@ -40,6 +43,8 @@ class WeeklyPosterRunner {
     this.config = JSON.parse(await fs.readFile(cfgPath, 'utf8'));
     this.mapping = this.config.workflow.mapping;
     this.staticUrl = computeStaticServerUrl(this.config);
+    this.base64Rate = Number(this.config.asset_transfer?.base64_rate_limit ?? 30);
+    this.base64Sent = [];
   }
 
   async resolveContent() {
@@ -97,6 +102,56 @@ class WeeklyPosterRunner {
         resolve(false);
       }
     });
+  }
+
+  async throttleBase64() {
+    if (!this.base64Rate || this.base64Rate <= 0) return;
+    const now = Date.now();
+    const windowMs = 1000;
+    this.base64Sent = this.base64Sent.filter((t) => now - t < windowMs);
+    if (this.base64Sent.length >= this.base64Rate) {
+      const wait = windowMs - (now - this.base64Sent[0]);
+      await this.sleep(Math.max(0, wait));
+      const refreshed = Date.now();
+      this.base64Sent = this.base64Sent.filter((t) => refreshed - t < windowMs);
+    }
+    this.base64Sent.push(Date.now());
+  }
+
+  async imageToBase64(image, url) {
+    if (image && image.asset_id && this.dataset) {
+      const ext = getAssetExtension(image.asset_id, this.content.assets || []);
+      if (ext) {
+        const localPath = path.join(
+          process.cwd(),
+          'docx2json',
+          'assets',
+          this.dataset,
+          `${image.asset_id}.${ext}`
+        );
+        try {
+          const buf = await fs.readFile(localPath);
+          return buf.toString('base64');
+        } catch (error) {
+          // fall through to fetching via URL
+        }
+      }
+    }
+    if (!url) return null;
+    try {
+      const fetchFn = this.fetchImpl;
+      if (!fetchFn) {
+        console.warn('⚠️ Global fetch unavailable; skip non-local image fallback');
+        return null;
+      }
+      const resp = await fetchFn(url);
+      if (!resp.ok) return null;
+      const arrayBuffer = await resp.arrayBuffer();
+      return Buffer.from(arrayBuffer).toString('base64');
+    } catch (error) {
+      console.warn('⚠️ imageToBase64 fetch failed:', error.message || error);
+      return null;
+    }
   }
 
   async connectWS() {
@@ -557,17 +612,42 @@ class WeeklyPosterRunner {
         const imgNodeId = candidates[j];
         if (used.has(imgNodeId)) continue;
         const url = buildAssetUrl(this.staticUrl, this.content.assets || [], images[i].asset_id, this.contentPath);
+        let success = false;
+        let lastError = null;
         try {
-          await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode: 'FIT', opacity: 1 });
-          used.add(imgNodeId);
-          placed = true;
-          if (THROTTLE_MS > 0) {
-            await this.sleep(THROTTLE_MS);
-          }
-          break;
+          const res = await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode: 'FIT', opacity: 1 });
+          success = !res || res.success !== false;
         } catch (error) {
-          console.warn(`⚠️ Fill failed on ${imgNodeId}, trying next candidate: ${error.message || error}`);
+          lastError = error;
         }
+
+        if (!success) {
+          try {
+            const b64 = await this.imageToBase64(images[i], url);
+            if (b64) {
+              await this.throttleBase64();
+              const resFallback = await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FIT', opacity: 1 });
+              success = !resFallback || resFallback.success !== false;
+            } else {
+              console.warn(`⚠️ Base64 fallback unavailable for ${imgNodeId}`);
+            }
+          } catch (fallbackError) {
+            lastError = fallbackError;
+          }
+        }
+
+        if (!success) {
+          const reason = lastError ? (lastError.message || lastError) : 'unknown reason';
+          console.warn(`⚠️ Fill failed on ${imgNodeId}, trying next candidate: ${reason}`);
+          continue;
+        }
+
+        used.add(imgNodeId);
+        placed = true;
+        if (THROTTLE_MS > 0) {
+          await this.sleep(THROTTLE_MS);
+        }
+        break;
       }
       if (!placed) {
         console.warn(`⚠️ No available target for image #${i + 1}`);
