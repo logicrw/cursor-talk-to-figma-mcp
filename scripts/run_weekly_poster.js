@@ -12,7 +12,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { spawn } from 'child_process';
 import http from 'http';
-import { resolveContentPath, inferDataset, buildAssetUrl, computeStaticServerUrl, getAssetExtension } from '../src/config-resolver.js';
+import { resolveContentPath, inferDataset, buildAssetUrl, computeStaticServerUrl } from '../src/config-resolver.js';
 
 const THROTTLE_MS = 0;
 
@@ -33,8 +33,6 @@ class WeeklyPosterRunner {
     this.cardsContainerId = null;
     this.seeds = { figure: null, body: null };
     this.report = { created: [], errors: [] };
-    this.base64Rate = 30; // per second
-    this.base64Sent = [];
   }
 
   async loadConfig() {
@@ -42,7 +40,6 @@ class WeeklyPosterRunner {
     this.config = JSON.parse(await fs.readFile(cfgPath, 'utf8'));
     this.mapping = this.config.workflow.mapping;
     this.staticUrl = computeStaticServerUrl(this.config);
-    this.base64Rate = Number(this.config.asset_transfer?.base64_rate_limit ?? 30);
   }
 
   async resolveContent() {
@@ -364,18 +361,6 @@ class WeeklyPosterRunner {
     // caller decides the auto-resize mode
   }
 
-  async throttleBase64() {
-    const now = Date.now();
-    // remove >1s
-    this.base64Sent = this.base64Sent.filter(t => now - t < 1000);
-    if (this.base64Sent.length >= this.base64Rate) {
-      const wait = 1000 - (now - this.base64Sent[0]);
-      await this.sleep(Math.max(0, wait));
-      this.base64Sent = this.base64Sent.filter(t => Date.now() - t < 1000);
-    }
-    this.base64Sent.push(Date.now());
-  }
-
   // ---- Image target discovery helpers ----
   // Only shape types count as primary fill targets
   isFillType(type) {
@@ -573,25 +558,7 @@ class WeeklyPosterRunner {
         if (used.has(imgNodeId)) continue;
         const url = buildAssetUrl(this.staticUrl, this.content.assets || [], images[i].asset_id, this.contentPath);
         try {
-          if (await this.httpHeadOk(url)) {
-            try {
-        await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode: 'FIT', opacity: 1 });
-            } catch (errUrl) {
-              const ext = getAssetExtension(images[i].asset_id, this.content.assets || []);
-              const localPath = path.join(process.cwd(), 'docx2json', 'assets', this.dataset, `${images[i].asset_id}.${ext || 'png'}`);
-              const buf = await fs.readFile(localPath);
-              const b64 = buf.toString('base64');
-              await this.throttleBase64();
-              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FIT', opacity: 1 });
-            }
-          } else {
-            const ext = getAssetExtension(images[i].asset_id, this.content.assets || []);
-            const localPath = path.join(process.cwd(), 'docx2json', 'assets', this.dataset, `${images[i].asset_id}.${ext || 'png'}`);
-            const buf = await fs.readFile(localPath);
-            const b64 = buf.toString('base64');
-            await this.throttleBase64();
-            await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FIT', opacity: 1 });
-          }
+          await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode: 'FIT', opacity: 1 });
           used.add(imgNodeId);
           placed = true;
           if (THROTTLE_MS > 0) {

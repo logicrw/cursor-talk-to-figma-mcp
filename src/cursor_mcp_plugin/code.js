@@ -4574,23 +4574,38 @@ async function setImageFill(params) {
     }
   }
 
-  let bytes;
+  let bytes = null;
+  let source = 'none';
   if (actualImageUrl) {
-    const response = await fetch(actualImageUrl);
-    if (!response.ok) {
-      throw new Error('Failed to fetch image: ' + response.status + ' ' + response.statusText);
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    bytes = new Uint8Array(arrayBuffer);
-  } else {
-    let base64Data = actualImageBase64;
-    if (actualImageBase64 && actualImageBase64.indexOf('data:') === 0) {
-      const commaIndex = actualImageBase64.indexOf(',');
-      if (commaIndex !== -1) {
-        base64Data = actualImageBase64.substring(commaIndex + 1);
+    try {
+      const response = await fetch(String(actualImageUrl), { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error('Failed to fetch image: ' + response.status + ' ' + response.statusText);
       }
+      const arrayBuffer = await response.arrayBuffer();
+      bytes = new Uint8Array(arrayBuffer);
+      source = 'url';
+    } catch (error) {
+      console.warn('[set_image_fill] fetch failed for URL, will try base64 if provided: ' + (error && error.message ? error.message : error));
     }
-    bytes = customBase64Decode(base64Data);
+  }
+  if (!bytes && actualImageBase64) {
+    try {
+      let base64Data = actualImageBase64;
+      if (base64Data.indexOf('data:') === 0) {
+        const commaIndex = base64Data.indexOf(',');
+        if (commaIndex !== -1) {
+          base64Data = base64Data.substring(commaIndex + 1);
+        }
+      }
+      bytes = customBase64Decode(base64Data);
+      source = 'base64';
+    } catch (error) {
+      console.warn('[set_image_fill] base64 decode failed: ' + (error && error.message ? error.message : error));
+    }
+  }
+  if (!bytes) {
+    throw new Error('Unable to obtain image bytes from URL or base64');
   }
 
   const image = figma.createImage(bytes);
@@ -4711,7 +4726,7 @@ async function setImageFill(params) {
     }
   }
 
-  console.log('[set_image_fill] slot=' + slotNode.name + '#' + slotNode.id + ' paint=' + paintNode.id + ' size=' + desiredWidth + 'x' + desiredHeight + ' image=' + naturalWidth + 'x' + naturalHeight + ' instanceSlot=' + slotIsInstance);
+  console.log('[set_image_fill] slot=' + slotNode.name + '#' + slotNode.id + ' paint=' + paintNode.id + ' size=' + desiredWidth + 'x' + desiredHeight + ' image=' + naturalWidth + 'x' + naturalHeight + ' source=' + source + ' instanceSlot=' + slotIsInstance);
 
   if (!wasPaintVisible) {
     try {
