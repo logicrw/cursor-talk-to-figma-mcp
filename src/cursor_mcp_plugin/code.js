@@ -4454,14 +4454,41 @@ function detachAllInstanceAncestors(n) {
   return { node: cur, count, limitReached };
 }
 
+function detachInstanceDescendants(root) {
+  const stack = [root];
+  let detached = 0;
+  const visited = new Set();
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current || visited.has(current.id)) continue;
+    visited.add(current.id);
+    if (current.type === 'INSTANCE') {
+      const parent = current.parent;
+      const index = parent && 'children' in parent && parent.children ? parent.children.indexOf(current) : -1;
+      const detachedNode = current.detachInstance();
+      detached++;
+      if (parent && index >= 0 && 'children' in parent && parent.children) {
+        stack.push(parent.children[index]);
+      } else {
+        stack.push(detachedNode);
+      }
+      continue;
+    }
+    if ('children' in current && current.children && current.children.length) {
+      for (let i = 0; i < current.children.length; i++) {
+        stack.push(current.children[i]);
+      }
+    }
+  }
+  return detached;
+}
+
 async function setImageFill(params) {
   const options = params || {};
   const nodeId = options.nodeId;
   const imageBase64 = options.imageBase64;
   const imageUrl = options.imageUrl;
-  const scaleMode = options.scaleMode;
   const opacity = options.opacity;
-  const targetWidth = options.targetWidth;
 
   if (!nodeId) {
     throw new Error("Missing nodeId parameter");
@@ -4480,58 +4507,53 @@ async function setImageFill(params) {
     actualImageBase64 = null;
   }
 
-  let node = await figma.getNodeByIdAsync(nodeId);
-  if (!node) {
+  let slotNode = await figma.getNodeByIdAsync(nodeId);
+  if (!slotNode) {
     throw new Error("Node not found with ID: " + nodeId);
   }
 
-  let paintNode = node;
-  if (!('fills' in node)) {
-    if (node.type === 'GROUP' || node.type === 'INSTANCE' || node.type === 'FRAME') {
-      const stack = [node];
-      let found = null;
-      while (stack.length) {
-        const cur = stack.shift();
-        if (!cur) continue;
-        if ('fills' in cur) {
-          found = cur;
-          break;
-        }
-        if ('children' in cur && cur.children) {
-          for (let i = 0; i < cur.children.length; i++) {
-            stack.push(cur.children[i]);
-          }
-        }
-      }
-      if (!found) {
-        throw new Error("No fillable child found in node: " + nodeId);
-      }
-      paintNode = found;
-    } else {
-      throw new Error("Node does not support fills: " + nodeId + " (type: " + node.type + ")");
+  const slotIsInstance = slotNode.type === 'INSTANCE';
+  if (slotIsInstance) {
+    console.warn('[set_image_fill] slot node is still an instance – resize requests may be ignored: ' + nodeId);
+  }
+
+  const wasSlotVisible = !(slotNode.visible === false);
+  if (!wasSlotVisible) {
+    try {
+      slotNode.visible = true;
+    } catch (error) {
+      console.warn('[set_image_fill] unable to mark slot visible temporarily: ' + (error && error.message ? error.message : error));
     }
   }
 
-  const parentCandidate = paintNode.parent;
-  let slotNode = paintNode;
-  if (parentCandidate && typeof parentCandidate === 'object' && typeof parentCandidate.resize === 'function') {
-    slotNode = parentCandidate;
+  let paintNode = null;
+  if ('fills' in slotNode && (!('children' in slotNode) || !slotNode.children || slotNode.children.length === 0)) {
+    paintNode = slotNode;
+  } else {
+    if ('children' in slotNode && slotNode.children) {
+      for (let i = 0; i < slotNode.children.length; i++) {
+        const child = slotNode.children[i];
+        if (child && 'fills' in child) {
+          paintNode = child;
+          break;
+        }
+      }
+    }
+    if (!paintNode) {
+      const rect = figma.createRectangle();
+      rect.name = 'ImageFill';
+      rect.resize(1, 1);
+      slotNode.appendChild(rect);
+      paintNode = rect;
+    }
   }
 
-  const wasVisiblePaint = !(paintNode.visible === false);
-  const wasVisibleSlot = !(slotNode.visible === false);
-  if (!wasVisiblePaint) {
+  const wasPaintVisible = !(paintNode.visible === false);
+  if (!wasPaintVisible) {
     try {
       paintNode.visible = true;
     } catch (error) {
       console.warn('[set_image_fill] unable to mark paint node visible temporarily: ' + (error && error.message ? error.message : error));
-    }
-  }
-  if (!wasVisibleSlot) {
-    try {
-      slotNode.visible = true;
-    } catch (error) {
-      console.warn('[set_image_fill] unable to mark slot node visible temporarily: ' + (error && error.message ? error.message : error));
     }
   }
 
@@ -4555,103 +4577,103 @@ async function setImageFill(params) {
   }
 
   const image = figma.createImage(bytes);
-  let naturalW = 0;
-  let naturalH = 0;
+  let naturalWidth = 0;
+  let naturalHeight = 0;
   try {
     const size = await image.getSizeAsync();
-    naturalW = size.width;
-    naturalH = size.height;
+    naturalWidth = size.width;
+    naturalHeight = size.height;
   } catch (error) {
     console.warn('[set_image_fill] getSizeAsync failed: ' + (error && error.message ? error.message : error));
   }
 
-  const imageFill = {
-    type: 'IMAGE',
-    imageHash: image.hash,
-    scaleMode: scaleMode ? scaleMode : 'FIT',
-    opacity: opacity !== undefined ? opacity : 1
-  };
-
-  paintNode.fills = [imageFill];
-
-  if ('layoutSizingHorizontal' in slotNode) {
-    slotNode.layoutSizingHorizontal = 'FILL';
+  if (naturalWidth <= 0 || naturalHeight <= 0) {
+    throw new Error('Unable to determine image dimensions');
   }
-  if ('layoutSizingVertical' in slotNode) {
-    slotNode.layoutSizingVertical = 'FIXED';
+
+  if ('clipsContent' in slotNode) {
+    slotNode.clipsContent = true;
   }
+  if ('strokes' in slotNode) {
+    slotNode.strokes = [];
+  }
+  if ('strokeWeight' in slotNode) {
+    slotNode.strokeWeight = 0;
+  }
+  if ('effects' in slotNode) {
+    slotNode.effects = [];
+  }
+
+  if ('layoutSizingHorizontal' in slotNode) slotNode.layoutSizingHorizontal = 'FILL';
+  if ('layoutSizingVertical' in slotNode) slotNode.layoutSizingVertical = 'FIXED';
   if (typeof figma.flushAsync === 'function') {
     await figma.flushAsync();
   }
 
-  let desiredWidth = 0;
-  if (typeof targetWidth === 'number' && targetWidth > 0) {
-    desiredWidth = targetWidth;
-  } else if (typeof slotNode.width === 'number') {
-    desiredWidth = slotNode.width;
-  }
+  let desiredWidth = Math.round(typeof slotNode.width === 'number' ? slotNode.width : 0);
   if (!desiredWidth || desiredWidth <= 0) {
     const parent = slotNode.parent;
     if (parent && typeof parent === 'object') {
-      let parentWidth = 0;
-      if (typeof parent.width === 'number') parentWidth = parent.width;
-      let padLeft = 0;
-      let padRight = 0;
-      if (typeof parent.paddingLeft === 'number') padLeft = parent.paddingLeft;
-      if (typeof parent.paddingRight === 'number') padRight = parent.paddingRight;
-      const innerWidth = parentWidth - padLeft - padRight;
-      if (innerWidth > desiredWidth) {
-        desiredWidth = innerWidth;
-      }
+      const parentWidth = typeof parent.width === 'number' ? parent.width : 0;
+      const padLeft = typeof parent.paddingLeft === 'number' ? parent.paddingLeft : 0;
+      const padRight = typeof parent.paddingRight === 'number' ? parent.paddingRight : 0;
+      const innerWidth = Math.round(parentWidth - padLeft - padRight);
+      if (innerWidth > desiredWidth) desiredWidth = innerWidth;
     }
   }
-  if (!desiredWidth || desiredWidth <= 0) {
-    if (typeof paintNode.width === 'number' && paintNode.width > 0) {
-      desiredWidth = paintNode.width;
-    }
-  }
-  if (!desiredWidth || desiredWidth <= 0) {
-    desiredWidth = 1;
-  }
+  if (!desiredWidth || desiredWidth <= 0) desiredWidth = 1;
 
-  let desiredHeight = 0;
-  if (naturalW > 0 && naturalH > 0) {
-    desiredHeight = desiredWidth * (naturalH / naturalW);
-  }
-  if (!desiredHeight || desiredHeight <= 0) {
-    if (typeof slotNode.height === 'number' && slotNode.height > 0) {
-      desiredHeight = slotNode.height;
-    } else {
-      desiredHeight = desiredWidth;
-    }
-  }
+  let desiredHeight = Math.round(desiredWidth * (naturalHeight / naturalWidth));
+  if (desiredHeight <= 0) desiredHeight = 1;
 
-  if (typeof slotNode.resize === 'function') {
+  if (typeof slotNode.resizeWithoutConstraints === 'function') {
+    try {
+      slotNode.resizeWithoutConstraints(desiredWidth, desiredHeight);
+    } catch (error) {
+      console.warn('[set_image_fill] resizeWithoutConstraints failed: ' + (error && error.message ? error.message : error));
+    }
+  } else if (typeof slotNode.resize === 'function') {
     try {
       slotNode.resize(desiredWidth, desiredHeight);
     } catch (error) {
       console.warn('[set_image_fill] resize failed: ' + (error && error.message ? error.message : error));
     }
   }
+
   if (typeof figma.flushAsync === 'function') {
     await figma.flushAsync();
   }
 
-  if ('layoutSizingHorizontal' in paintNode) {
-    paintNode.layoutSizingHorizontal = 'FILL';
+  if ('layoutSizingHorizontal' in paintNode) paintNode.layoutSizingHorizontal = 'FILL';
+  if ('layoutSizingVertical' in paintNode) paintNode.layoutSizingVertical = 'FILL';
+  if ('layoutAlign' in paintNode) paintNode.layoutAlign = 'STRETCH';
+  if ('layoutGrow' in paintNode) paintNode.layoutGrow = 1;
+
+  if (typeof paintNode.resizeWithoutConstraints === 'function' && paintNode !== slotNode) {
+    try {
+      paintNode.resizeWithoutConstraints(desiredWidth, desiredHeight);
+    } catch (error) {
+      console.warn('[set_image_fill] paint resizeWithoutConstraints failed: ' + (error && error.message ? error.message : error));
+    }
+  } else if (typeof paintNode.resize === 'function' && paintNode !== slotNode) {
+    try {
+      paintNode.resize(desiredWidth, desiredHeight);
+    } catch (error) {
+      console.warn('[set_image_fill] paint resize failed: ' + (error && error.message ? error.message : error));
+    }
   }
-  if ('layoutSizingVertical' in paintNode) {
-    paintNode.layoutSizingVertical = 'FILL';
-  }
-  if ('strokes' in paintNode) {
-    paintNode.strokes = [];
-  }
-  if ('strokeWeight' in paintNode) {
-    paintNode.strokeWeight = 0;
-  }
-  if ('effects' in paintNode) {
-    paintNode.effects = [];
-  }
+
+  if ('strokes' in paintNode) paintNode.strokes = [];
+  if ('strokeWeight' in paintNode) paintNode.strokeWeight = 0;
+  if ('effects' in paintNode) paintNode.effects = [];
+
+  const imageFill = {
+    type: 'IMAGE',
+    imageHash: image.hash,
+    scaleMode: 'FILL',
+    opacity: opacity !== undefined ? opacity : 1
+  };
+  paintNode.fills = [imageFill];
 
   if (typeof slotNode.lockAspectRatio === 'function') {
     try {
@@ -4670,16 +4692,16 @@ async function setImageFill(params) {
     }
   }
 
-  console.log('[set_image_fill] nodeId=' + paintNode.id + ' slotWidth=' + desiredWidth + ' natural=' + naturalW + 'x' + naturalH + ' finalHeight=' + desiredHeight);
+  console.log('[set_image_fill] slot=' + slotNode.name + '#' + slotNode.id + ' paint=' + paintNode.id + ' size=' + desiredWidth + 'x' + desiredHeight + ' image=' + naturalWidth + 'x' + naturalHeight + ' instanceSlot=' + slotIsInstance);
 
-  if (!wasVisiblePaint) {
+  if (!wasPaintVisible) {
     try {
       paintNode.visible = false;
     } catch (error) {
       console.warn('[set_image_fill] restore paint visibility failed: ' + (error && error.message ? error.message : error));
     }
   }
-  if (!wasVisibleSlot) {
+  if (!wasSlotVisible) {
     try {
       slotNode.visible = false;
     } catch (error) {
@@ -4689,15 +4711,12 @@ async function setImageFill(params) {
 
   return {
     success: true,
-    nodeId: node.id,
-    targetNodeId: paintNode.id,
-    nodeName: node.name,
-    targetNodeName: paintNode.name,
-    scaleMode: imageFill.scaleMode,
-    opacity: opacity !== undefined ? opacity : 1,
     slotNodeId: slotNode.id,
+    paintNodeId: paintNode.id,
     width: desiredWidth,
-    height: desiredHeight
+    height: desiredHeight,
+    imageWidth: naturalWidth,
+    imageHeight: naturalHeight
   };
 }
 
@@ -4816,9 +4835,10 @@ async function prepareCardRoot(params) {
     if (res.limitReached) {
       console.warn('[prepare_card_root] detach limit reached for node ' + nodeId + ' (remaining instance ancestor present)');
     }
+    const descendantDetaches = detachInstanceDescendants(node);
     const suffix = res.count === 0 ? ' (already detached)' : '';
-    console.log('[prepare_card_root] detachedTimes: ' + res.count + suffix + ' rootId=' + node.id);
-    return { success: true, rootId: node.id, detachedTimes: res.count };
+    console.log('[prepare_card_root] detachedTimes: ' + res.count + suffix + ' descendantDetaches=' + descendantDetaches + ' rootId=' + node.id);
+    return { success: true, rootId: node.id, detachedTimes: res.count, descendantDetaches };
   } catch (error) {
     const message = error && error.message ? error.message : 'prepareCardRoot failed';
     console.warn('[prepare_card_root] error for node ' + nodeId + ': ' + message);

@@ -382,99 +382,67 @@ class WeeklyPosterRunner {
     return ['RECTANGLE','VECTOR','ELLIPSE','POLYGON','STAR'].includes(type);
   }
 
-  // Prefer shape nodes; if no shapes found, fallback to FRAME
-  async resolveFillTargetPreferShape(nodeId) {
-    try {
-      const root = await this.sendCommand('get_node_info', { nodeId });
-      if (!root) return null;
-      // Pass 1: shapes
-      const q1 = [root];
-      while (q1.length) {
-        const n = q1.shift();
-        if (!n) continue;
-        if (this.isFillType(n.type)) return n.id;
-        if (n.children) q1.push(...n.children);
-      }
-      // Pass 2: frame fallback
-      const q2 = [root];
-      while (q2.length) {
-        const n = q2.shift();
-        if (!n) continue;
-        if (n.type === 'FRAME') return n.id;
-        if (n.children) q2.push(...n.children);
-      }
-    } catch {}
-    return null;
-  }
-
-  async resolveFillTarget(nodeId) {
-    try {
-      const root = await this.sendCommand('get_node_info', { nodeId });
-      if (this.isFillType(root?.type)) return root.id;
-      const q = [root];
-      while (q.length) {
-        const n = q.shift();
-        if (n?.children) q.push(...n.children);
-        if (this.isFillType(n?.type)) return n.id;
-      }
-    } catch {}
-    return null;
-  }
-
   async discoverImageTargets(rootNodeId, images) {
     const slots = this.mapping.anchors?.slots || {};
     const slotNames = (slots.images || this.mapping.anchors.image_slots || []).slice();
     const candidates = [];
     const seen = new Set();
 
-    // 1) explicit slot names
-    for (const name of slotNames) {
-      const id = await this.dfsFindChildIdByName(rootNodeId, name);
-      const fillId = id ? await this.resolveFillTargetPreferShape(id) : null;
-      if (!fillId || seen.has(fillId)) continue;
+    const pushIfFrame = async (id, reason) => {
+      if (!id || seen.has(id)) return;
       let info = null;
       try {
-        info = await this.sendCommand('get_node_info', { nodeId: fillId });
+        info = await this.sendCommand('get_node_info', { nodeId: id });
       } catch (error) {
-        console.warn('⚠️ get_node_info failed for candidate slot:', error.message || error);
+        console.warn(`⚠️ get_node_info failed for ${reason}:`, error.message || error);
+        return;
       }
-      if (info && info.visible === false) {
-        continue;
+      if (!info) return;
+      if (info.visible === false) return;
+      if (info.type !== 'FRAME' && info.type !== 'GROUP' && !this.isFillType(info.type)) {
+        console.warn(`⚠️ Slot candidate ${id} is type ${info.type}, skipping`);
+        return;
       }
-      seen.add(fillId);
-      candidates.push(fillId);
-    }
-    if (candidates.length >= images.length) return candidates;
+      seen.add(id);
+      candidates.push(id);
+    };
 
-    // 2) IMAGE_GRID fallback: scan visual order
+    for (const name of slotNames) {
+      const slotId = await this.dfsFindChildIdByName(rootNodeId, name);
+      await pushIfFrame(slotId, `slot ${name}`);
+      if (candidates.length >= images.length) return candidates;
+    }
+
     const gridName = slots.figure?.image_grid || 'slot:IMAGE_GRID';
     const gridId = await this.dfsFindChildIdByName(rootNodeId, gridName);
     if (gridId) {
       const root = await this.sendCommand('get_node_info', { nodeId: gridId });
       const q = [root];
-      const shapeIds = [];
       const frameIds = [];
+      const shapeIds = [];
       while (q.length) {
         const n = q.shift();
         if (!n) continue;
         if (n.visible === false) continue;
         if (n.children) q.push(...n.children);
-        if (n.id) {
-          if (this.isFillType(n.type)) shapeIds.push(n.id);
-          else if (n.type === 'FRAME') frameIds.push(n.id);
+        if (!n.id) continue;
+        if (n.type === 'FRAME' || n.type === 'GROUP') {
+          frameIds.push(n.id);
+        } else if (this.isFillType(n.type)) {
+          shapeIds.push(n.id);
         }
       }
-      let added = 0;
-      for (const id of shapeIds) {
-        if (!seen.has(id)) { seen.add(id); candidates.push(id); added++; }
+      for (const id of frameIds) {
+        await pushIfFrame(id, 'grid frame');
+        if (candidates.length >= images.length) break;
       }
       if (candidates.length < images.length) {
-        for (const id of frameIds) {
-          if (!seen.has(id)) { seen.add(id); candidates.push(id); added++; }
+        for (const id of shapeIds) {
+          await pushIfFrame(id, 'grid shape');
           if (candidates.length >= images.length) break;
         }
       }
-      console.log(`🔍 Fallback: scanned IMAGE_GRID -> shapes=${shapeIds.length} frames=${frameIds.length} added=${added}`);
+      console.log(`🔍 Fallback: scanned IMAGE_GRID -> frames=${frameIds.length} shapes=${shapeIds.length} selected=${candidates.length}`);
     }
     return candidates;
   }
@@ -541,7 +509,8 @@ class WeeklyPosterRunner {
       if (prep && prep.rootId) {
         rootId = prep.rootId;
         const times = typeof prep.detachedTimes === 'number' ? prep.detachedTimes : 'unknown';
-        console.log(`[prepare_card_root] figure root prepared rootId=${rootId} detachedTimes=${times}`);
+        const deep = typeof prep.descendantDetaches === 'number' ? prep.descendantDetaches : 'unknown';
+        console.log(`[prepare_card_root] figure root prepared rootId=${rootId} detachedTimes=${times} deep=${deep}`);
       } else {
         console.warn('⚠️ prepare_card_root returned unexpected payload, using instanceId');
       }
@@ -607,14 +576,14 @@ class WeeklyPosterRunner {
         try {
           if (await this.httpHeadOk(url)) {
             try {
-              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode: 'FIT', opacity: 1 });
+              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode: 'FILL', opacity: 1 });
             } catch (errUrl) {
               const ext = getAssetExtension(images[i].asset_id, this.content.assets || []);
               const localPath = path.join(process.cwd(), 'docx2json', 'assets', this.dataset, `${images[i].asset_id}.${ext || 'png'}`);
               const buf = await fs.readFile(localPath);
               const b64 = buf.toString('base64');
               await this.throttleBase64();
-              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FIT', opacity: 1 });
+              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FILL', opacity: 1 });
             }
           } else {
             const ext = getAssetExtension(images[i].asset_id, this.content.assets || []);
@@ -622,7 +591,7 @@ class WeeklyPosterRunner {
             const buf = await fs.readFile(localPath);
             const b64 = buf.toString('base64');
             await this.throttleBase64();
-            await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FIT', opacity: 1 });
+            await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FILL', opacity: 1 });
           }
           used.add(imgNodeId);
           placed = true;
@@ -649,7 +618,8 @@ class WeeklyPosterRunner {
       if (prep && prep.rootId) {
         rootId = prep.rootId;
         const times = typeof prep.detachedTimes === 'number' ? prep.detachedTimes : 'unknown';
-        console.log(`[prepare_card_root] body root prepared rootId=${rootId} detachedTimes=${times}`);
+        const deep = typeof prep.descendantDetaches === 'number' ? prep.descendantDetaches : 'unknown';
+        console.log(`[prepare_card_root] body root prepared rootId=${rootId} detachedTimes=${times} deep=${deep}`);
       } else {
         console.warn('⚠️ prepare_card_root returned unexpected payload for body, using instanceId');
       }

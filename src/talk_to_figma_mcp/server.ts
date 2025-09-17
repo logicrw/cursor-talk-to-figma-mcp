@@ -1528,7 +1528,7 @@ server.tool(
   },
   async ({ nodeId, properties }: any) => {
     try {
-      const result = await sendCommandToFigma("set_instance_properties_by_base", {
+      const result = await sendCommandToFigma("set_instance_properties_by_base" as any, {
         nodeId: nodeId,
         properties: properties
       });
@@ -3464,8 +3464,8 @@ server.tool(
   },
   async ({ nodeId }: any) => {
     try {
-      const result = await sendCommandToFigma("prepare_card_root", { nodeId });
-      return result;
+      const result = await sendCommandToFigma("prepare_card_root" as any, { nodeId });
+      return result as any;
     } catch (error) {
       return {
         success: false,
