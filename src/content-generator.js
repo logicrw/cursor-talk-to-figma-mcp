@@ -331,7 +331,7 @@ export default class ContentGenerator {
         await this.mcpClient.call("mcp__talk-to-figma__set_image_fill", {
           nodeId: imageNode.id,
           imageUrl: imageUrl,
-          scaleMode: 'FILL'
+          scaleMode: 'FIT'
         });
         console.log(`✅ Image filled: ${figure.image.asset_id}`);
       } catch (error) {

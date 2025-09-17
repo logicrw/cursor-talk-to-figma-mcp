@@ -399,10 +399,9 @@ class WeeklyPosterRunner {
       }
       if (!info) return;
       if (info.visible === false) return;
-      if (info.type !== 'FRAME' && info.type !== 'GROUP' && !this.isFillType(info.type)) {
-        console.warn(`⚠️ Slot candidate ${id} is type ${info.type}, skipping`);
-        return;
-      }
+      if (info.type !== 'FRAME') return;
+      const name = String(info.name || '');
+      if (!/^(imgSlot\d+)$/i.test(name)) return;
       seen.add(id);
       candidates.push(id);
     };
@@ -576,14 +575,14 @@ class WeeklyPosterRunner {
         try {
           if (await this.httpHeadOk(url)) {
             try {
-              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode: 'FILL', opacity: 1 });
+        await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode: 'FIT', opacity: 1 });
             } catch (errUrl) {
               const ext = getAssetExtension(images[i].asset_id, this.content.assets || []);
               const localPath = path.join(process.cwd(), 'docx2json', 'assets', this.dataset, `${images[i].asset_id}.${ext || 'png'}`);
               const buf = await fs.readFile(localPath);
               const b64 = buf.toString('base64');
               await this.throttleBase64();
-              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FILL', opacity: 1 });
+              await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FIT', opacity: 1 });
             }
           } else {
             const ext = getAssetExtension(images[i].asset_id, this.content.assets || []);
@@ -591,7 +590,7 @@ class WeeklyPosterRunner {
             const buf = await fs.readFile(localPath);
             const b64 = buf.toString('base64');
             await this.throttleBase64();
-            await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FILL', opacity: 1 });
+            await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FIT', opacity: 1 });
           }
           used.add(imgNodeId);
           placed = true;
