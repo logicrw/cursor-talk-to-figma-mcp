@@ -4511,14 +4511,22 @@ async function setImageFill(params) {
   if (!slotNode) {
     throw new Error("Node not found with ID: " + nodeId);
   }
-  if (slotNode.type !== 'FRAME') {
-    let cursor = slotNode;
-    while (cursor && cursor.type !== 'FRAME') {
-      cursor = cursor.parent;
+
+  function closestImgSlot(node) {
+    let cur = node;
+    while (cur) {
+      const nm = String(cur.name || '');
+      if (/^imgSlot\d+$/i.test(nm)) {
+        return cur;
+      }
+      cur = cur.parent;
     }
-    if (cursor && cursor.type === 'FRAME') {
-      slotNode = cursor;
-    }
+    return null;
+  }
+
+  const resolvedSlot = closestImgSlot(slotNode);
+  if (resolvedSlot) {
+    slotNode = resolvedSlot;
   }
 
   const slotIsInstance = slotNode.type === 'INSTANCE';

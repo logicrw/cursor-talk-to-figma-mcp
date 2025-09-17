@@ -399,9 +399,9 @@ class WeeklyPosterRunner {
       }
       if (!info) return;
       if (info.visible === false) return;
-      if (info.type !== 'FRAME') return;
       const name = String(info.name || '');
       if (!/^(imgSlot\d+)$/i.test(name)) return;
+      if (info.type !== 'FRAME' && info.type !== 'RECTANGLE') return;
       seen.add(id);
       candidates.push(id);
     };
