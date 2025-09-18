@@ -4529,6 +4529,8 @@ async function setImageFill(params) {
   if (resolvedSlot) {
     slotNode = resolvedSlot;
   }
+  const isFrameSlot = slotNode.type === 'FRAME';
+  const isRectSlot = slotNode.type === 'RECTANGLE';
 
   const slotIsInstance = slotNode.type === 'INSTANCE';
   if (slotIsInstance) {
@@ -4545,17 +4547,11 @@ async function setImageFill(params) {
   }
 
   let paintNode = null;
-  if ('fills' in slotNode && (!('children' in slotNode) || !slotNode.children || slotNode.children.length === 0)) {
-    paintNode = slotNode;
-  } else {
-    if ('children' in slotNode && slotNode.children) {
-      for (let i = 0; i < slotNode.children.length; i++) {
-        const child = slotNode.children[i];
-        if (child && 'fills' in child) {
-          paintNode = child;
-          break;
-        }
-      }
+  if (isFrameSlot) {
+    if ('children' in slotNode) {
+      paintNode = (slotNode.children || []).find(
+        n => n && n.type === 'RECTANGLE' && String(n.name || '') === 'ImageFill'
+      ) || null;
     }
     if (!paintNode) {
       const rect = figma.createRectangle();
@@ -4563,6 +4559,29 @@ async function setImageFill(params) {
       rect.resize(1, 1);
       slotNode.appendChild(rect);
       paintNode = rect;
+    }
+  } else if (isRectSlot) {
+    paintNode = slotNode;
+  } else {
+    if ('fills' in slotNode && (!('children' in slotNode) || !slotNode.children || slotNode.children.length === 0)) {
+      paintNode = slotNode;
+    } else {
+      if ('children' in slotNode && slotNode.children) {
+        for (let i = 0; i < slotNode.children.length; i++) {
+          const child = slotNode.children[i];
+          if (child && 'fills' in child) {
+            paintNode = child;
+            break;
+          }
+        }
+      }
+      if (!paintNode) {
+        const rect = figma.createRectangle();
+        rect.name = 'ImageFill';
+        rect.resize(1, 1);
+        slotNode.appendChild(rect);
+        paintNode = rect;
+      }
     }
   }
 
@@ -4649,25 +4668,26 @@ async function setImageFill(params) {
     console.warn('[set_image_fill] initial flush failed: ' + (error && error.message ? error.message : error));
   }
 
-  let desiredWidth = Math.round(('width' in slotNode ? slotNode.width : 0) || 0);
-  if (!desiredWidth || desiredWidth <= 1) {
+  let w = Math.round(('width' in slotNode ? slotNode.width : 0) || 0);
+  if (!w || w <= 1) {
     const parent = slotNode.parent;
     const parentWidth = parent && 'width' in parent ? parent.width : 0;
     const padLeft = parent && typeof parent.paddingLeft === 'number' ? parent.paddingLeft : 0;
     const padRight = parent && typeof parent.paddingRight === 'number' ? parent.paddingRight : 0;
-    desiredWidth = Math.max(1, Math.round(parentWidth - padLeft - padRight));
+    w = Math.max(1, Math.round(parentWidth - padLeft - padRight));
   }
-  let desiredHeight = Math.max(1, Math.round(desiredWidth * (naturalHeight / naturalWidth)));
+  w = Math.max(1, w);
+  const h = Math.max(1, Math.round(w * (naturalHeight / Math.max(1, naturalWidth))));
 
   if (typeof slotNode.resizeWithoutConstraints === 'function') {
     try {
-      slotNode.resizeWithoutConstraints(desiredWidth, desiredHeight);
+      slotNode.resizeWithoutConstraints(w, h);
     } catch (error) {
       console.warn('[set_image_fill] resizeWithoutConstraints failed: ' + (error && error.message ? error.message : error));
     }
   } else if (typeof slotNode.resize === 'function') {
     try {
-      slotNode.resize(desiredWidth, desiredHeight);
+      slotNode.resize(w, h);
     } catch (error) {
       console.warn('[set_image_fill] resize failed: ' + (error && error.message ? error.message : error));
     }
@@ -4677,24 +4697,9 @@ async function setImageFill(params) {
     await figma.flushAsync();
   }
 
-  const shouldFillPaint = paintNode && paintNode !== slotNode;
-  if (shouldFillPaint) {
+  if (isFrameSlot && paintNode && paintNode !== slotNode) {
     try { if ('layoutSizingHorizontal' in paintNode) paintNode.layoutSizingHorizontal = 'FILL'; } catch (error) {}
     try { if ('layoutSizingVertical' in paintNode) paintNode.layoutSizingVertical = 'FILL'; } catch (error) {}
-  }
-
-  if (typeof paintNode.resizeWithoutConstraints === 'function' && paintNode !== slotNode) {
-    try {
-      paintNode.resizeWithoutConstraints(desiredWidth, desiredHeight);
-    } catch (error) {
-      console.warn('[set_image_fill] paint resizeWithoutConstraints failed: ' + (error && error.message ? error.message : error));
-    }
-  } else if (typeof paintNode.resize === 'function' && paintNode !== slotNode) {
-    try {
-      paintNode.resize(desiredWidth, desiredHeight);
-    } catch (error) {
-      console.warn('[set_image_fill] paint resize failed: ' + (error && error.message ? error.message : error));
-    }
   }
 
   try {
@@ -4730,7 +4735,14 @@ async function setImageFill(params) {
     }
   }
 
-  console.log('[set_image_fill] slot=' + slotNode.name + '#' + slotNode.id + ' paint=' + paintNode.id + ' size=' + desiredWidth + 'x' + desiredHeight + ' image=' + naturalWidth + 'x' + naturalHeight + ' source=' + source + ' instanceSlot=' + slotIsInstance);
+  try {
+    console.log('[set_image_fill]',
+      'slot=', slotNode.name, slotNode.type,
+      'size=', w, 'x', h,
+      'paint=', paintNode && paintNode.type,
+      'mode=', (options && options.scaleMode) || 'FIT'
+    );
+  } catch (error) {}
 
   if (!wasPaintVisible) {
     try {
@@ -4751,8 +4763,8 @@ async function setImageFill(params) {
     success: true,
     slotNodeId: slotNode.id,
     paintNodeId: paintNode.id,
-    width: desiredWidth,
-    height: desiredHeight,
+    width: w,
+    height: h,
     imageWidth: naturalWidth,
     imageHeight: naturalHeight
   };
