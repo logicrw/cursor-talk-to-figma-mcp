@@ -4677,8 +4677,11 @@ async function setImageFill(params) {
     await figma.flushAsync();
   }
 
-  try { if ('layoutSizingHorizontal' in paintNode) paintNode.layoutSizingHorizontal = 'FILL'; } catch (error) {}
-  try { if ('layoutSizingVertical' in paintNode) paintNode.layoutSizingVertical = 'FILL'; } catch (error) {}
+  const shouldFillPaint = paintNode && paintNode !== slotNode;
+  if (shouldFillPaint) {
+    try { if ('layoutSizingHorizontal' in paintNode) paintNode.layoutSizingHorizontal = 'FILL'; } catch (error) {}
+    try { if ('layoutSizingVertical' in paintNode) paintNode.layoutSizingVertical = 'FILL'; } catch (error) {}
+  }
 
   if (typeof paintNode.resizeWithoutConstraints === 'function' && paintNode !== slotNode) {
     try {
