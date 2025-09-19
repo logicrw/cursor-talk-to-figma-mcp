@@ -5022,51 +5022,90 @@ async function setPosterTitleAndDate(params) {
     var parsed = null;
     try {
       parsed = new Date(dateISO);
-    } catch (parseError) {
+    } catch (parseErr) {
       parsed = null;
     }
     if (!parsed || isNaN(parsed.getTime())) {
       var parts = String(dateISO).split("-");
       if (parts.length >= 3) {
         var year = Number(parts[0]);
-        var month = Number(parts[1]) - 1;
+        var monthIndex = Number(parts[1]) - 1;
         var dayNum = Number(parts[2]);
-        parsed = new Date(year, month, dayNum);
+        parsed = new Date(year, monthIndex, dayNum);
       }
     }
     if (parsed && !isNaN(parsed.getTime())) {
-      var monthIndex = parsed.getMonth();
+      var monthIndex2 = parsed.getMonth();
       var dayNumber = parsed.getDate();
-      var monthLabelsEn = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
-      var monthLabelsZh = ["一月","二月","三月","四月","五月","六月","七月","八月","九月","十月","十一月","十二月"];
-      var useZh = locale && String(locale).toLowerCase().indexOf("zh") === 0;
-      var monthLabel = useZh ? monthLabelsZh[monthIndex] : monthLabelsEn[monthIndex];
+      var MONTH_EN = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+      var monthLabel = MONTH_EN[monthIndex2];
       if (!monthLabel) {
-        monthLabel = useZh ? (monthIndex + 1) + "月" : monthLabelsEn[(monthIndex + 12) % 12];
+        monthLabel = MONTH_EN[(monthIndex2 + 12) % 12];
       }
       var dayLabel = String(dayNumber);
 
-      var dateNode = findByName(poster, "date");
-      if (dateNode) {
-        var textChildren = [];
-        if ("children" in dateNode && dateNode.children) {
-          for (var j = 0; j < dateNode.children.length; j++) {
-            var childNode = dateNode.children[j];
-            if (childNode && childNode.type === "TEXT" && childNode.visible !== false) {
-              textChildren.push(childNode);
-            }
+      function firstTextDescendant(root) {
+        if (!root) return null;
+        if (root.type === "TEXT") return root;
+        if ("children" in root && root.children) {
+          for (var i2 = 0; i2 < root.children.length; i2++) {
+            var got = firstTextDescendant(root.children[i2]);
+            if (got) return got;
           }
         }
-        textChildren.sort(function (a, b) {
-          var ay = a.absoluteTransform[1][2];
-          var by = b.absoluteTransform[1][2];
-          return ay - by;
-        });
-        if (textChildren.length >= 2) {
-          await setTextValue(textChildren[0], monthLabel);
-          await setTextValue(textChildren[1], dayLabel);
-        } else if (textChildren.length === 1) {
-          await setTextValue(textChildren[0], monthLabel + " " + dayLabel);
+        return null;
+      }
+
+      function findDescendantByName(root, re) {
+        if (!root) return null;
+        var nm = String(root.name || "");
+        try {
+          if (re.test(nm)) return root;
+        } catch (reErr) {}
+        if ("children" in root && root.children) {
+          for (var i3 = 0; i3 < root.children.length; i3++) {
+            var got2 = findDescendantByName(root.children[i3], re);
+            if (got2) return got2;
+          }
+        }
+        return null;
+      }
+
+      var dateNode = findByName(poster, "date");
+      if (dateNode) {
+        var dayWrap = findDescendantByName(dateNode, /^DAY$/i);
+        var monWrap = findDescendantByName(dateNode, /^MONTH$/i);
+        var dayTextNode = firstTextDescendant(dayWrap);
+        var monTextNode = firstTextDescendant(monWrap);
+
+        if (dayTextNode || monTextNode) {
+          if (dayTextNode) await setTextValue(dayTextNode, dayLabel);
+          if (monTextNode) await setTextValue(monTextNode, monthLabel);
+        } else {
+          var collected = [];
+          (function collect(node) {
+            if (!node) return;
+            if (node.type === "TEXT" && node.visible !== false) {
+              collected.push(node);
+              return;
+            }
+            if ("children" in node && node.children) {
+              for (var i4 = 0; i4 < node.children.length; i4++) {
+                collect(node.children[i4]);
+              }
+            }
+          })(dateNode);
+          collected.sort(function(a, b) {
+            var ay = a.absoluteTransform[1][2];
+            var by = b.absoluteTransform[1][2];
+            return ay - by;
+          });
+          if (collected.length >= 2) {
+            await setTextValue(collected[0], dayLabel);
+            await setTextValue(collected[1], monthLabel);
+          } else if (collected.length === 1) {
+            await setTextValue(collected[0], dayLabel + " " + monthLabel);
+          }
         }
       }
     }

@@ -779,7 +779,6 @@ class WeeklyPosterRunner {
 
     const titleText = meta.title || "";
     const dateISO = meta.date || "";
-    const locale = meta.locale || "zh-CN";
 
     if (!titleText && !dateISO) return;
 
@@ -788,7 +787,7 @@ class WeeklyPosterRunner {
         posterId,
         titleText,
         dateISO,
-        locale
+        locale: 'en-US'
       });
       if (result && result.success) {
         console.log('✅ Poster title/date updated:', titleText, dateISO);
