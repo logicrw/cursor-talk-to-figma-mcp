@@ -257,6 +257,8 @@ async function handleCommand(command, params) {
       return await setPosterTitleAndDate(params);
     case "export_frame":
       return await exportFrame(params);
+    case "flush_layout":
+      return await flushLayout();
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -5114,6 +5116,19 @@ async function setPosterTitleAndDate(params) {
   }
 
   return { success: true };
+}
+
+async function flushLayout() {
+  try {
+    if (typeof figma.flushAsync === 'function') {
+      await figma.flushAsync();
+    }
+    return { success: true };
+  } catch (error) {
+    const message = error && error.message ? error.message : 'flushLayout failed';
+    console.warn('[flush_layout] error: ' + message);
+    return { success: false, message };
+  }
 }
 
 async function exportFrame(params) {

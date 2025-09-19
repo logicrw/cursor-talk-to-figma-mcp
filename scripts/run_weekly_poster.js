@@ -378,12 +378,26 @@ class WeeklyPosterRunner {
   async exportPosterFrame(posterName) {
     if (!this.posterFrameId) return null;
     try {
+      try {
+        await this.sendCommand('flush_layout', {});
+      } catch (error) {
+        console.warn('⚠️ flush_layout before export failed:', error && error.message ? error.message : error);
+      }
+
       const res = await this.sendCommand('export_frame', {
         nodeId: this.posterFrameId,
         format: 'PNG',
         scale: this.exportScale
       });
-      const base64 = res && res.base64 ? res.base64 : null;
+      let base64 = res && res.base64 ? res.base64 : null;
+      if (!base64 && res && res.content && Array.isArray(res.content) && res.content[0] && res.content[0].text) {
+        try {
+          const parsed = JSON.parse(res.content[0].text);
+          base64 = parsed && parsed.base64 ? parsed.base64 : null;
+        } catch (parseError) {
+          console.warn('⚠️ export_frame fallback parse failed:', parseError && parseError.message ? parseError.message : parseError);
+        }
+      }
       if (!base64) {
         console.warn('⚠️ export_frame missing base64 payload:', res);
         return null;
@@ -450,6 +464,8 @@ class WeeklyPosterRunner {
     }
 
     await this.clearCardsContainer();
+    try { await this.sendCommand('flush_layout', {}); } catch {}
+    await this.sleep(120);
     await this.fillHeader(posterId);
 
     const createdBefore = Array.isArray(this.report?.created) ? this.report.created.length : 0;
@@ -979,6 +995,8 @@ class WeeklyPosterRunner {
     for (const posterName of this.posterNames) {
       const summary = await this.processPoster(posterName, flow);
       if (summary) posterSummaries.push(summary);
+      try { await this.sendCommand('flush_layout', {}); } catch {}
+      await this.sleep(400);
     }
 
     const overall = {
