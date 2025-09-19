@@ -742,7 +742,7 @@ class WeeklyPosterRunner {
 
     const payload = {
       posterId,
-      bottomPadding: toFinite(anchorsCfg.poster_bottom_padding, 64),
+      bottomPadding: toFinite(anchorsCfg.poster_bottom_padding, 200),
     };
     const minHeightVal = toFinite(anchorsCfg.poster_min_height, null);
     const maxHeightVal = toFinite(anchorsCfg.poster_max_height, null);
