@@ -2872,7 +2872,8 @@ type FigmaCommand =
   | "set_image_fill"
   | "set_text_auto_resize"
   | "append_card_to_container"
-  | "resize_poster_to_fit";
+  | "resize_poster_to_fit"
+  | "set_poster_title_and_date";
 
 type CommandParams = {
   get_document_info: Record<string, never>;
@@ -3056,6 +3057,12 @@ type CommandParams = {
     bottomPadding?: number;
     minHeight?: number;
     maxHeight?: number;
+  };
+  set_poster_title_and_date: {
+    posterId: string;
+    titleText?: string;
+    dateISO?: string;
+    locale?: string;
   };
 
 };
@@ -3480,6 +3487,26 @@ server.tool(
         message: `Error preparing card root: ${error instanceof Error ? error.message : String(error)}`
       };
     }
+  }
+);
+
+server.tool(
+  "set_poster_title_and_date",
+  "Set poster title and date nodes under a poster frame",
+  {
+    posterId: z.string().describe("Poster frame id (FRAME)"),
+    titleText: z.string().optional().describe("Text for the node named 'title'"),
+    dateISO: z.string().optional().describe("ISO date string, e.g., 2025-09-15"),
+    locale: z.string().optional().describe("Locale hint, e.g., zh-CN or en-US"),
+  },
+  async ({ posterId, titleText, dateISO, locale }: any) => {
+    const result = await sendCommandToFigma("set_poster_title_and_date", {
+      posterId,
+      titleText,
+      dateISO,
+      locale,
+    });
+    return { content: [{ type: "text", text: JSON.stringify(result) }] };
   }
 );
 

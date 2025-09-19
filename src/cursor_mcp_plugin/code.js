@@ -253,6 +253,8 @@ async function handleCommand(command, params) {
       return await appendCardToContainer(params);
     case "resize_poster_to_fit":
       return await resizePosterToFit(params);
+    case "set_poster_title_and_date":
+      return await setPosterTitleAndDate(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -4944,6 +4946,133 @@ async function resizePosterToFit(params) {
   }
 
   return { success: true, height: newHeight };
+}
+
+async function setPosterTitleAndDate(params) {
+  var posterId = params && params.posterId;
+  var titleText = params && params.titleText;
+  var dateISO = params && params.dateISO;
+  var locale = params && params.locale;
+  if (!posterId) throw new Error("Missing posterId");
+
+  var poster = await figma.getNodeByIdAsync(posterId);
+  if (!poster) {
+    return { success: false, message: "poster not found" };
+  }
+
+  function findByName(root, name) {
+    if (!root) return null;
+    var nm = String(root.name || "");
+    if (nm === name) return root;
+    if ("children" in root && root.children) {
+      for (var i = 0; i < root.children.length; i++) {
+        var result = findByName(root.children[i], name);
+        if (result) return result;
+      }
+    }
+    return null;
+  }
+
+  async function resolveTextNode(node) {
+    if (!node) return null;
+    if (node.type === "TEXT") return node;
+    if ("children" in node && node.children) {
+      for (var i = 0; i < node.children.length; i++) {
+        var child = node.children[i];
+        if (child.type === "TEXT") return child;
+      }
+    }
+    return null;
+  }
+
+  async function setTextValue(node, value) {
+    var textNode = await resolveTextNode(node);
+    if (!textNode) return false;
+    try {
+      var total = textNode.characters.length;
+      var fonts = [];
+      try {
+        fonts = textNode.getRangeAllFontNames(0, total);
+      } catch (fontError) {
+        fonts = [];
+      }
+      if (fonts && fonts.length) {
+        for (var i = 0; i < fonts.length; i++) {
+          try { await figma.loadFontAsync(fonts[i]); } catch (loadError) {}
+        }
+      } else {
+        try { await figma.loadFontAsync(textNode.fontName); } catch (fallbackError) {}
+      }
+      textNode.characters = String(value || "");
+      try { textNode.textAutoResize = "HEIGHT"; } catch (resizeError) {}
+      return true;
+    } catch (writeError) {
+      return false;
+    }
+  }
+
+  if (titleText !== undefined) {
+    var titleNode = findByName(poster, "title");
+    if (titleNode) {
+      await setTextValue(titleNode, titleText);
+    }
+  }
+
+  if (dateISO) {
+    var parsed = null;
+    try {
+      parsed = new Date(dateISO);
+    } catch (parseError) {
+      parsed = null;
+    }
+    if (!parsed || isNaN(parsed.getTime())) {
+      var parts = String(dateISO).split("-");
+      if (parts.length >= 3) {
+        var year = Number(parts[0]);
+        var month = Number(parts[1]) - 1;
+        var dayNum = Number(parts[2]);
+        parsed = new Date(year, month, dayNum);
+      }
+    }
+    if (parsed && !isNaN(parsed.getTime())) {
+      var monthIndex = parsed.getMonth();
+      var dayNumber = parsed.getDate();
+      var monthLabelsEn = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+      var monthLabelsZh = ["一月","二月","三月","四月","五月","六月","七月","八月","九月","十月","十一月","十二月"];
+      var useZh = locale && String(locale).toLowerCase().indexOf("zh") === 0;
+      var monthLabel = useZh ? monthLabelsZh[monthIndex] : monthLabelsEn[monthIndex];
+      if (!monthLabel) {
+        monthLabel = useZh ? (monthIndex + 1) + "月" : monthLabelsEn[(monthIndex + 12) % 12];
+      }
+      var dayLabel = String(dayNumber);
+
+      var dateNode = findByName(poster, "date");
+      if (dateNode) {
+        var textChildren = [];
+        if ("children" in dateNode && dateNode.children) {
+          for (var j = 0; j < dateNode.children.length; j++) {
+            var childNode = dateNode.children[j];
+            if (childNode && childNode.type === "TEXT" && childNode.visible !== false) {
+              textChildren.push(childNode);
+            }
+          }
+        }
+        textChildren.sort(function (a, b) {
+          var ay = a.absoluteTransform[1][2];
+          var by = b.absoluteTransform[1][2];
+          return ay - by;
+        });
+        if (textChildren.length >= 2) {
+          await setTextValue(textChildren[0], monthLabel);
+          await setTextValue(textChildren[1], dayLabel);
+        } else if (textChildren.length === 1) {
+          await setTextValue(textChildren[0], monthLabel + " " + dayLabel);
+        }
+      }
+    }
+  }
+
+  return { success: true };
 }
 // Prepare card root: detach all instance ancestors and return new root id
 async function prepareCardRoot(params) {

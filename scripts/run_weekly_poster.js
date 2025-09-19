@@ -37,6 +37,7 @@ class WeeklyPosterRunner {
     this.base64Sent = [];
     this.fetchImpl = typeof fetch === 'function' ? fetch.bind(globalThis) : null;
     this.posterFrameId = null;
+    this.rootFrameId = null;
   }
 
   async loadConfig() {
@@ -314,6 +315,7 @@ class WeeklyPosterRunner {
     }
     if (!frame) throw new Error(`Frame not found after fallback: ${wantedFrameName}`);
     this.posterFrameId = frame.id;
+    this.rootFrameId = frame.id;
 
     // Resolve container (deep, normalized)
     const frameInfo = await this.sendCommand('get_node_info', { nodeId: frame.id });
@@ -762,6 +764,42 @@ class WeeklyPosterRunner {
     }
   }
 
+  async updatePosterMetaFromDoc() {
+    let posterId = this.posterFrameId;
+    if (!posterId && this.rootFrameId) {
+      try {
+        posterId = await this.dfsFindChildIdByName(this.rootFrameId, "Odaily特供海报");
+      } catch (error) {
+        posterId = null;
+      }
+    }
+
+    const meta = this.content && this.content.doc;
+    if (!posterId || !meta) return;
+
+    const titleText = meta.title || "";
+    const dateISO = meta.date || "";
+    const locale = meta.locale || "zh-CN";
+
+    if (!titleText && !dateISO) return;
+
+    try {
+      const result = await this.sendCommand('set_poster_title_and_date', {
+        posterId,
+        titleText,
+        dateISO,
+        locale
+      });
+      if (result && result.success) {
+        console.log('✅ Poster title/date updated:', titleText, dateISO);
+      } else {
+        console.warn('⚠️ set_poster_title_and_date returned:', result);
+      }
+    } catch (error) {
+      console.warn('⚠️ set_poster_title_and_date failed:', error && error.message ? error.message : error);
+    }
+  }
+
   async run() {
     console.log('🚀 Weekly Poster Orchestration starting...');
     await this.loadConfig();
@@ -790,6 +828,7 @@ class WeeklyPosterRunner {
     }
 
     await this.resizePosterHeightToContent();
+    await this.updatePosterMetaFromDoc();
 
     // Summary
     const summary = {
