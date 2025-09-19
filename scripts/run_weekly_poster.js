@@ -311,22 +311,23 @@ class WeeklyPosterRunner {
     const frameInfo = await this.sendCommand('get_node_info', { nodeId: frameId });
     let container = this.findShallowByName(frameInfo.children, this.mapping.anchors.container);
     if (!container) {
-      container = await this.deepFindByName(frameId, this.mapping.anchors.container);
+      container = await this.deepFindByName(frameId, this.mapping.anchors.container, ['FRAME', 'GROUP']);
     }
     if (!container) {
-      throw new Error(`Container not found: ${this.mapping.anchors.container}`);
+      throw new Error(`[${posterName}] container not found under poster scope: ${this.mapping.anchors.container}`);
     }
 
     const containerInfo = await this.sendCommand('get_node_info', { nodeId: container.id });
     let cards = this.findShallowByName(containerInfo.children, this.mapping.anchors.cards_stack);
     if (!cards) {
-      cards = await this.deepFindByName(container.id, this.mapping.anchors.cards_stack);
+      cards = await this.deepFindByName(container.id, this.mapping.anchors.cards_stack, ['FRAME', 'GROUP']);
     }
     if (!cards) {
-      throw new Error(`Cards stack not found: ${this.mapping.anchors.cards_stack}`);
+      throw new Error(`[${posterName}] cards stack not found under container scope: ${this.mapping.anchors.cards_stack}`);
     }
 
     this.cardsContainerId = cards.id;
+    console.log(`🧭 Poster=${posterName || 'unknown'} frame=${frameId} container=${container.id} cards=${cards.id}`);
     return frameId;
   }
 
@@ -425,14 +426,29 @@ class WeeklyPosterRunner {
 
     await this.clearCardsContainer();
     await this.fillHeader(posterId);
+
+    const createdBefore = Array.isArray(this.report?.created) ? this.report.created.length : 0;
     await this.populateCards(flow);
+    const createdAfter = Array.isArray(this.report?.created) ? this.report.created.length : 0;
+    const createdThisPoster = createdAfter - createdBefore;
+
+    if (createdThisPoster <= 0) {
+      console.warn(`⚠️ No cards created for poster ${posterName}; skipping resize and export`);
+      return {
+        name: posterName,
+        created: createdThisPoster,
+        errors: this.report.errors.length,
+        exportPath: null
+      };
+    }
+
     await this.resizePosterHeightToContent();
     await this.updatePosterMetaFromDoc(posterId);
     const exportPath = await this.exportPosterFrame(posterName);
 
     return {
       name: posterName,
-      created: this.report.created.length,
+      created: createdThisPoster,
       errors: this.report.errors.length,
       exportPath
     };
