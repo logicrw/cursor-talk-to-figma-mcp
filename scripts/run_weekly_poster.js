@@ -244,6 +244,31 @@ class WeeklyPosterRunner {
     });
   }
 
+  async ensureCommandReady(commandName, retries = 3, delayMs = 500, params = {}) {
+    let attempt = 0;
+    let lastError = null;
+    while (attempt < retries) {
+      try {
+        return await this.sendCommand(commandName, params);
+      } catch (error) {
+        lastError = error;
+        attempt += 1;
+        const message = error && error.message ? error.message : String(error);
+        console.warn(`[${commandName}] attempt ${attempt} failed: ${message}`);
+        if (attempt < retries) {
+          await this.sleep(Math.max(delayMs, 200));
+        }
+      }
+    }
+    const hint = `Failed to execute ${commandName} after ${retries} attempts. ` +
+      `Ensure the Figma plugin is running and connected (open the plugin UI if needed).`;
+    throw new Error(lastError ? `${lastError.message || lastError}. ${hint}` : hint);
+  }
+
+  async getDocumentInfoWithRetry(retries = 3, delayMs = 500) {
+    return await this.ensureCommandReady('get_document_info', retries, delayMs, {});
+  }
+
   parsePrepareCardRootResult(raw) {
     if (!raw) return null;
     let direct = raw;
@@ -333,7 +358,7 @@ class WeeklyPosterRunner {
 
   async findPosterFrameIdByName(posterName) {
     if (!posterName) return null;
-    const doc = await this.sendCommand('get_document_info', {});
+    const doc = await this.getDocumentInfoWithRetry();
     this.documentRootId = doc.id;
     const direct = this.findShallowByName(doc.children, posterName);
     if (direct) return direct.id;
@@ -455,7 +480,7 @@ class WeeklyPosterRunner {
   }
 
   async locateAnchors(preferredFrameName) {
-    const doc = await this.sendCommand('get_document_info', {});
+    const doc = await this.getDocumentInfoWithRetry();
     this.documentRootId = doc.id;
     const wantedFrameName = preferredFrameName || this.mapping.anchors.frame;
 
