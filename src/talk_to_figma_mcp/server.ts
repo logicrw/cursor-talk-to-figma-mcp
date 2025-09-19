@@ -2873,6 +2873,7 @@ type FigmaCommand =
   | "set_text_auto_resize"
   | "append_card_to_container"
   | "resize_poster_to_fit"
+  | "export_frame_to_server"
   | "export_frame"
   | "set_poster_title_and_date";
 
@@ -3061,6 +3062,12 @@ type CommandParams = {
   };
   export_frame: {
     nodeId: string;
+    format?: string;
+    scale?: number;
+  };
+  export_frame_to_server: {
+    nodeId: string;
+    serverUrl: string;
     format?: string;
     scale?: number;
   };
@@ -3493,6 +3500,21 @@ server.tool(
         message: `Error preparing card root: ${error instanceof Error ? error.message : String(error)}`
       };
     }
+  }
+);
+
+server.tool(
+  "export_frame_to_server",
+  "Export a frame via the plugin and stream bytes to static server",
+  {
+    nodeId: z.string().describe("Frame id to export"),
+    serverUrl: z.string().describe("Upload endpoint, e.g., http://localhost:3056/upload?file=Poster.png"),
+    format: z.string().optional().describe("PNG|JPG|PDF|SVG (default PNG)"),
+    scale: z.number().optional().describe("Export scale for bitmap formats (default 2)")
+  },
+  async ({ nodeId, serverUrl, format, scale }: any) => {
+    const result = await sendCommandToFigma("export_frame_to_server", { nodeId, serverUrl, format, scale });
+    return result as any;
   }
 );
 

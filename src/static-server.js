@@ -30,20 +30,71 @@ const BASE_DIR = path.resolve(
   staticCfg.baseDir || (legacyAssetsPath ? path.join(legacyAssetsPath, '..') : '../docx2json/assets')
 );
 
-const server = http.createServer((req, res) => {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+function sanitizeFileName(name) {
+  return String(name || '').replace(/[\/:*?"<>|]+/g, '_').replace(/\s+/g, '_');
+}
 
-  if (req.method === 'OPTIONS') {
-    res.writeHead(200);
-    res.end();
-    return;
+async function handleUpload(req, res, urlObj) {
+  try {
+    const fileParam = urlObj.searchParams.get('file') || 'poster.png';
+    const safeName = sanitizeFileName(fileParam);
+    const outDir = path.join(process.cwd(), 'out');
+    await fs.promises.mkdir(outDir, { recursive: true });
+    const outPath = path.join(outDir, safeName);
+    const writeStream = fs.createWriteStream(outPath);
+    let total = 0;
+    await new Promise((resolve, reject) => {
+      req.on('data', (chunk) => {
+        total += chunk.length;
+        if (!writeStream.write(chunk)) {
+          req.pause();
+          writeStream.once('drain', () => req.resume());
+        }
+      });
+      req.on('end', () => {
+        writeStream.end();
+        resolve();
+      });
+      req.on('error', reject);
+      writeStream.on('error', reject);
+    });
+    const relPath = path.join('out', safeName);
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    });
+    res.end(JSON.stringify({ ok: true, path: relPath, size: total }));
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    res.writeHead(500, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    });
+    res.end(JSON.stringify({ ok: false, error: message }));
   }
+}
 
-  // Parse URL path
-  const urlPath = new URL(req.url, `http://localhost:${PORT}`).pathname;
+const server = http.createServer(async (req, res) => {
+  try {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    const baseUrl = `http://localhost:${PORT}`;
+    const urlObj = new URL(req.url, baseUrl);
+
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    if (req.method === 'POST' && urlObj.pathname === '/upload') {
+      await handleUpload(req, res, urlObj);
+      return;
+    }
+
+    const urlPath = urlObj.pathname;
 
   if (urlPath.startsWith(PUBLIC_ROUTE + '/')) {
     // Strip public route prefix and decode
@@ -83,10 +134,19 @@ const server = http.createServer((req, res) => {
     const stream = fs.createReadStream(absolutePath);
     stream.pipe(res);
 
-    console.log(`Served: ${path.relative(BASE_DIR, absolutePath)} (${contentType})`);
-  } else {
+      console.log(`Served: ${path.relative(BASE_DIR, absolutePath)} (${contentType})`);
+      return;
+    }
+
     res.writeHead(404);
     res.end('Not Found');
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    res.writeHead(500, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*'
+    });
+    res.end(JSON.stringify({ ok: false, error: message }));
   }
 });
 

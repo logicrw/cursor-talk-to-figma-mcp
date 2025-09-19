@@ -255,6 +255,8 @@ async function handleCommand(command, params) {
       return await resizePosterToFit(params);
     case "set_poster_title_and_date":
       return await setPosterTitleAndDate(params);
+    case "export_frame_to_server":
+      return await exportFrameToServer(params);
     case "export_frame":
       return await exportFrame(params);
     case "flush_layout":
@@ -5166,6 +5168,81 @@ async function exportFrame(params) {
   var base64 = btoa(binary);
 
   return { success: true, base64: base64, format: format, scale: scale };
+}
+async function exportFrameToServer(params) {
+  var nodeId = params && params.nodeId;
+  var serverUrl = params && params.serverUrl;
+  var format = params && params.format ? String(params.format).toUpperCase() : "PNG";
+  var scale = params && typeof params.scale === "number" ? params.scale : 2;
+  if (!nodeId) throw new Error("Missing nodeId");
+  if (!serverUrl) throw new Error("Missing serverUrl");
+  if (["PNG", "JPG", "SVG", "PDF"].indexOf(format) === -1) format = "PNG";
+
+  var node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) return { success: false, message: "node not found" };
+
+  try { if (typeof figma.flushAsync === 'function') await figma.flushAsync(); } catch (error) {}
+
+  var options = { format: format };
+  if (format === "PNG" || format === "JPG" || format === "SVG") {
+    var value = scale && scale > 0 ? scale : 1;
+    options.constraint = { type: "SCALE", value: value };
+  }
+
+  var bytes;
+  try {
+    bytes = await node.exportAsync(options);
+  } catch (error) {
+    var msg = error && error.message ? error.message : error;
+    return { success: false, message: "exportAsync failed: " + msg };
+  }
+
+  var body;
+  if (bytes && typeof bytes.byteLength === "number") {
+    var offset = bytes.byteOffset || 0;
+    body = bytes.buffer.slice(offset, offset + bytes.byteLength);
+  } else {
+    body = bytes;
+  }
+
+  var resp;
+  try {
+    resp = await fetch(serverUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: body
+    });
+  } catch (error) {
+    var fetchMsg = error && error.message ? error.message : error;
+    return { success: false, message: "upload fetch error: " + fetchMsg };
+  }
+
+  if (!resp || !resp.ok) {
+    return { success: false, message: "upload failed: http " + (resp ? resp.status : "no response") };
+  }
+
+  var data = null;
+  try {
+    data = await resp.json();
+  } catch (error) {
+    data = null;
+  }
+
+  try { if (typeof figma.flushAsync === 'function') await figma.flushAsync(); } catch (error) {}
+
+  var success = false;
+  if (data && typeof data === "object") {
+    success = !!(data.ok || data.success);
+  }
+
+  return {
+    success: success,
+    path: data && data.path ? data.path : null,
+    size: data && data.size ? data.size : null,
+    format: format,
+    scale: scale,
+    response: data || null
+  };
 }
 // Prepare card root: detach all instance ancestors and return new root id
 async function prepareCardRoot(params) {

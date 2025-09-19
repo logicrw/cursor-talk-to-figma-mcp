@@ -370,49 +370,35 @@ class WeeklyPosterRunner {
     return String(name || '').replace(/[\/:*?"<>|]+/g, '_').replace(/\s+/g, '_');
   }
 
-  async savePosterImage(filePath, base64) {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, Buffer.from(base64, 'base64'));
-  }
-
   async exportPosterFrame(posterName) {
     if (!this.posterFrameId) return null;
-    try {
-      try {
-        await this.sendCommand('flush_layout', {});
-      } catch (error) {
-        console.warn('⚠️ flush_layout before export failed:', error && error.message ? error.message : error);
-      }
-
-      const res = await this.sendCommand('export_frame', {
-        nodeId: this.posterFrameId,
-        format: 'PNG',
-        scale: this.exportScale
-      });
-      let base64 = res && res.base64 ? res.base64 : null;
-      if (!base64 && res && res.content && Array.isArray(res.content) && res.content[0] && res.content[0].text) {
-        try {
-          const parsed = JSON.parse(res.content[0].text);
-          base64 = parsed && parsed.base64 ? parsed.base64 : null;
-        } catch (parseError) {
-          console.warn('⚠️ export_frame fallback parse failed:', parseError && parseError.message ? parseError.message : parseError);
-        }
-      }
-      if (!base64) {
-        console.warn('⚠️ export_frame missing base64 payload:', res);
-        return null;
-      }
-      const meta = this.content && this.content.doc;
-      const dateStr = this.sanitizeFileName(meta && meta.date ? meta.date : 'unknown');
-      const safeName = this.sanitizeFileName(posterName || this.currentPosterName || 'poster');
-      const outPath = path.join(this.exportDir, `${safeName}_${dateStr}.png`);
-      await this.savePosterImage(outPath, base64);
-      console.log(`📦 Exported poster: ${outPath}`);
-      return outPath;
-    } catch (error) {
-      console.warn('⚠️ export_frame failed:', error && error.message ? error.message : error);
+    const meta = this.content && this.content.doc;
+    const dateStr = this.sanitizeFileName(meta && meta.date ? meta.date : 'unknown');
+    const safeName = this.sanitizeFileName(posterName || this.currentPosterName || 'poster');
+    const fileName = `${safeName}_${dateStr}.png`;
+    const uploadBase = this.staticUrl.replace(/\/assets\/?$/, '');
+    const uploadUrl = `${uploadBase}/upload?file=${encodeURIComponent(fileName)}`;
+    try { await this.sendCommand('flush_layout', {}); } catch (error) {
+      console.warn('⚠️ flush_layout before export failed:', error && error.message ? error.message : error);
+    }
+    const res = await this.sendCommand('export_frame_to_server', {
+      nodeId: this.posterFrameId,
+      serverUrl: uploadUrl,
+      format: 'PNG',
+      scale: this.exportScale
+    });
+    const success = !!(res && (res.success || res.ok || (res.response && res.response.ok)));
+    if (!success) {
+      console.warn('⚠️ export_frame_to_server returned:', res);
       return null;
     }
+    const exportedPath = res.path || (res.response && res.response.path) || fileName;
+    console.log(`📦 Exported poster: ${exportedPath}`);
+    try { await this.sendCommand('flush_layout', {}); } catch (error) {
+      console.warn('⚠️ flush_layout after export failed:', error && error.message ? error.message : error);
+    }
+    await this.sleep(400);
+    return path.join(this.exportDir, fileName);
   }
 
   async clearCardsContainer() {
@@ -995,8 +981,10 @@ class WeeklyPosterRunner {
     for (const posterName of this.posterNames) {
       const summary = await this.processPoster(posterName, flow);
       if (summary) posterSummaries.push(summary);
-      try { await this.sendCommand('flush_layout', {}); } catch {}
-      await this.sleep(400);
+      try { await this.sendCommand('flush_layout', {}); } catch (error) {
+        console.warn('⚠️ flush_layout between posters failed:', error && error.message ? error.message : error);
+      }
+      await this.sleep(500);
     }
 
     const overall = {
