@@ -2871,7 +2871,8 @@ type FigmaCommand =
   | "create_connections"
   | "set_image_fill"
   | "set_text_auto_resize"
-  | "append_card_to_container";
+  | "append_card_to_container"
+  | "resize_poster_to_fit";
 
 type CommandParams = {
   get_document_info: Record<string, never>;
@@ -3048,6 +3049,13 @@ type CommandParams = {
     templateId: string;
     newName?: string;
     insertIndex?: number;
+  };
+  resize_poster_to_fit: {
+    posterId: string;
+    anchorId?: string;
+    bottomPadding?: number;
+    minHeight?: number;
+    maxHeight?: number;
   };
 
 };
@@ -3472,6 +3480,30 @@ server.tool(
         message: `Error preparing card root: ${error instanceof Error ? error.message : String(error)}`
       };
     }
+  }
+);
+
+server.tool(
+  "resize_poster_to_fit",
+  "Resize a poster FRAME height to fit an anchor node bottom plus padding",
+  {
+    posterId: z.string().describe("Poster frame id (FRAME)"),
+    anchorId: z.string().optional().describe("Anchor node id (e.g., ContentAndPlate)"),
+    bottomPadding: z.number().optional().describe("Extra space to add below the anchor bottom"),
+    minHeight: z.number().optional().describe("Minimum allowed height"),
+    maxHeight: z.number().optional().describe("Maximum allowed height"),
+  },
+  async ({ posterId, anchorId, bottomPadding, minHeight, maxHeight }: any) => {
+    const result = await sendCommandToFigma("resize_poster_to_fit", {
+      posterId,
+      anchorId,
+      bottomPadding,
+      minHeight,
+      maxHeight,
+    });
+    return {
+      content: [{ type: "text", text: JSON.stringify(result) }],
+    };
   }
 );
 

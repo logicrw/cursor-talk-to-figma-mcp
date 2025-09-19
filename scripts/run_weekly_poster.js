@@ -36,6 +36,7 @@ class WeeklyPosterRunner {
     this.base64Rate = 30;
     this.base64Sent = [];
     this.fetchImpl = typeof fetch === 'function' ? fetch.bind(globalThis) : null;
+    this.posterFrameId = null;
   }
 
   async loadConfig() {
@@ -312,6 +313,7 @@ class WeeklyPosterRunner {
       }
     }
     if (!frame) throw new Error(`Frame not found after fallback: ${wantedFrameName}`);
+    this.posterFrameId = frame.id;
 
     // Resolve container (deep, normalized)
     const frameInfo = await this.sendCommand('get_node_info', { nodeId: frame.id });
@@ -710,6 +712,56 @@ class WeeklyPosterRunner {
     return '';
   }
 
+  async resizePosterHeightToContent() {
+    const posterId = this.posterFrameId;
+    if (!posterId) return;
+
+    const anchorsCfg = this.mapping.anchors || {};
+    const candidateNames = [];
+    if (typeof anchorsCfg.poster_content_anchor === 'string') candidateNames.push(anchorsCfg.poster_content_anchor);
+    if (typeof anchorsCfg.content_anchor === 'string') candidateNames.push(anchorsCfg.content_anchor);
+    candidateNames.push('ContentAndPlate', 'ContentContainer', 'Odaily固定板');
+
+    let anchorId = null;
+    for (let i = 0; i < candidateNames.length; i++) {
+      const name = String(candidateNames[i] || '').trim();
+      if (!name) continue;
+      try {
+        anchorId = await this.dfsFindChildIdByName(posterId, name);
+      } catch (error) {
+        console.warn('⚠️ Anchor search failed:', error.message || error);
+        anchorId = null;
+      }
+      if (anchorId) break;
+    }
+
+    const toFinite = (value, fallback) => {
+      const num = typeof value === 'number' ? value : Number(value);
+      return Number.isFinite(num) ? num : fallback;
+    };
+
+    const payload = {
+      posterId,
+      bottomPadding: toFinite(anchorsCfg.poster_bottom_padding, 64),
+    };
+    const minHeightVal = toFinite(anchorsCfg.poster_min_height, null);
+    const maxHeightVal = toFinite(anchorsCfg.poster_max_height, null);
+    if (anchorId) payload.anchorId = anchorId;
+    if (minHeightVal !== null) payload.minHeight = minHeightVal;
+    if (maxHeightVal !== null) payload.maxHeight = maxHeightVal;
+
+    try {
+      const res = await this.sendCommand('resize_poster_to_fit', payload);
+      if (res && res.success) {
+        console.log(`✅ Poster resized: height=${res.height}`);
+      } else {
+        console.warn('⚠️ Poster resize returned:', res);
+      }
+    } catch (error) {
+      console.warn('⚠️ Poster resize failed:', error.message || error);
+    }
+  }
+
   async run() {
     console.log('🚀 Weekly Poster Orchestration starting...');
     await this.loadConfig();
@@ -736,6 +788,8 @@ class WeeklyPosterRunner {
         this.report.errors.push({ index: i, error: e.message });
       }
     }
+
+    await this.resizePosterHeightToContent();
 
     // Summary
     const summary = {

@@ -251,6 +251,8 @@ async function handleCommand(command, params) {
       return await setTextAutoResize(params);
     case "append_card_to_container":
       return await appendCardToContainer(params);
+    case "resize_poster_to_fit":
+      return await resizePosterToFit(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -4872,6 +4874,76 @@ async function appendCardToContainer(params) {
   } catch (error) {
     throw new Error(`Failed to append card to container: ${error.message}`);
   }
+}
+
+async function resizePosterToFit(params) {
+  var posterId = params && params.posterId;
+  var anchorId = params && params.anchorId;
+  var bottomPadding = (params && typeof params.bottomPadding === 'number') ? params.bottomPadding : 0;
+  var minHeight = (params && typeof params.minHeight === 'number') ? params.minHeight : 0;
+  var maxHeight = (params && typeof params.maxHeight === 'number') ? params.maxHeight : 1000000;
+
+  if (!posterId) throw new Error("Missing posterId");
+  var poster = await figma.getNodeByIdAsync(posterId);
+  if (!poster || poster.type !== 'FRAME') {
+    return { success: false, message: "poster not a FRAME" };
+  }
+
+  var posterAbsY = poster.absoluteTransform[1][2];
+  var candidates = [];
+
+  if (anchorId) {
+    var anchor = await figma.getNodeByIdAsync(anchorId);
+    if (anchor && anchor.visible !== false) {
+      candidates.push(anchor);
+    }
+  }
+
+  if (candidates.length === 0 && 'children' in poster) {
+    var names = ["ContentAndPlate", "ContentContainer", "Odaily固定板"];
+    for (var i = 0; i < poster.children.length; i++) {
+      var ch = poster.children[i];
+      if (ch && ch.visible !== false) {
+        var nm = String(ch.name || "");
+        for (var j = 0; j < names.length; j++) {
+          if (nm === names[j]) {
+            candidates.push(ch);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  if (candidates.length === 0) {
+    return { success: false, message: "no anchor found under poster" };
+  }
+
+  var bottom = 0;
+  for (var k = 0; k < candidates.length; k++) {
+    var n = candidates[k];
+    var relTop = n.absoluteTransform[1][2] - posterAbsY;
+    var h = (typeof n.height === 'number') ? n.height : 0;
+    var candidateBottom = relTop + h;
+    if (candidateBottom > bottom) bottom = candidateBottom;
+  }
+
+  var newHeight = Math.round(bottom + bottomPadding);
+  if (newHeight < minHeight) newHeight = minHeight;
+  if (newHeight > maxHeight) newHeight = maxHeight;
+
+  try {
+    if (typeof poster.resizeWithoutConstraints === 'function') {
+      poster.resizeWithoutConstraints(poster.width, newHeight);
+    } else {
+      poster.resize(poster.width, newHeight);
+    }
+  } catch (error) {
+    var message = error && error.message ? error.message : error;
+    return { success: false, message: "resize failed: " + message };
+  }
+
+  return { success: true, height: newHeight };
 }
 // Prepare card root: detach all instance ancestors and return new root id
 async function prepareCardRoot(params) {
