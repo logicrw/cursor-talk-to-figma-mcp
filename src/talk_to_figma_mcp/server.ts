@@ -2873,6 +2873,7 @@ type FigmaCommand =
   | "set_text_auto_resize"
   | "append_card_to_container"
   | "resize_poster_to_fit"
+  | "export_frame"
   | "set_poster_title_and_date";
 
 type CommandParams = {
@@ -3057,6 +3058,11 @@ type CommandParams = {
     bottomPadding?: number;
     minHeight?: number;
     maxHeight?: number;
+  };
+  export_frame: {
+    nodeId: string;
+    format?: string;
+    scale?: number;
   };
   set_poster_title_and_date: {
     posterId: string;
@@ -3487,6 +3493,20 @@ server.tool(
         message: `Error preparing card root: ${error instanceof Error ? error.message : String(error)}`
       };
     }
+  }
+);
+
+server.tool(
+  "export_frame",
+  "Export a frame to an image/PDF and return base64 payload",
+  {
+    nodeId: z.string().describe("Frame id to export"),
+    format: z.string().optional().describe("PNG|JPG|PDF|SVG (default PNG)"),
+    scale: z.number().optional().describe("Export scale for bitmap formats (default 2)"),
+  },
+  async ({ nodeId, format, scale }: any) => {
+    const result = await sendCommandToFigma("export_frame", { nodeId, format, scale });
+    return { content: [{ type: "text", text: JSON.stringify(result) }] };
   }
 );
 

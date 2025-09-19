@@ -38,6 +38,15 @@ class WeeklyPosterRunner {
     this.fetchImpl = typeof fetch === 'function' ? fetch.bind(globalThis) : null;
     this.posterFrameId = null;
     this.rootFrameId = null;
+    const postersArg = this.getArg('--posters');
+    const defaultPosters = 'Odaily特供海报,EXIO特供海报,干货铺特供海报';
+    this.posterNames = (postersArg || defaultPosters).split(',').map((s) => s.trim()).filter(Boolean);
+    this.exportDir = this.getArg('--exportDir') || 'out';
+    const scaleArg = this.getArg('--exportScale');
+    const parsedScale = scaleArg ? Number(scaleArg) : NaN;
+    this.exportScale = Number.isFinite(parsedScale) && parsedScale > 0 ? parsedScale : 2;
+    this.documentRootId = null;
+    this.currentPosterName = null;
   }
 
   async loadConfig() {
@@ -293,9 +302,146 @@ class WeeklyPosterRunner {
     return (children || []).find(c => this.normalizeName(c.name) === T) || null;
   }
 
-  async locateAnchors() {
+  async configurePosterFrame(frameId, posterName) {
+    if (!frameId) throw new Error('Missing poster frame id');
+    this.posterFrameId = frameId;
+    this.rootFrameId = frameId;
+    this.currentPosterName = posterName || null;
+
+    const frameInfo = await this.sendCommand('get_node_info', { nodeId: frameId });
+    let container = this.findShallowByName(frameInfo.children, this.mapping.anchors.container);
+    if (!container) {
+      container = await this.deepFindByName(frameId, this.mapping.anchors.container);
+    }
+    if (!container) {
+      throw new Error(`Container not found: ${this.mapping.anchors.container}`);
+    }
+
+    const containerInfo = await this.sendCommand('get_node_info', { nodeId: container.id });
+    let cards = this.findShallowByName(containerInfo.children, this.mapping.anchors.cards_stack);
+    if (!cards) {
+      cards = await this.deepFindByName(container.id, this.mapping.anchors.cards_stack);
+    }
+    if (!cards) {
+      throw new Error(`Cards stack not found: ${this.mapping.anchors.cards_stack}`);
+    }
+
+    this.cardsContainerId = cards.id;
+    return frameId;
+  }
+
+  async findPosterFrameIdByName(posterName) {
+    if (!posterName) return null;
     const doc = await this.sendCommand('get_document_info', {});
-    const wantedFrameName = this.mapping.anchors.frame;
+    this.documentRootId = doc.id;
+    const direct = this.findShallowByName(doc.children, posterName);
+    if (direct) return direct.id;
+    const deep = await this.deepFindByName(doc.id, posterName, ['FRAME']);
+    return deep ? deep.id : null;
+  }
+
+  sanitizeFileName(name) {
+    return String(name || '').replace(/[\/:*?"<>|]+/g, '_').replace(/\s+/g, '_');
+  }
+
+  async savePosterImage(filePath, base64) {
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, Buffer.from(base64, 'base64'));
+  }
+
+  async exportPosterFrame(posterName) {
+    if (!this.posterFrameId) return null;
+    try {
+      const res = await this.sendCommand('export_frame', {
+        nodeId: this.posterFrameId,
+        format: 'PNG',
+        scale: this.exportScale
+      });
+      const base64 = res && res.base64 ? res.base64 : null;
+      if (!base64) {
+        console.warn('⚠️ export_frame missing base64 payload:', res);
+        return null;
+      }
+      const meta = this.content && this.content.doc;
+      const dateStr = this.sanitizeFileName(meta && meta.date ? meta.date : 'unknown');
+      const safeName = this.sanitizeFileName(posterName || this.currentPosterName || 'poster');
+      const outPath = path.join(this.exportDir, `${safeName}_${dateStr}.png`);
+      await this.savePosterImage(outPath, base64);
+      console.log(`📦 Exported poster: ${outPath}`);
+      return outPath;
+    } catch (error) {
+      console.warn('⚠️ export_frame failed:', error && error.message ? error.message : error);
+      return null;
+    }
+  }
+
+  async clearCardsContainer() {
+    if (!this.cardsContainerId) return;
+    try {
+      const containerInfo = await this.sendCommand('get_node_info', { nodeId: this.cardsContainerId });
+      const children = (containerInfo && containerInfo.children) ? containerInfo.children : [];
+      const deletable = children.map((child) => child.id).filter(Boolean);
+      if (deletable.length > 0) {
+        await this.sendCommand('delete_multiple_nodes', { nodeIds: deletable });
+        console.log(`🧹 Cleared ${deletable.length} card nodes from container ${this.cardsContainerId}`);
+      }
+    } catch (error) {
+      console.warn('⚠️ clearCardsContainer failed:', error && error.message ? error.message : error);
+    }
+  }
+
+  async populateCards(flow) {
+    this.report = { created: [], errors: [] };
+    for (let i = 0; i < flow.length; i++) {
+      const item = flow[i];
+      const kind = item.type === 'figure_group' ? 'figure' : 'body';
+      try {
+        const inst = await this.createCardInstance(kind);
+        this.report.created.push({ index: i, id: inst.id, method: inst.method, kind });
+        if (kind === 'figure') await this.fillFigureCard(inst.id, item);
+        else await this.fillBodyCard(inst.id, item);
+        console.log(`✅ Filled #${i + 1} ${kind} card`);
+      } catch (e) {
+        console.error(`❌ Failed item #${i + 1}:`, e.message);
+        this.report.errors.push({ index: i, error: e.message });
+      }
+    }
+  }
+
+  async processPoster(posterName, flow) {
+    console.log(`\n🎯 Processing poster: ${posterName}`);
+    const posterId = await this.findPosterFrameIdByName(posterName);
+    if (!posterId) {
+      console.warn(`⚠️ Poster frame not found: ${posterName}`);
+      return null;
+    }
+
+    try {
+      await this.configurePosterFrame(posterId, posterName);
+    } catch (error) {
+      console.warn(`⚠️ configurePosterFrame failed for ${posterName}:`, error && error.message ? error.message : error);
+      return null;
+    }
+
+    await this.clearCardsContainer();
+    await this.fillHeader(posterId);
+    await this.populateCards(flow);
+    await this.resizePosterHeightToContent();
+    await this.updatePosterMetaFromDoc(posterId);
+    const exportPath = await this.exportPosterFrame(posterName);
+
+    return {
+      name: posterName,
+      created: this.report.created.length,
+      errors: this.report.errors.length,
+      exportPath
+    };
+  }
+
+  async locateAnchors(preferredFrameName) {
+    const doc = await this.sendCommand('get_document_info', {});
+    this.documentRootId = doc.id;
+    const wantedFrameName = preferredFrameName || this.mapping.anchors.frame;
 
     // 1) Try shallow match on current page
     let frame = this.findShallowByName(doc.children, wantedFrameName);
@@ -314,26 +460,8 @@ class WeeklyPosterRunner {
       }
     }
     if (!frame) throw new Error(`Frame not found after fallback: ${wantedFrameName}`);
-    this.posterFrameId = frame.id;
-    this.rootFrameId = frame.id;
-
-    // Resolve container (deep, normalized)
-    const frameInfo = await this.sendCommand('get_node_info', { nodeId: frame.id });
-    let container = this.findShallowByName(frameInfo.children, this.mapping.anchors.container);
-    if (!container) {
-      container = await this.deepFindByName(frame.id, this.mapping.anchors.container);
-    }
-    if (!container) throw new Error(`Container not found: ${this.mapping.anchors.container}`);
-
-    // Resolve cards stack
-    const containerInfo = await this.sendCommand('get_node_info', { nodeId: container.id });
-    let cards = this.findShallowByName(containerInfo.children, this.mapping.anchors.cards_stack);
-    if (!cards) {
-      cards = await this.deepFindByName(container.id, this.mapping.anchors.cards_stack);
-    }
-    if (!cards) throw new Error(`Cards stack not found: ${this.mapping.anchors.cards_stack}`);
-    this.cardsContainerId = cards.id;
-    console.log(`🔗 Resolved cards stack id by name: ${cards.id}`);
+    await this.configurePosterFrame(frame.id, frame.name);
+    console.log(`🔗 Resolved cards stack id by name: ${this.cardsContainerId}`);
 
     // Seeds (best-effort)
     const seedsFrame = this.findShallowByName(doc.children, this.mapping.anchors.seeds.frame) || await this.deepFindByName(doc.id, this.mapping.anchors.seeds.frame);
@@ -686,18 +814,17 @@ class WeeklyPosterRunner {
     try { return (pathStr || '').split('.').reduce((o,k)=> (o && o[k] != null ? o[k] : undefined), obj); } catch { return undefined; }
   }
 
-  async fillHeader() {
+  async fillHeader(frameId) {
     try {
-      const doc = await this.sendCommand('get_document_info', {});
-      const frame = (doc.children || []).find((c) => c.name === this.mapping.anchors.frame);
-      if (!frame) return;
-      const frameInfo = await this.sendCommand('get_node_info', { nodeId: frame.id });
+      const targetFrameId = frameId || this.posterFrameId;
+      if (!targetFrameId) return;
+      const frameInfo = await this.sendCommand('get_node_info', { nodeId: targetFrameId });
       const header = this.mapping.anchors.header || {};
       const meta = this.content.doc || {};
       const month = this.formatMonth(meta.date || '');
       const setByName = async (name, text) => {
         if (!name) return;
-        const id = await this.dfsFindChildIdByName(frame.id, name);
+        const id = await this.dfsFindChildIdByName(targetFrameId, name);
         if (id) await this.setText(id, text);
       };
       await setByName(header.title, meta.title || '');
@@ -764,16 +891,8 @@ class WeeklyPosterRunner {
     }
   }
 
-  async updatePosterMetaFromDoc() {
-    let posterId = this.posterFrameId;
-    if (!posterId && this.rootFrameId) {
-      try {
-        posterId = await this.dfsFindChildIdByName(this.rootFrameId, "Odaily特供海报");
-      } catch (error) {
-        posterId = null;
-      }
-    }
-
+  async updatePosterMetaFromDoc(targetPosterId) {
+    const posterId = targetPosterId || this.posterFrameId;
     const meta = this.content && this.content.doc;
     if (!posterId || !meta) return;
 
@@ -805,42 +924,31 @@ class WeeklyPosterRunner {
     await this.resolveContent();
     await this.ensureStaticServer();
     await this.connectWS();
-    await this.locateAnchors();
-    await this.fillHeader();
-
-    const flow = this.createOrderedContentFlow();
-    console.log(`📋 Content flow items: ${flow.length}`);
-
-    for (let i = 0; i < flow.length; i++) {
-      const item = flow[i];
-      const kind = item.type === 'figure_group' ? 'figure' : 'body';
-      try {
-        const inst = await this.createCardInstance(kind);
-        this.report.created.push({ index: i, id: inst.id, method: inst.method, kind });
-        if (kind === 'figure') await this.fillFigureCard(inst.id, item);
-        else await this.fillBodyCard(inst.id, item);
-        console.log(`✅ Filled #${i+1} ${kind} card`);
-      } catch (e) {
-        console.error(`❌ Failed item #${i+1}:`, e.message);
-        this.report.errors.push({ index: i, error: e.message });
-      }
+    try {
+      await this.locateAnchors(this.posterNames[0]);
+    } catch (error) {
+      console.warn('⚠️ locateAnchors with poster override failed, retrying with mapping frame:', error && error.message ? error.message : error);
+      await this.locateAnchors();
     }
 
-    await this.resizePosterHeightToContent();
-    await this.updatePosterMetaFromDoc();
+    const flow = this.createOrderedContentFlow();
+    console.log(`📋 Content flow items per poster: ${flow.length}`);
 
-    // Summary
-    const summary = {
+    const posterSummaries = [];
+    for (const posterName of this.posterNames) {
+      const summary = await this.processPoster(posterName, flow);
+      if (summary) posterSummaries.push(summary);
+    }
+
+    const overall = {
       dataset: this.dataset,
       staticServer: this.staticUrl,
       channel: this.channel,
-      total: flow.length,
-      created: this.report.created.length,
-      errors: this.report.errors.length,
-      createdDetails: this.report.created.slice(0,10)
+      postersProcessed: posterSummaries.length,
+      posters: posterSummaries
     };
     console.log('\n📊 Run Summary:');
-    console.log(JSON.stringify(summary, null, 2));
+    console.log(JSON.stringify(overall, null, 2));
   }
 
   async close() {

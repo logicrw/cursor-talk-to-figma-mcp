@@ -255,6 +255,8 @@ async function handleCommand(command, params) {
       return await resizePosterToFit(params);
     case "set_poster_title_and_date":
       return await setPosterTitleAndDate(params);
+    case "export_frame":
+      return await exportFrame(params);
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -5112,6 +5114,43 @@ async function setPosterTitleAndDate(params) {
   }
 
   return { success: true };
+}
+
+async function exportFrame(params) {
+  var nodeId = params && params.nodeId;
+  var format = params && params.format ? String(params.format).toUpperCase() : "PNG";
+  var scale = params && typeof params.scale === "number" ? params.scale : 2;
+  if (!nodeId) throw new Error("Missing nodeId");
+  if (["PNG", "JPG", "SVG", "PDF"].indexOf(format) === -1) {
+    format = "PNG";
+  }
+
+  var node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    return { success: false, message: "node not found" };
+  }
+
+  var options = { format: format };
+  if (format === "PNG" || format === "JPG" || format === "SVG") {
+    var value = scale && scale > 0 ? scale : 1;
+    options.constraint = { type: "SCALE", value: value };
+  }
+
+  var bytes;
+  try {
+    bytes = await node.exportAsync(options);
+  } catch (error) {
+    var msg = error && error.message ? error.message : error;
+    return { success: false, message: "export failed: " + msg };
+  }
+
+  var binary = "";
+  for (var i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  var base64 = btoa(binary);
+
+  return { success: true, base64: base64, format: format, scale: scale };
 }
 // Prepare card root: detach all instance ancestors and return new root id
 async function prepareCardRoot(params) {
