@@ -4892,6 +4892,7 @@ async function resizePosterToFit(params) {
   var maxHeight = (params && typeof params.maxHeight === 'number') ? params.maxHeight : 1000000;
 
   if (!posterId) throw new Error("Missing posterId");
+  // 只在 posterId 子树内搜索，避免误命中其他海报
   var poster = await figma.getNodeByIdAsync(posterId);
   if (!poster || poster.type !== 'FRAME') {
     return { success: false, message: "poster not a FRAME" };

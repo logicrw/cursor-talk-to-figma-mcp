@@ -303,35 +303,6 @@ class WeeklyPosterRunner {
     return null;
   }
 
-  parseToolJson(raw) {
-    if (!raw) return null;
-    if (typeof raw === 'object' && !Array.isArray(raw)) {
-      if (raw.success !== undefined || raw.uploaded || raw.path || raw.response) {
-        return raw;
-      }
-    }
-    if (raw && typeof raw === 'object' && Array.isArray(raw.content)) {
-      for (let i = 0; i < raw.content.length; i++) {
-        const entry = raw.content[i];
-        if (entry && typeof entry.text === 'string') {
-          try {
-            const parsed = JSON.parse(entry.text);
-            if (parsed && typeof parsed === 'object') return parsed;
-          } catch (error) {
-            console.warn('⚠️ parseToolJson text parse failed:', error.message || error);
-          }
-        }
-      }
-    }
-    if (typeof raw === 'string') {
-      try { return JSON.parse(raw); }
-      catch (error) {
-        console.warn('⚠️ parseToolJson string parse failed:', error.message || error);
-      }
-    }
-    return null;
-  }
-
   // Robust name normalization: remove spaces/zero-width chars and normalize width
   normalizeName(s) {
     return String(s || '')
@@ -399,35 +370,43 @@ class WeeklyPosterRunner {
     return String(name || '').replace(/[\/:*?"<>|]+/g, '_').replace(/\s+/g, '_');
   }
 
-  async exportPosterFrame(posterName) {
-    if (!this.posterFrameId) return null;
-    const meta = this.content && this.content.doc;
-    const dateStr = this.sanitizeFileName(meta && meta.date ? meta.date : 'unknown');
-    const safeName = this.sanitizeFileName(posterName || this.currentPosterName || 'poster');
-    const fileName = `${safeName}_${dateStr}.png`;
-    const uploadUrl = this.staticUrl.replace(/\/assets\/?$/, '/upload');
-    try { await this.sendCommand('flush_layout', {}); } catch (error) {
-      console.warn('⚠️ flush_layout before export failed:', error && error.message ? error.message : error);
-    }
-    const raw = await this.sendCommand('export_frame_to_server', {
-      nodeId: this.posterFrameId,
-      url: uploadUrl,
-      file: fileName,
-      format: 'PNG',
-      scale: this.exportScale
-    });
-    const payload = this.parseToolJson(raw);
-    if (!payload || payload.success === false || !(payload.uploaded && payload.uploaded.ok)) {
-      console.warn('⚠️ export_frame_to_server returned:', payload || raw);
+  async exportPosterFrame(posterName, posterId) {
+    const frameId = posterId || this.posterFrameId;
+    if (!frameId) return null;
+    try {
+      try { await this.sendCommand('flush_layout', {}); } catch {}
+      await this.sleep(200);
+      const res = await this.sendCommand('export_frame', {
+        nodeId: frameId,
+        format: 'PNG',
+        scale: this.exportScale
+      });
+      let base64 = res && res.base64 ? res.base64 : null;
+      if (!base64 && res && res.content && Array.isArray(res.content) && res.content[0] && res.content[0].text) {
+        try {
+          const parsed = JSON.parse(res.content[0].text);
+          base64 = parsed && parsed.base64 ? parsed.base64 : null;
+        } catch (parseError) {
+          console.warn('⚠️ export_frame fallback parse failed:', parseError && parseError.message ? parseError.message : parseError);
+        }
+      }
+      if (!base64) {
+        console.warn('⚠️ export_frame missing base64 payload:', res);
+        return null;
+      }
+      const meta = this.content && this.content.doc;
+      const dateStr = this.sanitizeFileName(meta && meta.date ? meta.date : 'unknown');
+      const safeName = this.sanitizeFileName(posterName || this.currentPosterName || 'poster');
+      const outPath = path.join(this.exportDir, `${safeName}_${dateStr}.png`);
+      await this.savePosterImage(outPath, base64);
+      console.log(`📦 Exported poster: ${outPath}`);
+      try { await this.sendCommand('flush_layout', {}); } catch {}
+      await this.sleep(200);
+      return outPath;
+    } catch (error) {
+      console.warn('⚠️ export_frame failed:', error && error.message ? error.message : error);
       return null;
     }
-    const exportedPath = (payload.uploaded && (payload.uploaded.path || payload.uploaded.relativePath)) || path.join('out', fileName);
-    console.log(`📦 Exported poster: ${exportedPath}`);
-    try { await this.sendCommand('flush_layout', {}); } catch (error) {
-      console.warn('⚠️ flush_layout after export failed:', error && error.message ? error.message : error);
-    }
-    await this.sleep(400);
-    return path.join(this.exportDir, fileName);
   }
 
   async clearCardsContainer() {
@@ -500,7 +479,7 @@ class WeeklyPosterRunner {
 
     await this.resizePosterHeightToContent(posterId);
     await this.updatePosterMetaFromDoc(posterId);
-    const exportPath = await this.exportPosterFrame(posterName);
+    const exportPath = await this.exportPosterFrame(posterName, posterId);
 
     return {
       name: posterName,
@@ -963,7 +942,7 @@ class WeeklyPosterRunner {
   }
 
   async updatePosterMetaFromDoc(targetPosterId) {
-    const posterId = targetPosterId;
+    const posterId = targetPosterId || this.posterFrameId;
     const meta = this.content && this.content.doc;
     if (!posterId || !meta) return;
 
@@ -972,6 +951,7 @@ class WeeklyPosterRunner {
 
     if (!titleText && !dateISO) return;
 
+    await this.fillHeader(posterId);
     try {
       const result = await this.sendCommand('set_poster_title_and_date', {
         posterId,
@@ -979,9 +959,7 @@ class WeeklyPosterRunner {
         dateISO,
         locale: 'en-US'
       });
-      if (result && result.success) {
-        console.log('✅ Poster title/date updated:', titleText, dateISO);
-      } else {
+      if (!(result && result.success)) {
         console.warn('⚠️ set_poster_title_and_date returned:', result);
       }
     } catch (error) {

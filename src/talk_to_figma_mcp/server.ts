@@ -3530,7 +3530,7 @@ server.tool(
   },
   async ({ nodeId, format, scale }: any) => {
     const result = await sendCommandToFigma("export_frame", { nodeId, format, scale });
-    return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    return result as any;
   }
 );
 
