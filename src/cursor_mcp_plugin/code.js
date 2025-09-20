@@ -4959,164 +4959,72 @@ async function setPosterTitleAndDate(params) {
   var posterId = params && params.posterId;
   var titleText = params && params.titleText;
   var dateISO = params && params.dateISO;
-  var locale = params && params.locale;
+  var locale = (params && params.locale) || 'en-US';
   if (!posterId) throw new Error("Missing posterId");
 
   var poster = await figma.getNodeByIdAsync(posterId);
-  if (!poster) {
-    return { success: false, message: "poster not found" };
+  if (!poster || !('children' in poster)) {
+    return { success: false, message: 'poster not found or has no children' };
   }
 
-  function findByName(root, name) {
-    if (!root) return null;
-    var nm = String(root.name || "");
-    if (nm === name) return root;
-    if ("children" in root && root.children) {
-      for (var i = 0; i < root.children.length; i++) {
-        var result = findByName(root.children[i], name);
-        if (result) return result;
+  function norm(name) {
+    return String(name || '').replace(/\s+/g, '').toLowerCase();
+  }
+
+  function findByName(root, target) {
+    var targetNorm = norm(target);
+    var stack = [root];
+    while (stack.length) {
+      var node = stack.pop();
+      if (node && node.name && norm(node.name) === targetNorm) return node;
+      if (node && 'children' in node && node.children) {
+        for (var i = node.children.length - 1; i >= 0; i--) {
+          stack.push(node.children[i]);
+        }
       }
     }
     return null;
   }
 
-  async function resolveTextNode(node) {
-    if (!node) return null;
-    if (node.type === "TEXT") return node;
-    if ("children" in node && node.children) {
-      for (var i = 0; i < node.children.length; i++) {
-        var child = node.children[i];
-        if (child.type === "TEXT") return child;
-      }
-    }
-    return null;
-  }
-
-  async function setTextValue(node, value) {
-    var textNode = await resolveTextNode(node);
-    if (!textNode) return false;
+  function setText(node, value) {
+    if (!node) return;
     try {
-      var total = textNode.characters.length;
-      var fonts = [];
-      try {
-        fonts = textNode.getRangeAllFontNames(0, total);
-      } catch (fontError) {
-        fonts = [];
+      if ('characters' in node) {
+        node.characters = String(value || '');
       }
-      if (fonts && fonts.length) {
-        for (var i = 0; i < fonts.length; i++) {
-          try { await figma.loadFontAsync(fonts[i]); } catch (loadError) {}
-        }
-      } else {
-        try { await figma.loadFontAsync(textNode.fontName); } catch (fallbackError) {}
-      }
-      textNode.characters = String(value || "");
-      try { textNode.textAutoResize = "HEIGHT"; } catch (resizeError) {}
-      return true;
-    } catch (writeError) {
-      return false;
+    } catch (error) {}
+  }
+
+  function parseISODate(str) {
+    var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(str || ''));
+    if (!match) return null;
+    var monthIndex = Math.min(12, Math.max(1, parseInt(match[2], 10))) - 1;
+    var day = parseInt(match[3], 10);
+    var months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    return { month: months[monthIndex] || match[2], day: String(day) };
+  }
+
+  var titleNode = findByName(poster, 'title');
+  if (titleNode) {
+    setText(titleNode, titleText || '');
+  }
+
+  var dateNode = findByName(poster, 'date');
+  if (dateNode) {
+    var parsed = parseISODate(dateISO);
+    if (parsed && 'children' in dateNode && dateNode.children && dateNode.children.length >= 2) {
+      setText(dateNode.children[0], parsed.month);
+      setText(dateNode.children[1], parsed.day);
+    } else {
+      setText(dateNode, dateISO || '');
     }
   }
 
-  if (titleText !== undefined) {
-    var titleNode = findByName(poster, "title");
-    if (titleNode) {
-      await setTextValue(titleNode, titleText);
+  try {
+    if (typeof figma.flushAsync === 'function') {
+      await figma.flushAsync();
     }
-  }
-
-  if (dateISO) {
-    var parsed = null;
-    try {
-      parsed = new Date(dateISO);
-    } catch (parseErr) {
-      parsed = null;
-    }
-    if (!parsed || isNaN(parsed.getTime())) {
-      var parts = String(dateISO).split("-");
-      if (parts.length >= 3) {
-        var year = Number(parts[0]);
-        var monthIndex = Number(parts[1]) - 1;
-        var dayNum = Number(parts[2]);
-        parsed = new Date(year, monthIndex, dayNum);
-      }
-    }
-    if (parsed && !isNaN(parsed.getTime())) {
-      var monthIndex2 = parsed.getMonth();
-      var dayNumber = parsed.getDate();
-      var MONTH_EN = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
-      var monthLabel = MONTH_EN[monthIndex2];
-      if (!monthLabel) {
-        monthLabel = MONTH_EN[(monthIndex2 + 12) % 12];
-      }
-      var dayLabel = String(dayNumber);
-
-      function firstTextDescendant(root) {
-        if (!root) return null;
-        if (root.type === "TEXT") return root;
-        if ("children" in root && root.children) {
-          for (var i2 = 0; i2 < root.children.length; i2++) {
-            var got = firstTextDescendant(root.children[i2]);
-            if (got) return got;
-          }
-        }
-        return null;
-      }
-
-      function findDescendantByName(root, re) {
-        if (!root) return null;
-        var nm = String(root.name || "");
-        try {
-          if (re.test(nm)) return root;
-        } catch (reErr) {}
-        if ("children" in root && root.children) {
-          for (var i3 = 0; i3 < root.children.length; i3++) {
-            var got2 = findDescendantByName(root.children[i3], re);
-            if (got2) return got2;
-          }
-        }
-        return null;
-      }
-
-      var dateNode = findByName(poster, "date");
-      if (dateNode) {
-        var dayWrap = findDescendantByName(dateNode, /^DAY$/i);
-        var monWrap = findDescendantByName(dateNode, /^MONTH$/i);
-        var dayTextNode = firstTextDescendant(dayWrap);
-        var monTextNode = firstTextDescendant(monWrap);
-
-        if (dayTextNode || monTextNode) {
-          if (dayTextNode) await setTextValue(dayTextNode, dayLabel);
-          if (monTextNode) await setTextValue(monTextNode, monthLabel);
-        } else {
-          var collected = [];
-          (function collect(node) {
-            if (!node) return;
-            if (node.type === "TEXT" && node.visible !== false) {
-              collected.push(node);
-              return;
-            }
-            if ("children" in node && node.children) {
-              for (var i4 = 0; i4 < node.children.length; i4++) {
-                collect(node.children[i4]);
-              }
-            }
-          })(dateNode);
-          collected.sort(function(a, b) {
-            var ay = a.absoluteTransform[1][2];
-            var by = b.absoluteTransform[1][2];
-            return ay - by;
-          });
-          if (collected.length >= 2) {
-            await setTextValue(collected[0], dayLabel);
-            await setTextValue(collected[1], monthLabel);
-          } else if (collected.length === 1) {
-            await setTextValue(collected[0], dayLabel + " " + monthLabel);
-          }
-        }
-      }
-    }
-  }
+  } catch (error) {}
 
   return { success: true };
 }

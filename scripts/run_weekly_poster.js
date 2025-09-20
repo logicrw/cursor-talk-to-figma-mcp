@@ -49,6 +49,13 @@ class WeeklyPosterRunner {
     this.currentPosterName = null;
   }
 
+  async savePosterImage(filePath, base64) {
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const buf = Buffer.from(base64, 'base64');
+    await fs.writeFile(filePath, buf);
+    return filePath;
+  }
+
   async loadConfig() {
     const cfgPath = path.join(process.cwd(), 'config/server-config.json');
     this.config = JSON.parse(await fs.readFile(cfgPath, 'utf8'));
@@ -461,6 +468,9 @@ class WeeklyPosterRunner {
     try { await this.sendCommand('flush_layout', {}); } catch {}
     await this.sleep(120);
     await this.fillHeader(posterId);
+    await this.updatePosterMetaFromDoc(posterId);
+    try { await this.sendCommand('flush_layout', {}); } catch {}
+    await this.sleep(120);
 
     const createdBefore = Array.isArray(this.report?.created) ? this.report.created.length : 0;
     await this.populateCards(flow);
@@ -478,7 +488,8 @@ class WeeklyPosterRunner {
     }
 
     await this.resizePosterHeightToContent(posterId);
-    await this.updatePosterMetaFromDoc(posterId);
+    try { await this.sendCommand('flush_layout', {}); } catch {}
+    await this.sleep(160);
     const exportPath = await this.exportPosterFrame(posterName, posterId);
 
     return {
