@@ -56,8 +56,6 @@ class WeeklyPosterRunner {
     this.currentPosterName = null;
     const autoFlagIndex = process.argv.indexOf('--auto-export');
     this.enableAutoExport = process.env.AUTO_EXPORT === '1' || autoFlagIndex !== -1;
-    this.manualExportNotePath = path.resolve(this.exportDir || 'out', 'manual_export_manifest.json');
-    this._manualExportItems = [];
   }
 
   buildUploadUrl() {
@@ -407,26 +405,7 @@ class WeeklyPosterRunner {
   async exportPosterFrame(posterName, posterId) {
     const frameId = posterId || this.posterFrameId;
     if (!frameId) return null;
-    if (!this.enableAutoExport) {
-      const meta = this.content && this.content.doc;
-      const dateStr = this.sanitizeFileName(meta && meta.date ? meta.date : 'unknown');
-      const safeName = this.sanitizeFileName(posterName || this.currentPosterName || 'poster');
-      const entry = { poster: safeName, date: dateStr, posterId: frameId };
-      if (!this._manualExportItems.find(item => item.posterId === entry.posterId)) {
-        this._manualExportItems.push(entry);
-      }
-      try {
-        await fs.mkdir(path.dirname(this.manualExportNotePath), { recursive: true });
-        await fs.writeFile(this.manualExportNotePath, JSON.stringify({
-          hint: "在 Figma 中选中以下 Frame，File → Export 或右侧导出为 PNG（Scale=2）。",
-          items: this._manualExportItems
-        }, null, 2));
-      } catch (noteError) {
-        console.warn('⚠️ Failed to write manual export manifest:', noteError && noteError.message ? noteError.message : noteError);
-      }
-      console.log(`📝 [manual export] 跳过自动导出 → 请在 Figma 手动导出：${safeName}_${dateStr}.png (frameId=${frameId})`);
-      return null;
-    }
+    if (!this.enableAutoExport) return null;
     try {
       try { await this.sendCommand('flush_layout', {}); } catch {}
       await this.sleep(160);
@@ -1084,10 +1063,6 @@ class WeeklyPosterRunner {
     await this.resolveContent();
     await this.ensureStaticServer();
     await this.connectWS();
-    if (!this.enableAutoExport) {
-      this._manualExportItems = [];
-      try { await fs.rm(this.manualExportNotePath, { force: true }); } catch (err) {}
-    }
     try {
       await this.locateAnchors(this.posterNames[0]);
     } catch (error) {
