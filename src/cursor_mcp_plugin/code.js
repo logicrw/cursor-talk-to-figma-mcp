@@ -144,26 +144,39 @@ async function hugFrameToContent(frame, container, padding) {
   var target = container || findContentContainer(frame);
   if (!target) return { success: false, message: 'content container missing' };
 
+  try { await figma.loadAllFontsAsync(); } catch (e) {}
+  if (typeof figma.flushAsync === 'function') {
+    try { await figma.flushAsync(); } catch (flushError) {}
+  }
   await waitForNextFrame();
   await waitForNextFrame();
 
-  var frameAbsY = frame.absoluteTransform[1][2];
-  var targetAbsY = target.absoluteTransform[1][2];
-  var relTop = targetAbsY - frameAbsY;
-  var bottom = 0;
-
-  if ('children' in target && target.children) {
-    for (var i = 0; i < target.children.length; i++) {
-      var child = target.children[i];
-      if (!child || child.visible === false) continue;
-      if ('y' in child && 'height' in child) {
-        var childBottom = child.y + child.height;
-        if (childBottom > bottom) bottom = childBottom;
+  function absBottom(node) {
+    if (!node) return 0;
+    var render = node.absoluteRenderBounds;
+    if (render) return render.y + render.height;
+    var maxBottom = 0;
+    if ('children' in node && node.children) {
+      for (var i = 0; i < node.children.length; i++) {
+        var child = node.children[i];
+        if (!child || child.visible === false) continue;
+        var childBottom = absBottom(child);
+        if (childBottom > maxBottom) maxBottom = childBottom;
       }
     }
+    var bbox = node.absoluteBoundingBox;
+    if (bbox) {
+      var fallback = bbox.y + bbox.height;
+      if (fallback > maxBottom) maxBottom = fallback;
+    }
+    return maxBottom;
   }
 
-  var newHeight = Math.ceil(relTop + bottom + (typeof padding === 'number' ? padding : DEFAULT_RESIZE_PADDING));
+  var frameTop = (frame.absoluteRenderBounds && frame.absoluteRenderBounds.y) || frame.absoluteTransform[1][2];
+  var contentBottom = absBottom(target);
+  if (!contentBottom) return { success: false, message: 'unable to measure content bottom' };
+
+  var desiredHeight = Math.round((contentBottom - frameTop) + (typeof padding === 'number' ? padding : DEFAULT_RESIZE_PADDING));
   var previousLayout = frame.layoutMode;
   try {
     if (previousLayout && previousLayout !== 'NONE') {
@@ -173,9 +186,9 @@ async function hugFrameToContent(frame, container, padding) {
 
   try {
     if (typeof frame.resizeWithoutConstraints === 'function') {
-      frame.resizeWithoutConstraints(frame.width, newHeight);
+      frame.resizeWithoutConstraints(frame.width, desiredHeight);
     } else {
-      frame.resize(frame.width, newHeight);
+      frame.resize(frame.width, desiredHeight);
     }
   } catch (resizeError) {
     return { success: false, message: resizeError && resizeError.message ? resizeError.message : String(resizeError) };
@@ -187,7 +200,7 @@ async function hugFrameToContent(frame, container, padding) {
     }
   } catch (restoreError) {}
 
-  return { success: true, height: newHeight };
+  return { success: true, height: desiredHeight };
 }
 
 // Handle commands from UI

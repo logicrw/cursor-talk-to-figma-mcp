@@ -985,14 +985,19 @@ class WeeklyPosterRunner {
     if (!posterId) return;
 
     const anchorsCfg = this.mapping.anchors || {};
-    const candidateNames = [];
-    if (typeof anchorsCfg.poster_content_anchor === 'string') candidateNames.push(anchorsCfg.poster_content_anchor);
-    if (typeof anchorsCfg.content_anchor === 'string') candidateNames.push(anchorsCfg.content_anchor);
-    candidateNames.push('ContentAndPlate', 'ContentContainer', 'Odaily固定板');
+    const names = [
+      anchorsCfg.poster_content_anchor,
+      anchorsCfg.content_anchor,
+      'ContentAndPlate',
+      'ContentContainer',
+      'Odaily固定板',
+      'EXIO固定板',
+      '干货铺固定板'
+    ].filter(Boolean);
 
     let anchorId = null;
-    for (let i = 0; i < candidateNames.length; i++) {
-      const name = String(candidateNames[i] || '').trim();
+    for (let i = 0; i < names.length; i++) {
+      const name = String(names[i] || '').trim();
       if (!name) continue;
       try {
         anchorId = await this.dfsFindChildIdByName(posterId, name);
@@ -1003,24 +1008,13 @@ class WeeklyPosterRunner {
       if (anchorId) break;
     }
 
-    const toFinite = (value, fallback) => {
-      const num = typeof value === 'number' ? value : Number(value);
-      return Number.isFinite(num) ? num : fallback;
-    };
-
-    const payload = {
-      posterId,
-      bottomPadding: toFinite(anchorsCfg.poster_bottom_padding, 200),
-    };
-    if (this.cardsContainerId) payload.containerId = this.cardsContainerId;
-    const minHeightVal = toFinite(anchorsCfg.poster_min_height, null);
-    const maxHeightVal = toFinite(anchorsCfg.poster_max_height, null);
-    if (anchorId) payload.anchorId = anchorId;
-    if (minHeightVal !== null) payload.minHeight = minHeightVal;
-    if (maxHeightVal !== null) payload.maxHeight = maxHeightVal;
-
     try {
-      const res = await this.sendCommand('resize_poster_to_fit', payload);
+      const res = await this.sendCommand('resize_poster_to_fit', {
+        posterId,
+        anchorId: anchorId || undefined,
+        bottomPadding: 200,
+        minHeight: 0
+      });
       if (res && res.success) {
         console.log(`✅ Poster resized: height=${res.height}`);
       } else {
