@@ -7,6 +7,8 @@ const state = {
   channel: null,
 };
 
+const DEFAULT_RESIZE_PADDING = 200;
+
 
 // Helper function for progress updates
 function sendProgressUpdate(
@@ -105,6 +107,87 @@ function updateSettings(settings) {
     serverPort: state.serverPort,
     channel: state.channel,
   });
+}
+
+function sanitizeFileName(name) {
+  return String(name || '')
+    .replace(/[\0]/g, '')
+    .replace(/\.\.+/g, '_')
+    .replace(/[\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, '_');
+}
+
+function waitForNextFrame() {
+  return new Promise(function (resolve) {
+    requestAnimationFrame(function () {
+      resolve();
+    });
+  });
+}
+
+function findContentContainer(frame) {
+  if (!frame || !('findOne' in frame)) return null;
+  var candidates = ['内容容器', 'content', 'cards', '卡片容器', '容器'];
+  var lowered = candidates.map(function (n) { return String(n || '').trim().toLowerCase(); });
+  var found = frame.findOne(function (node) {
+    if (!node || !node.name) return false;
+    if (node.visible === false) return false;
+    if (!('children' in node)) return false;
+    var nm = String(node.name || '').trim().toLowerCase();
+    return lowered.indexOf(nm) !== -1;
+  });
+  return found || null;
+}
+
+async function hugFrameToContent(frame, container, padding) {
+  if (!frame) return { success: false, message: 'frame missing' };
+  var target = container || findContentContainer(frame);
+  if (!target) return { success: false, message: 'content container missing' };
+
+  await waitForNextFrame();
+  await waitForNextFrame();
+
+  var frameAbsY = frame.absoluteTransform[1][2];
+  var targetAbsY = target.absoluteTransform[1][2];
+  var relTop = targetAbsY - frameAbsY;
+  var bottom = 0;
+
+  if ('children' in target && target.children) {
+    for (var i = 0; i < target.children.length; i++) {
+      var child = target.children[i];
+      if (!child || child.visible === false) continue;
+      if ('y' in child && 'height' in child) {
+        var childBottom = child.y + child.height;
+        if (childBottom > bottom) bottom = childBottom;
+      }
+    }
+  }
+
+  var newHeight = Math.ceil(relTop + bottom + (typeof padding === 'number' ? padding : DEFAULT_RESIZE_PADDING));
+  var previousLayout = frame.layoutMode;
+  try {
+    if (previousLayout && previousLayout !== 'NONE') {
+      frame.layoutMode = 'NONE';
+    }
+  } catch (layoutError) {}
+
+  try {
+    if (typeof frame.resizeWithoutConstraints === 'function') {
+      frame.resizeWithoutConstraints(frame.width, newHeight);
+    } else {
+      frame.resize(frame.width, newHeight);
+    }
+  } catch (resizeError) {
+    return { success: false, message: resizeError && resizeError.message ? resizeError.message : String(resizeError) };
+  }
+
+  try {
+    if (previousLayout && previousLayout !== 'NONE') {
+      frame.layoutMode = previousLayout;
+    }
+  } catch (restoreError) {}
+
+  return { success: true, height: newHeight };
 }
 
 // Handle commands from UI
@@ -257,6 +340,8 @@ async function handleCommand(command, params) {
       return await setPosterTitleAndDate(params);
     case "flush_layout":
       return await flushLayout();
+    case "hug_frame_to_content":
+      return await hugFrameToContentCommand(params);
     case "export_frame_to_server":
       return await exportFrameToServer(params);
     case "export_frame":
@@ -4886,73 +4971,48 @@ async function appendCardToContainer(params) {
 
 async function resizePosterToFit(params) {
   var posterId = params && params.posterId;
-  var anchorId = params && params.anchorId;
-  var bottomPadding = (params && typeof params.bottomPadding === 'number') ? params.bottomPadding : 0;
-  var minHeight = (params && typeof params.minHeight === 'number') ? params.minHeight : 0;
-  var maxHeight = (params && typeof params.maxHeight === 'number') ? params.maxHeight : 1000000;
+  var containerId = params && params.anchorId;
+  var bottomPadding = (params && typeof params.bottomPadding === 'number') ? params.bottomPadding : DEFAULT_RESIZE_PADDING;
+  if (!posterId) throw new Error('Missing posterId');
 
-  if (!posterId) throw new Error("Missing posterId");
-  // 只在 posterId 子树内搜索，避免误命中其他海报
   var poster = await figma.getNodeByIdAsync(posterId);
   if (!poster || poster.type !== 'FRAME') {
-    return { success: false, message: "poster not a FRAME" };
+    return { success: false, message: 'poster not a FRAME' };
   }
 
-  var posterAbsY = poster.absoluteTransform[1][2];
-  var candidates = [];
-
-  if (anchorId) {
-    var anchor = await figma.getNodeByIdAsync(anchorId);
-    if (anchor && anchor.visible !== false) {
-      candidates.push(anchor);
+  var container = null;
+  if (containerId) {
+    var explicit = await figma.getNodeByIdAsync(containerId);
+    if (explicit && 'children' in explicit) {
+      container = explicit;
     }
   }
+  if (!container) {
+    container = findContentContainer(poster);
+  }
 
-  if (candidates.length === 0 && 'children' in poster) {
-    var names = ["ContentAndPlate", "ContentContainer", "Odaily固定板"];
-    for (var i = 0; i < poster.children.length; i++) {
-      var ch = poster.children[i];
-      if (ch && ch.visible !== false) {
-        var nm = String(ch.name || "");
-        for (var j = 0; j < names.length; j++) {
-          if (nm === names[j]) {
-            candidates.push(ch);
-            break;
-          }
-        }
-      }
+  return await hugFrameToContent(poster, container, bottomPadding);
+}
+
+async function hugFrameToContentCommand(params) {
+  var posterId = params && params.posterId;
+  var containerId = params && params.containerId;
+  var padding = params && typeof params.padding === 'number' ? params.padding : DEFAULT_RESIZE_PADDING;
+  if (!posterId) throw new Error('Missing posterId');
+
+  var poster = await figma.getNodeByIdAsync(posterId);
+  if (!poster || poster.type !== 'FRAME') {
+    return { success: false, message: 'poster not a FRAME' };
+  }
+
+  var container = null;
+  if (containerId) {
+    var node = await figma.getNodeByIdAsync(containerId);
+    if (node && 'children' in node) {
+      container = node;
     }
   }
-
-  if (candidates.length === 0) {
-    return { success: false, message: "no anchor found under poster" };
-  }
-
-  var bottom = 0;
-  for (var k = 0; k < candidates.length; k++) {
-    var n = candidates[k];
-    var relTop = n.absoluteTransform[1][2] - posterAbsY;
-    var h = (typeof n.height === 'number') ? n.height : 0;
-    var candidateBottom = relTop + h;
-    if (candidateBottom > bottom) bottom = candidateBottom;
-  }
-
-  var newHeight = Math.round(bottom + bottomPadding);
-  if (newHeight < minHeight) newHeight = minHeight;
-  if (newHeight > maxHeight) newHeight = maxHeight;
-
-  try {
-    if (typeof poster.resizeWithoutConstraints === 'function') {
-      poster.resizeWithoutConstraints(poster.width, newHeight);
-    } else {
-      poster.resize(poster.width, newHeight);
-    }
-  } catch (error) {
-    var message = error && error.message ? error.message : error;
-    return { success: false, message: "resize failed: " + message };
-  }
-
-  return { success: true, height: newHeight };
+  return await hugFrameToContent(poster, container, padding);
 }
 
 async function setPosterTitleAndDate(params) {
