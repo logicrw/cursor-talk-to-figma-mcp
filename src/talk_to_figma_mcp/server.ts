@@ -3067,7 +3067,8 @@ type CommandParams = {
   };
   export_frame_to_server: {
     nodeId: string;
-    serverUrl: string;
+    url: string;
+    file: string;
     format?: string;
     scale?: number;
   };
@@ -3508,13 +3509,14 @@ server.tool(
   "Export a frame via the plugin and stream bytes to static server",
   {
     nodeId: z.string().describe("Frame id to export"),
-    serverUrl: z.string().describe("Upload endpoint, e.g., http://localhost:3056/upload?file=Poster.png"),
+    url: z.string().describe("Upload endpoint, e.g., http://localhost:3056/upload"),
+    file: z.string().describe("Target file name under out/ directory"),
     format: z.string().optional().describe("PNG|JPG|PDF|SVG (default PNG)"),
     scale: z.number().optional().describe("Export scale for bitmap formats (default 2)")
   },
-  async ({ nodeId, serverUrl, format, scale }: any) => {
-    const result = await sendCommandToFigma("export_frame_to_server", { nodeId, serverUrl, format, scale });
-    return result as any;
+  async ({ nodeId, url, file, format, scale }: any) => {
+    const result = await sendCommandToFigma("export_frame_to_server", { nodeId, url, file, format, scale });
+    return { content: [{ type: "text", text: JSON.stringify(result) }] };
   }
 );
 
@@ -3528,7 +3530,7 @@ server.tool(
   },
   async ({ nodeId, format, scale }: any) => {
     const result = await sendCommandToFigma("export_frame", { nodeId, format, scale });
-    return result as any;
+    return { content: [{ type: "text", text: JSON.stringify(result) }] };
   }
 );
 

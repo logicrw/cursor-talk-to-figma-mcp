@@ -58,12 +58,11 @@ async function handleUpload(req, res, urlObj) {
       req.on('error', reject);
       writeStream.on('error', reject);
     });
-    const relPath = path.join('out', safeName);
     res.writeHead(200, {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*'
     });
-    res.end(JSON.stringify({ ok: true, path: relPath, size: total }));
+    res.end(JSON.stringify({ ok: true, path: outPath, relativePath: path.join('out', safeName), size: total }));
   } catch (error) {
     const message = error && error.message ? error.message : String(error);
     res.writeHead(500, {

@@ -255,12 +255,12 @@ async function handleCommand(command, params) {
       return await resizePosterToFit(params);
     case "set_poster_title_and_date":
       return await setPosterTitleAndDate(params);
+    case "flush_layout":
+      return await flushLayout();
     case "export_frame_to_server":
       return await exportFrameToServer(params);
     case "export_frame":
       return await exportFrame(params);
-    case "flush_layout":
-      return await flushLayout();
     default:
       throw new Error(`Unknown command: ${command}`);
   }
@@ -5128,8 +5128,7 @@ async function flushLayout() {
     return { success: true };
   } catch (error) {
     const message = error && error.message ? error.message : 'flushLayout failed';
-    console.warn('[flush_layout] error: ' + message);
-    return { success: false, message };
+    return { success: false, message: message };
   }
 }
 
@@ -5171,17 +5170,18 @@ async function exportFrame(params) {
 }
 async function exportFrameToServer(params) {
   var nodeId = params && params.nodeId;
-  var serverUrl = params && params.serverUrl;
+  var url = params && params.url;
+  var file = params && params.file ? String(params.file) : "poster.png";
   var format = params && params.format ? String(params.format).toUpperCase() : "PNG";
   var scale = params && typeof params.scale === "number" ? params.scale : 2;
   if (!nodeId) throw new Error("Missing nodeId");
-  if (!serverUrl) throw new Error("Missing serverUrl");
+  if (!url) throw new Error("Missing url");
   if (["PNG", "JPG", "SVG", "PDF"].indexOf(format) === -1) format = "PNG";
 
   var node = await figma.getNodeByIdAsync(nodeId);
   if (!node) return { success: false, message: "node not found" };
 
-  try { if (typeof figma.flushAsync === 'function') await figma.flushAsync(); } catch (error) {}
+  try { if (typeof figma.flushAsync === 'function') { await figma.flushAsync(); } } catch (error) {}
 
   var options = { format: format };
   if (format === "PNG" || format === "JPG" || format === "SVG") {
@@ -5205,43 +5205,41 @@ async function exportFrameToServer(params) {
     body = bytes;
   }
 
+  var targetUrl = url + "?file=" + encodeURIComponent(file);
   var resp;
   try {
-    resp = await fetch(serverUrl, {
+    resp = await fetch(targetUrl, {
       method: "POST",
       headers: { "Content-Type": "application/octet-stream" },
       body: body
     });
   } catch (error) {
     var fetchMsg = error && error.message ? error.message : error;
-    return { success: false, message: "upload fetch error: " + fetchMsg };
+    return { success: false, message: "upload failed: " + fetchMsg };
   }
 
-  if (!resp || !resp.ok) {
-    return { success: false, message: "upload failed: http " + (resp ? resp.status : "no response") };
-  }
-
-  var data = null;
+  var text = "";
   try {
-    data = await resp.json();
+    text = await resp.text();
   } catch (error) {
-    data = null;
+    text = "";
   }
 
-  try { if (typeof figma.flushAsync === 'function') await figma.flushAsync(); } catch (error) {}
-
-  var success = false;
-  if (data && typeof data === "object") {
-    success = !!(data.ok || data.success);
+  var parsed = null;
+  if (text && text.length > 0) {
+    try { parsed = JSON.parse(text); }
+    catch (error) { parsed = { ok: false, raw: text }; }
   }
+
+  try { if (typeof figma.flushAsync === 'function') { await figma.flushAsync(); } } catch (error) {}
 
   return {
-    success: success,
-    path: data && data.path ? data.path : null,
-    size: data && data.size ? data.size : null,
+    success: resp && resp.ok ? true : false,
+    status: resp ? resp.status : null,
+    uploaded: parsed,
+    file: file,
     format: format,
-    scale: scale,
-    response: data || null
+    scale: scale
   };
 }
 // Prepare card root: detach all instance ancestors and return new root id

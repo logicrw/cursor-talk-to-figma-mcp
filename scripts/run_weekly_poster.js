@@ -303,6 +303,35 @@ class WeeklyPosterRunner {
     return null;
   }
 
+  parseToolJson(raw) {
+    if (!raw) return null;
+    if (typeof raw === 'object' && !Array.isArray(raw)) {
+      if (raw.success !== undefined || raw.uploaded || raw.path || raw.response) {
+        return raw;
+      }
+    }
+    if (raw && typeof raw === 'object' && Array.isArray(raw.content)) {
+      for (let i = 0; i < raw.content.length; i++) {
+        const entry = raw.content[i];
+        if (entry && typeof entry.text === 'string') {
+          try {
+            const parsed = JSON.parse(entry.text);
+            if (parsed && typeof parsed === 'object') return parsed;
+          } catch (error) {
+            console.warn('⚠️ parseToolJson text parse failed:', error.message || error);
+          }
+        }
+      }
+    }
+    if (typeof raw === 'string') {
+      try { return JSON.parse(raw); }
+      catch (error) {
+        console.warn('⚠️ parseToolJson string parse failed:', error.message || error);
+      }
+    }
+    return null;
+  }
+
   // Robust name normalization: remove spaces/zero-width chars and normalize width
   normalizeName(s) {
     return String(s || '')
@@ -376,23 +405,23 @@ class WeeklyPosterRunner {
     const dateStr = this.sanitizeFileName(meta && meta.date ? meta.date : 'unknown');
     const safeName = this.sanitizeFileName(posterName || this.currentPosterName || 'poster');
     const fileName = `${safeName}_${dateStr}.png`;
-    const uploadBase = this.staticUrl.replace(/\/assets\/?$/, '');
-    const uploadUrl = `${uploadBase}/upload?file=${encodeURIComponent(fileName)}`;
+    const uploadUrl = this.staticUrl.replace(/\/assets\/?$/, '/upload');
     try { await this.sendCommand('flush_layout', {}); } catch (error) {
       console.warn('⚠️ flush_layout before export failed:', error && error.message ? error.message : error);
     }
-    const res = await this.sendCommand('export_frame_to_server', {
+    const raw = await this.sendCommand('export_frame_to_server', {
       nodeId: this.posterFrameId,
-      serverUrl: uploadUrl,
+      url: uploadUrl,
+      file: fileName,
       format: 'PNG',
       scale: this.exportScale
     });
-    const success = !!(res && (res.success || res.ok || (res.response && res.response.ok)));
-    if (!success) {
-      console.warn('⚠️ export_frame_to_server returned:', res);
+    const payload = this.parseToolJson(raw);
+    if (!payload || payload.success === false || !(payload.uploaded && payload.uploaded.ok)) {
+      console.warn('⚠️ export_frame_to_server returned:', payload || raw);
       return null;
     }
-    const exportedPath = res.path || (res.response && res.response.path) || fileName;
+    const exportedPath = (payload.uploaded && (payload.uploaded.path || payload.uploaded.relativePath)) || path.join('out', fileName);
     console.log(`📦 Exported poster: ${exportedPath}`);
     try { await this.sendCommand('flush_layout', {}); } catch (error) {
       console.warn('⚠️ flush_layout after export failed:', error && error.message ? error.message : error);
@@ -469,7 +498,7 @@ class WeeklyPosterRunner {
       };
     }
 
-    await this.resizePosterHeightToContent();
+    await this.resizePosterHeightToContent(posterId);
     await this.updatePosterMetaFromDoc(posterId);
     const exportPath = await this.exportPosterFrame(posterName);
 
@@ -859,7 +888,7 @@ class WeeklyPosterRunner {
 
   async fillHeader(frameId) {
     try {
-      const targetFrameId = frameId || this.posterFrameId;
+      const targetFrameId = frameId;
       if (!targetFrameId) return;
       const frameInfo = await this.sendCommand('get_node_info', { nodeId: targetFrameId });
       const header = this.mapping.anchors.header || {};
@@ -884,8 +913,7 @@ class WeeklyPosterRunner {
     return '';
   }
 
-  async resizePosterHeightToContent() {
-    const posterId = this.posterFrameId;
+  async resizePosterHeightToContent(posterId) {
     if (!posterId) return;
 
     const anchorsCfg = this.mapping.anchors || {};
@@ -935,7 +963,7 @@ class WeeklyPosterRunner {
   }
 
   async updatePosterMetaFromDoc(targetPosterId) {
-    const posterId = targetPosterId || this.posterFrameId;
+    const posterId = targetPosterId;
     const meta = this.content && this.content.doc;
     if (!posterId || !meta) return;
 
