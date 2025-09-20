@@ -2875,6 +2875,7 @@ type FigmaCommand =
   | "resize_poster_to_fit"
   | "export_frame_to_server"
   | "export_frame"
+  | "clear_card_content"
   | "set_poster_title_and_date";
 
 type CommandParams = {
@@ -3073,6 +3074,13 @@ type CommandParams = {
     file: string;
     format?: string;
     scale?: number;
+  };
+  clear_card_content: {
+    cardId: string;
+    mode?: 'safe' | 'aggressive';
+    targetNames?: string[];
+    removeNamePrefixes?: string[];
+    preserveNames?: string[];
   };
   set_poster_title_and_date: {
     posterId: string;
@@ -3535,6 +3543,22 @@ server.tool(
   async ({ nodeId, format, scale, url, file }: any) => {
     const result = await sendCommandToFigma("export_frame", { nodeId, format, scale, url, file });
     return result as any;
+  }
+);
+
+server.tool(
+  "clear_card_content",
+  "Clear dynamic content (texts/images/list clones) inside a card frame",
+  {
+    cardId: z.string().describe("Card root frame id"),
+    mode: z.enum(['safe', 'aggressive']).optional(),
+    targetNames: z.array(z.string()).optional(),
+    removeNamePrefixes: z.array(z.string()).optional(),
+    preserveNames: z.array(z.string()).optional()
+  },
+  async ({ cardId, mode, targetNames, removeNamePrefixes, preserveNames }: any) => {
+    const result = await sendCommandToFigma("clear_card_content", { cardId, mode, targetNames, removeNamePrefixes, preserveNames });
+    return { content: [{ type: "text", text: JSON.stringify(result) }] };
   }
 );
 

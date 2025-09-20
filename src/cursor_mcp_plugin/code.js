@@ -127,7 +127,7 @@ function waitForNextFrame() {
 
 function findContentContainer(frame) {
   if (!frame || !('findOne' in frame)) return null;
-  var candidates = ['内容容器', 'content', 'cards', '卡片容器', '容器'];
+  var candidates = ['内容容器', 'content', 'cards', '卡片容器', '容器', 'ContentAndPlate', 'ContentContainer', 'Odaily固定板', 'EXIO固定板', '干货铺固定板'];
   var lowered = candidates.map(function (n) { return String(n || '').trim().toLowerCase(); });
   var found = frame.findOne(function (node) {
     if (!node || !node.name) return false;
@@ -342,6 +342,8 @@ async function handleCommand(command, params) {
       return await flushLayout();
     case "hug_frame_to_content":
       return await hugFrameToContentCommand(params);
+    case "clear_card_content":
+      return await clearCardContent(params);
     case "export_frame_to_server":
       return await exportFrameToServer(params);
     case "export_frame":
@@ -5013,6 +5015,141 @@ async function hugFrameToContentCommand(params) {
     }
   }
   return await hugFrameToContent(poster, container, padding);
+}
+
+async function clearCardContent(params) {
+  var cardId = params && params.cardId;
+  var mode = (params && params.mode) || 'safe';
+  var targetNames = (params && params.targetNames) || ['ContentContainer', '正文容器', '图文容器'];
+  var removePrefixes = (params && params.removeNamePrefixes) || ['Item', 'Bullet', 'Chip', 'Tag', 'Dyn', 'Tmp', '临时'];
+  var preserveNames = (params && params.preserveNames) || ['ContentAndPlate', 'Odaily固定板', 'EXIO固定板', '干货铺固定板', 'Logo', '水印', '背景', '光效'];
+
+  if (!cardId) throw new Error('Missing cardId');
+  var card = await figma.getNodeByIdAsync(cardId);
+  if (!card) {
+    return { success: false, message: 'card not found' };
+  }
+
+  var counters = { removed: 0, textsCleared: 0, imageFillsCleared: 0, detached: 0 };
+
+  function visible(node) { return !!(node && node.visible !== false); }
+  function nameOf(node) { return String(node && node.name || ''); }
+
+  function isPreserved(node) {
+    var nm = nameOf(node);
+    for (var i = 0; i < preserveNames.length; i++) {
+      if (nm === preserveNames[i]) return true;
+    }
+    return false;
+  }
+
+  function tryClearImageFills(node) {
+    if (!node || !('fills' in node)) return;
+    try {
+      var fills = node.fills;
+      if (!fills || !fills.length) return;
+      var changed = false;
+      var next = [];
+      for (var i = 0; i < fills.length; i++) {
+        var f = fills[i];
+        if (f && f.type === 'IMAGE') {
+          changed = true;
+        } else {
+          next.push(f);
+        }
+      }
+      if (changed) {
+        node.fills = next;
+        counters.imageFillsCleared++;
+      }
+    } catch (error) {
+      if (mode === 'aggressive' && node && typeof node.remove === 'function') {
+        try { node.remove(); counters.removed++; return; } catch (_err) {}
+      }
+    }
+  }
+
+  async function tryClearText(node) {
+    if (!node || node.type !== 'TEXT') return;
+    try {
+      var fontName = null;
+      try { fontName = node.getRangeFontName(0, Math.min(1, node.characters.length)); } catch (fontErr) {}
+      if (fontName && fontName !== figma.mixed) {
+        try { await figma.loadFontAsync(fontName); } catch (_loadErr) {}
+      }
+      node.characters = '';
+      counters.textsCleared++;
+    } catch (error) {
+      if (mode === 'aggressive' && typeof node.remove === 'function') {
+        try { node.remove(); counters.removed++; } catch (_err) {}
+      }
+    }
+  }
+
+  function removeDynamicChildren(container) {
+    if (!container || !('children' in container)) return;
+    var toRemove = [];
+    for (var i = 0; i < container.children.length; i++) {
+      var child = container.children[i];
+      var nm = nameOf(child);
+      for (var j = 0; j < removePrefixes.length; j++) {
+        var pref = removePrefixes[j];
+        if (nm === pref || nm.indexOf(pref + '-') === 0) {
+          toRemove.push(child);
+          break;
+        }
+      }
+    }
+    for (var k = 0; k < toRemove.length; k++) {
+      try { toRemove[k].remove(); counters.removed++; } catch (_err) {}
+    }
+  }
+
+  function isTargetContainer(node) {
+    var nm = nameOf(node);
+    for (var i = 0; i < targetNames.length; i++) {
+      if (nm === targetNames[i]) return true;
+    }
+    return false;
+  }
+
+  async function walk(node) {
+    if (!node || !visible(node) || isPreserved(node)) return;
+    if (mode === 'aggressive' && node.type === 'INSTANCE') {
+      try { node = node.detachInstance(); counters.detached++; } catch (_err) {}
+    }
+    await tryClearText(node);
+    tryClearImageFills(node);
+    if ('children' in node) {
+      for (var i = 0; i < node.children.length; i++) {
+        await walk(node.children[i]);
+      }
+    }
+  }
+
+  async function traverse(node) {
+    if (!node || !visible(node)) return;
+    if (isPreserved(node)) return;
+    if (isTargetContainer(node)) {
+      removeDynamicChildren(node);
+      await walk(node);
+      return;
+    }
+    if ('children' in node) {
+      for (var i = 0; i < node.children.length; i++) {
+        await traverse(node.children[i]);
+      }
+    }
+  }
+
+  await traverse(card);
+  return {
+    success: true,
+    removed: counters.removed,
+    textsCleared: counters.textsCleared,
+    imageFillsCleared: counters.imageFillsCleared,
+    detached: counters.detached
+  };
 }
 
 async function setPosterTitleAndDate(params) {
