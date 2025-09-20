@@ -5045,6 +5045,8 @@ async function exportFrame(params) {
   var nodeId = params && params.nodeId;
   var format = params && params.format ? String(params.format).toUpperCase() : "PNG";
   var scale = params && typeof params.scale === "number" ? params.scale : 2;
+  var uploadUrl = params && (params.url || params.uploadUrl);
+  var fileParam = params && (params.file || params.fileName);
   if (!nodeId) throw new Error("Missing nodeId");
   if (["PNG", "JPG", "SVG", "PDF"].indexOf(format) === -1) {
     format = "PNG";
@@ -5052,8 +5054,10 @@ async function exportFrame(params) {
 
   var node = await figma.getNodeByIdAsync(nodeId);
   if (!node) {
-    return { success: false, message: "node not found" };
+    return { ok: false, error: "node not found" };
   }
+
+  try { if (typeof figma.flushAsync === 'function') await figma.flushAsync(); } catch (error) {}
 
   var options = { format: format };
   if (format === "PNG" || format === "JPG" || format === "SVG") {
@@ -5066,7 +5070,65 @@ async function exportFrame(params) {
     bytes = await node.exportAsync(options);
   } catch (error) {
     var msg = error && error.message ? error.message : error;
-    return { success: false, message: "export failed: " + msg };
+    return { ok: false, error: "exportAsync failed: " + msg };
+  }
+
+  if (uploadUrl) {
+    var target = uploadUrl;
+    try {
+      var urlObj = null;
+      try { urlObj = new URL(uploadUrl); } catch (parseErr) { urlObj = null; }
+      if (urlObj) {
+        if (fileParam) {
+          if (urlObj.searchParams.has('file')) {
+            urlObj.searchParams.set('file', fileParam);
+          } else if (urlObj.searchParams.has('name')) {
+            urlObj.searchParams.set('name', fileParam);
+          } else {
+            urlObj.searchParams.set('file', fileParam);
+          }
+        }
+        target = urlObj.toString();
+      } else if (fileParam) {
+        target = uploadUrl + (uploadUrl.indexOf('?') === -1 ? '?' : '&') + 'file=' + encodeURIComponent(fileParam);
+      }
+    } catch (urlError) {}
+
+    var resp;
+    try {
+      resp = await fetch(target, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: bytes
+      });
+    } catch (error) {
+      var uploadMsg = error && error.message ? error.message : error;
+      return { ok: false, error: "upload failed: " + uploadMsg };
+    }
+
+    var text = "";
+    try { text = await resp.text(); } catch (readErr) { text = ""; }
+
+    var payload = null;
+    if (text && text.length > 0) {
+      try { payload = JSON.parse(text); } catch (jsonErr) { payload = { raw: text }; }
+    }
+
+    try { if (typeof figma.flushAsync === 'function') await figma.flushAsync(); } catch (error) {}
+
+    var remotePath = null;
+    if (payload) {
+      remotePath = payload.path || payload.relativePath || null;
+    }
+
+    return {
+      ok: resp && resp.ok ? true : false,
+      status: resp ? resp.status : null,
+      path: remotePath,
+      relativePath: payload && payload.relativePath ? payload.relativePath : null,
+      size: payload && typeof payload.size === 'number' ? payload.size : bytes.length,
+      response: payload
+    };
   }
 
   var binary = "";
@@ -5075,7 +5137,9 @@ async function exportFrame(params) {
   }
   var base64 = btoa(binary);
 
-  return { success: true, base64: base64, format: format, scale: scale };
+  try { if (typeof figma.flushAsync === 'function') await figma.flushAsync(); } catch (error) {}
+
+  return { ok: true, base64: base64, format: format, scale: scale };
 }
 async function exportFrameToServer(params) {
   var nodeId = params && params.nodeId;

@@ -49,11 +49,12 @@ class WeeklyPosterRunner {
     this.currentPosterName = null;
   }
 
-  async savePosterImage(filePath, base64) {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    const buf = Buffer.from(base64, 'base64');
-    await fs.writeFile(filePath, buf);
-    return filePath;
+  buildUploadUrl() {
+    const base = String(this.staticUrl || '').trim();
+    if (!base) return 'http://localhost:3056/upload';
+    if (/\/upload\/?$/.test(base)) return base;
+    if (/\/assets\/?$/.test(base)) return base.replace(/\/assets\/?$/, '/upload');
+    return base.endsWith('/') ? base + 'upload' : base + '/upload';
   }
 
   async loadConfig() {
@@ -382,34 +383,51 @@ class WeeklyPosterRunner {
     if (!frameId) return null;
     try {
       try { await this.sendCommand('flush_layout', {}); } catch {}
-      await this.sleep(200);
-      const res = await this.sendCommand('export_frame', {
-        nodeId: frameId,
-        format: 'PNG',
-        scale: this.exportScale
-      });
-      let base64 = res && res.base64 ? res.base64 : null;
-      if (!base64 && res && res.content && Array.isArray(res.content) && res.content[0] && res.content[0].text) {
-        try {
-          const parsed = JSON.parse(res.content[0].text);
-          base64 = parsed && parsed.base64 ? parsed.base64 : null;
-        } catch (parseError) {
-          console.warn('⚠️ export_frame fallback parse failed:', parseError && parseError.message ? parseError.message : parseError);
-        }
-      }
-      if (!base64) {
-        console.warn('⚠️ export_frame missing base64 payload:', res);
-        return null;
-      }
+      await this.sleep(160);
+
       const meta = this.content && this.content.doc;
       const dateStr = this.sanitizeFileName(meta && meta.date ? meta.date : 'unknown');
       const safeName = this.sanitizeFileName(posterName || this.currentPosterName || 'poster');
-      const outPath = path.join(this.exportDir, `${safeName}_${dateStr}.png`);
-      await this.savePosterImage(outPath, base64);
-      console.log(`📦 Exported poster: ${outPath}`);
+      const fileName = `${safeName}_${dateStr}.png`;
+      const uploadUrl = this.buildUploadUrl();
+
+      const res = await this.sendCommand('export_frame', {
+        nodeId: frameId,
+        format: 'PNG',
+        scale: this.exportScale,
+        url: uploadUrl,
+        file: fileName
+      });
+
+      const payload = res || {};
+      if (!payload || payload.ok === false) {
+        console.warn('⚠️ export_frame reported failure:', payload);
+        return null;
+      }
+
+      const remotePath = payload.path || payload.relativePath || (payload.response && (payload.response.path || payload.response.relativePath));
+      if (!remotePath) {
+        console.warn('⚠️ export_frame missing path information:', payload);
+        return null;
+      }
+
+      const absolutePath = path.isAbsolute(remotePath)
+        ? remotePath
+        : path.resolve(process.cwd(), remotePath);
+
+      try {
+        const stats = await fs.stat(absolutePath);
+        if (!stats || !stats.isFile()) {
+          console.warn('⚠️ export_frame found path but not a file:', absolutePath);
+        }
+      } catch (statError) {
+        console.warn('⚠️ export_frame stat failed:', absolutePath, statError && statError.message ? statError.message : statError);
+      }
+
+      console.log(`📦 Exported poster: ${absolutePath}`);
       try { await this.sendCommand('flush_layout', {}); } catch {}
-      await this.sleep(200);
-      return outPath;
+      await this.sleep(160);
+      return absolutePath;
     } catch (error) {
       console.warn('⚠️ export_frame failed:', error && error.message ? error.message : error);
       return null;

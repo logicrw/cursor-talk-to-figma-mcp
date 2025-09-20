@@ -3064,6 +3064,8 @@ type CommandParams = {
     nodeId: string;
     format?: string;
     scale?: number;
+    url?: string;
+    file?: string;
   };
   export_frame_to_server: {
     nodeId: string;
@@ -3527,9 +3529,11 @@ server.tool(
     nodeId: z.string().describe("Frame id to export"),
     format: z.string().optional().describe("PNG|JPG|PDF|SVG (default PNG)"),
     scale: z.number().optional().describe("Export scale for bitmap formats (default 2)"),
+    url: z.string().optional().describe("Optional upload endpoint, e.g., http://localhost:3056/upload"),
+    file: z.string().optional().describe("Optional file name to use on upload"),
   },
-  async ({ nodeId, format, scale }: any) => {
-    const result = await sendCommandToFigma("export_frame", { nodeId, format, scale });
+  async ({ nodeId, format, scale, url, file }: any) => {
+    const result = await sendCommandToFigma("export_frame", { nodeId, format, scale, url, file });
     return result as any;
   }
 );

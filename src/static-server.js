@@ -34,13 +34,29 @@ function sanitizeFileName(name) {
   return String(name || '').replace(/[\/:*?"<>|]+/g, '_').replace(/\s+/g, '_');
 }
 
+function sanitizeDirSegment(segment) {
+  return String(segment || '')
+    .replace(/[\0]/g, '')
+    .replace(/\.\.+/g, '_')
+    .replace(/[\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, '_');
+}
+
 async function handleUpload(req, res, urlObj) {
   try {
-    const fileParam = urlObj.searchParams.get('file') || 'poster.png';
+    const fileParam = urlObj.searchParams.get('file') || urlObj.searchParams.get('name') || 'poster.png';
     const safeName = sanitizeFileName(fileParam);
-    const outDir = path.join(process.cwd(), 'out');
-    await fs.promises.mkdir(outDir, { recursive: true });
-    const outPath = path.join(outDir, safeName);
+    const destParam = urlObj.searchParams.get('dest');
+    const destSegments = destParam ? destParam.split(/[\\/]+/).map(sanitizeDirSegment).filter(Boolean) : ['out'];
+    const destDir = path.resolve(process.cwd(), ...destSegments);
+
+    const relToCwd = path.relative(process.cwd(), destDir);
+    if (relToCwd.startsWith('..') || path.isAbsolute(relToCwd)) {
+      throw new Error('dest directory outside workspace');
+    }
+
+    await fs.promises.mkdir(destDir, { recursive: true });
+    const outPath = path.join(destDir, safeName);
     const writeStream = fs.createWriteStream(outPath);
     let total = 0;
     await new Promise((resolve, reject) => {
@@ -62,7 +78,8 @@ async function handleUpload(req, res, urlObj) {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*'
     });
-    res.end(JSON.stringify({ ok: true, path: outPath, relativePath: path.join('out', safeName), size: total }));
+    const relativePath = path.relative(process.cwd(), outPath);
+    res.end(JSON.stringify({ ok: true, path: relativePath, absolutePath: outPath, size: total }));
   } catch (error) {
     const message = error && error.message ? error.message : String(error);
     res.writeHead(500, {
