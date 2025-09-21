@@ -229,49 +229,6 @@ server.tool(
   }
 );
 
-// Set Layout Sizing Tool (additive)
-server.tool(
-  "set_layout_sizing",
-  "Set layout sizing on auto-layout nodes (horizontal/vertical: HUG | FIXED | FILL)",
-  {
-    nodeId: z.string().describe("ID of the node"),
-    layoutSizingHorizontal: z
-      .enum(["FIXED", "HUG", "FILL"]) 
-      .optional()
-      .describe("Horizontal sizing mode"),
-    layoutSizingVertical: z
-      .enum(["FIXED", "HUG", "FILL"]) 
-      .optional()
-      .describe("Vertical sizing mode"),
-  },
-  async ({ nodeId, layoutSizingHorizontal, layoutSizingVertical }: any) => {
-    try {
-      const result = await sendCommandToFigma("set_layout_sizing", {
-        nodeId,
-        layoutSizingHorizontal,
-        layoutSizingVertical,
-      });
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result),
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error setting layout sizing: ${error instanceof Error ? error.message : String(error)}`,
-          },
-        ],
-      };
-    }
-  }
-);
-
 // Selection Tool
 server.tool(
   "get_selection",
@@ -2875,8 +2832,7 @@ type FigmaCommand =
   | "resize_poster_to_fit"
   | "export_frame_to_server"
   | "export_frame"
-  | "clear_card_content"
-  | "set_poster_title_and_date";
+  | "clear_card_content";
 
 type CommandParams = {
   get_document_info: Record<string, never>;
@@ -3082,13 +3038,6 @@ type CommandParams = {
     removeNamePrefixes?: string[];
     preserveNames?: string[];
   };
-  set_poster_title_and_date: {
-    posterId: string;
-    titleText?: string;
-    dateISO?: string;
-    locale?: string;
-  };
-
 };
 
 
@@ -3558,26 +3507,6 @@ server.tool(
   },
   async ({ cardId, mode, targetNames, removeNamePrefixes, preserveNames }: any) => {
     const result = await sendCommandToFigma("clear_card_content", { cardId, mode, targetNames, removeNamePrefixes, preserveNames });
-    return { content: [{ type: "text", text: JSON.stringify(result) }] };
-  }
-);
-
-server.tool(
-  "set_poster_title_and_date",
-  "Set poster title and date nodes under a poster frame",
-  {
-    posterId: z.string().describe("Poster frame id (FRAME)"),
-    titleText: z.string().optional().describe("Text for the node named 'title'"),
-    dateISO: z.string().optional().describe("ISO date string, e.g., 2025-09-15"),
-    locale: z.string().optional().describe("Locale hint, e.g., zh-CN or en-US"),
-  },
-  async ({ posterId, titleText, dateISO, locale }: any) => {
-    const result = await sendCommandToFigma("set_poster_title_and_date", {
-      posterId,
-      titleText,
-      dateISO,
-      locale,
-    });
     return { content: [{ type: "text", text: JSON.stringify(result) }] };
   }
 );

@@ -364,8 +364,6 @@ async function handleCommand(command, params) {
       return await appendCardToContainer(params);
     case "resize_poster_to_fit":
       return await resizePosterToFit(params);
-    case "set_poster_title_and_date":
-      return await setPosterTitleAndDate(params);
     case "flush_layout":
       return await flushLayout();
     case "hug_frame_to_content":
@@ -5278,80 +5276,6 @@ async function clearCardContent(params) {
     imageFillsCleared: counters.imageFillsCleared,
     detached: counters.detached
   };
-}
-
-async function setPosterTitleAndDate(params) {
-  var posterId = params && params.posterId;
-  var titleText = params && params.titleText;
-  var dateISO = params && params.dateISO;
-  var locale = (params && params.locale) || 'en-US';
-  if (!posterId) throw new Error("Missing posterId");
-
-  var poster = await figma.getNodeByIdAsync(posterId);
-  if (!poster || !('children' in poster)) {
-    return { success: false, message: 'poster not found or has no children' };
-  }
-
-  function norm(name) {
-    return String(name || '').replace(/\s+/g, '').toLowerCase();
-  }
-
-  function findByName(root, target) {
-    var targetNorm = norm(target);
-    var stack = [root];
-    while (stack.length) {
-      var node = stack.pop();
-      if (node && node.name && norm(node.name) === targetNorm) return node;
-      if (node && 'children' in node && node.children) {
-        for (var i = node.children.length - 1; i >= 0; i--) {
-          stack.push(node.children[i]);
-        }
-      }
-    }
-    return null;
-  }
-
-  function setText(node, value) {
-    if (!node) return;
-    try {
-      if ('characters' in node) {
-        node.characters = String(value || '');
-      }
-    } catch (error) {}
-  }
-
-  function parseISODate(str) {
-    var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(str || ''));
-    if (!match) return null;
-    var monthIndex = Math.min(12, Math.max(1, parseInt(match[2], 10))) - 1;
-    var day = parseInt(match[3], 10);
-    var months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-    return { month: months[monthIndex] || match[2], day: String(day) };
-  }
-
-  var titleNode = findByName(poster, 'title');
-  if (titleNode) {
-    setText(titleNode, titleText || '');
-  }
-
-  var dateNode = findByName(poster, 'date');
-  if (dateNode) {
-    var parsed = parseISODate(dateISO);
-    if (parsed && 'children' in dateNode && dateNode.children && dateNode.children.length >= 2) {
-      setText(dateNode.children[0], parsed.month);
-      setText(dateNode.children[1], parsed.day);
-    } else {
-      setText(dateNode, dateISO || '');
-    }
-  }
-
-  try {
-    if (typeof figma.flushAsync === 'function') {
-      await figma.flushAsync();
-    }
-  } catch (error) {}
-
-  return { success: true };
 }
 
 async function flushLayout() {
