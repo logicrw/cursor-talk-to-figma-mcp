@@ -2832,7 +2832,8 @@ type FigmaCommand =
   | "resize_poster_to_fit"
   | "export_frame_to_server"
   | "export_frame"
-  | "clear_card_content";
+  | "clear_card_content"
+  | "set_poster_title_and_date";
 
 type CommandParams = {
   get_document_info: Record<string, never>;
@@ -3037,6 +3038,12 @@ type CommandParams = {
     targetNames?: string[];
     removeNamePrefixes?: string[];
     preserveNames?: string[];
+  };
+  set_poster_title_and_date: {
+    posterId: string;
+    titleText?: string;
+    dateISO?: string;
+    locale?: string;
   };
 };
 
@@ -3507,6 +3514,26 @@ server.tool(
   },
   async ({ cardId, mode, targetNames, removeNamePrefixes, preserveNames }: any) => {
     const result = await sendCommandToFigma("clear_card_content", { cardId, mode, targetNames, removeNamePrefixes, preserveNames });
+    return { content: [{ type: "text", text: JSON.stringify(result) }] };
+  }
+);
+
+server.tool(
+  "set_poster_title_and_date",
+  "Set poster title and date text nodes under a poster frame",
+  {
+    posterId: z.string().describe("Poster frame id (FRAME)"),
+    titleText: z.string().optional().describe("Title text to write"),
+    dateISO: z.string().optional().describe("ISO date string, e.g., 2025-09-15"),
+    locale: z.string().optional().describe("Locale hint, e.g., zh-CN or en-US"),
+  },
+  async ({ posterId, titleText, dateISO, locale }: any) => {
+    const result = await sendCommandToFigma("set_poster_title_and_date", {
+      posterId,
+      titleText,
+      dateISO,
+      locale,
+    });
     return { content: [{ type: "text", text: JSON.stringify(result) }] };
   }
 );

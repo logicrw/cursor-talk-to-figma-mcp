@@ -364,6 +364,8 @@ async function handleCommand(command, params) {
       return await appendCardToContainer(params);
     case "resize_poster_to_fit":
       return await resizePosterToFit(params);
+    case "set_poster_title_and_date":
+      return await setPosterTitleAndDate(params);
     case "flush_layout":
       return await flushLayout();
     case "hug_frame_to_content":
@@ -5275,6 +5277,158 @@ async function clearCardContent(params) {
     textsCleared: counters.textsCleared,
     imageFillsCleared: counters.imageFillsCleared,
     detached: counters.detached
+  };
+}
+
+async function setPosterTitleAndDate(params) {
+  var posterId = params && params.posterId;
+  if (!posterId) throw new Error('Missing posterId');
+
+  var titleText = params && typeof params.titleText === 'string' ? params.titleText.trim() : '';
+  var dateISO = params && typeof params.dateISO === 'string' ? params.dateISO.trim() : '';
+  var locale = params && typeof params.locale === 'string' ? params.locale : 'en-US';
+
+  var poster = await figma.getNodeByIdAsync(posterId);
+  if (!poster || !('findOne' in poster)) {
+    return { success: false, message: 'poster not found or not traversable' };
+  }
+
+  function normalizeNameList(list) {
+    return (list || []).map(function (name) {
+      return String(name || '').trim().toLowerCase();
+    }).filter(function (name) { return !!name; });
+  }
+
+  function findNodeByNames(names) {
+    var candidates = normalizeNameList(names);
+    if (!candidates.length) return null;
+    return poster.findOne(function (node) {
+      if (!node || node.visible === false) return false;
+      var nm = String(node.name || '').trim().toLowerCase();
+      return candidates.indexOf(nm) !== -1;
+    });
+  }
+
+  async function writeText(node, value) {
+    if (!node) return false;
+    if (node.type === 'TEXT') {
+      await setTextContent({ nodeId: node.id, text: value || '' });
+      return true;
+    }
+    if ('children' in node && node.children) {
+      var wrote = false;
+      for (var i = 0; i < node.children.length; i++) {
+        var child = node.children[i];
+        if (child && child.type === 'TEXT') {
+          await setTextContent({ nodeId: child.id, text: value || '' });
+          wrote = true;
+        }
+      }
+      return wrote;
+    }
+    return false;
+  }
+
+  function toISODate(raw) {
+    if (!raw) return '';
+    var trimmed = String(raw).trim();
+    if (!trimmed) return '';
+    if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(trimmed)) {
+      var parts = trimmed.split('-');
+      return [parts[0], parts[1].padStart(2, '0'), parts[2].padStart(2, '0')].join('-');
+    }
+    if (/^\d{8}$/.test(trimmed)) {
+      return trimmed.slice(0, 4) + '-' + trimmed.slice(4, 6) + '-' + trimmed.slice(6, 8);
+    }
+    if (/^\d{6}$/.test(trimmed)) {
+      return '20' + trimmed.slice(0, 2) + '-' + trimmed.slice(2, 4) + '-' + trimmed.slice(4, 6);
+    }
+    var digits = trimmed.replace(/[^0-9]/g, '');
+    if (digits.length === 8) {
+      return digits.slice(0, 4) + '-' + digits.slice(4, 6) + '-' + digits.slice(6, 8);
+    }
+    return trimmed;
+  }
+
+  function getMonthDay(rawIso) {
+    if (!rawIso) return null;
+    var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(rawIso);
+    if (!match) return null;
+    var monthIndex = Math.max(1, Math.min(12, parseInt(match[2], 10))) - 1;
+    var dayNum = Math.max(1, Math.min(31, parseInt(match[3], 10)));
+    var monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var monthLabel = monthNames[monthIndex] || match[2];
+    if (locale && locale.toLowerCase().startsWith('zh')) {
+      monthLabel = String(monthIndex + 1).padStart(2, '0');
+    }
+    return {
+      month: monthLabel,
+      day: String(dayNum),
+      iso: match[0]
+    };
+  }
+
+  var isoDate = toISODate(dateISO);
+  var monthDay = getMonthDay(isoDate);
+
+  var titleNode = findNodeByNames(['headertitle', 'title']);
+  var titleWritten = false;
+  if (titleNode) {
+    titleWritten = await writeText(titleNode, titleText);
+  }
+
+  var dateNode = findNodeByNames(['headerdate', 'date']);
+  var dateWritten = false;
+  if (dateNode) {
+    if (monthDay && 'children' in dateNode && dateNode.children) {
+      var textChildren = [];
+      for (var idx = 0; idx < dateNode.children.length; idx++) {
+        var candidate = dateNode.children[idx];
+        if (candidate && candidate.type === 'TEXT') {
+          textChildren.push(candidate);
+        }
+      }
+      if (textChildren.length >= 2) {
+        await setTextContent({ nodeId: textChildren[0].id, text: monthDay.month });
+        await setTextContent({ nodeId: textChildren[1].id, text: monthDay.day });
+        dateWritten = true;
+      } else {
+        dateWritten = await writeText(dateNode, isoDate);
+      }
+    } else {
+      dateWritten = await writeText(dateNode, isoDate);
+    }
+  }
+
+  var monthNode = findNodeByNames(['headermonth', 'month']);
+  var monthWritten = false;
+  if (monthNode) {
+    monthWritten = await writeText(monthNode, monthDay ? monthDay.month : '');
+  }
+
+  try {
+    if (typeof figma.flushAsync === 'function') {
+      await figma.flushAsync();
+    }
+  } catch (err) {
+    console.warn('[poster-meta] flushAsync failed:', err && err.message ? err.message : err);
+  }
+
+  console.log('[poster-meta] applied', {
+    posterId: posterId,
+    titleWritten: titleWritten,
+    dateWritten: dateWritten,
+    monthWritten: monthWritten,
+    isoDate: isoDate,
+    locale: locale
+  });
+
+  return {
+    success: !!(titleWritten || dateWritten || monthWritten),
+    titleWritten: titleWritten,
+    dateWritten: dateWritten,
+    monthWritten: monthWritten,
+    isoDate: isoDate
   };
 }
 

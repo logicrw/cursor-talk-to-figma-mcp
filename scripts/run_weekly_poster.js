@@ -522,10 +522,10 @@ class WeeklyPosterRunner {
     await this.clearCardsContainer();
     try { await this.sendCommand('flush_layout', {}); } catch {}
     await this.sleep(120);
-    await this.fillHeader(posterId);
-    await this.updatePosterMetaFromDoc(posterId);
-    try { await this.sendCommand('flush_layout', {}); } catch {}
-    await this.sleep(120);
+    const headerMeta = await this.updatePosterMetaFromDoc(posterId);
+    if (headerMeta) {
+      console.log(`🧾 Poster header applied (${posterName}):`, headerMeta);
+    }
 
     const createdBefore = Array.isArray(this.report?.created) ? this.report.created.length : 0;
     await this.populateCards(flow);
@@ -967,22 +967,26 @@ class WeeklyPosterRunner {
     try { return (pathStr || '').split('.').reduce((o,k)=> (o && o[k] != null ? o[k] : undefined), obj); } catch { return undefined; }
   }
 
-  async fillHeader(frameId) {
+  async fillHeader(frameId, headerMeta) {
     try {
       const targetFrameId = frameId;
       if (!targetFrameId) return;
-      const frameInfo = await this.sendCommand('get_node_info', { nodeId: targetFrameId });
       const header = this.mapping.anchors.header || {};
-      const meta = this.content.doc || {};
+      const meta = headerMeta || this.deriveHeaderMeta();
       const month = this.formatMonth(meta.date || '');
-      const setByName = async (name, text) => {
+      const setByName = async (name, text, label) => {
         if (!name) return;
         const id = await this.dfsFindChildIdByName(targetFrameId, name);
-        if (id) await this.setText(id, text);
+        if (id) {
+          await this.setText(id, text || '');
+          console.log(`🖋️ Header ${label || name} (${id}) <- ${text || ''}`);
+        } else {
+          console.warn(`⚠️ Header node not found: ${name}`);
+        }
       };
-      await setByName(header.title, meta.title || '');
-      await setByName(header.date, meta.date || '');
-      await setByName(header.month, month || '');
+      await setByName(header.title, meta.title || '', 'title');
+      await setByName(header.date, meta.date || '', 'date');
+      await setByName(header.month, month || '', 'month');
     } catch (e) {
       console.warn('⚠️ fillHeader skipped:', e.message);
     }
@@ -992,6 +996,84 @@ class WeeklyPosterRunner {
     const m = String(dateStr||'').match(/\d{4}-(\d{2})-\d{2}/); if (m) return m[1];
     const m2 = String(dateStr||'').match(/\d{4}(\d{2})\d{2}/); if (m2) return m2[1];
     return '';
+  }
+
+  normalizeDateInput(raw) {
+    if (raw === undefined || raw === null) return '';
+    const trimmed = String(raw).trim();
+    if (!trimmed) return '';
+    if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(trimmed)) {
+      const parts = trimmed.split('-');
+      return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    }
+    if (/^\d{8}$/.test(trimmed)) {
+      return `${trimmed.slice(0,4)}-${trimmed.slice(4,6)}-${trimmed.slice(6,8)}`;
+    }
+    if (/^\d{6}$/.test(trimmed)) {
+      const year = trimmed.slice(0,2);
+      return `20${year}-${trimmed.slice(2,4)}-${trimmed.slice(4,6)}`;
+    }
+    const digits = trimmed.replace(/[^0-9]/g, '');
+    if (digits.length === 8) {
+      return `${digits.slice(0,4)}-${digits.slice(4,6)}-${digits.slice(6,8)}`;
+    }
+    return trimmed;
+  }
+
+  deriveHeaderMeta() {
+    const docMeta = (this.content && this.content.doc) ? this.content.doc : {};
+    let title = typeof docMeta.title === 'string' ? docMeta.title.trim() : '';
+    let dateISO = this.normalizeDateInput(docMeta.date);
+
+    if (!title && typeof docMeta.subtitle === 'string') title = docMeta.subtitle.trim();
+    if (!title && this.content && this.content.meta && typeof this.content.meta.title === 'string') {
+      title = this.content.meta.title.trim();
+    }
+
+    const blocks = Array.isArray(this.content?.blocks) ? this.content.blocks : [];
+    if (!title) {
+      const blockWithTitle = blocks.find((b) => typeof b?.title === 'string' && b.title.trim());
+      if (blockWithTitle) title = blockWithTitle.title.trim();
+    }
+    if (!title) {
+      const heading = blocks.find((b) => typeof b?.type === 'string' && /heading|title/i.test(b.type) && typeof b.text === 'string' && b.text.trim());
+      if (heading) title = heading.text.trim();
+    }
+    if (!title && this.dataset && typeof this.dataset.name === 'string') {
+      title = this.dataset.name.trim();
+    }
+    if (!title && this.dataset && typeof this.dataset.slug === 'string') {
+      title = this.dataset.slug.trim();
+    }
+    if (!title && this.contentPath) {
+      const base = path.basename(this.contentPath).replace(/\.[^.]+$/, '');
+      const cleaned = base.replace(/[_-]+/g, ' ').trim();
+      title = cleaned || base;
+    }
+
+    if (!dateISO && docMeta.published_at) {
+      dateISO = this.normalizeDateInput(docMeta.published_at);
+    }
+    if (!dateISO && this.content && this.content.meta && this.content.meta.date) {
+      dateISO = this.normalizeDateInput(this.content.meta.date);
+    }
+    if (!dateISO && this.dataset && typeof this.dataset.date === 'string') {
+      dateISO = this.normalizeDateInput(this.dataset.date);
+    }
+    if (!dateISO && this.contentPath) {
+      const basename = path.basename(this.contentPath);
+      const match = basename.match(/(\d{8}|\d{6})/);
+      if (match) {
+        dateISO = this.normalizeDateInput(match[1]);
+      }
+    }
+
+    const resolved = {
+      title: title || '',
+      date: dateISO || ''
+    };
+    console.log('🧾 Header meta resolved:', resolved);
+    return resolved;
   }
 
   async resizePosterHeightToContent(posterId, posterName) {
@@ -1061,19 +1143,28 @@ class WeeklyPosterRunner {
     console.log('🎆 海报高度调整完成');
   }
 
-  async updatePosterMetaFromDoc(targetPosterId) {
+  async updatePosterMetaFromDoc(targetPosterId, overrideMeta) {
     const posterId = targetPosterId || this.posterFrameId;
-    const meta = this.content && this.content.doc;
-    if (!posterId || !meta) return;
+    if (!posterId) return null;
 
-    const titleText = meta.title || "";
-    const dateISO = meta.date || "";
+    const headerMeta = overrideMeta || this.deriveHeaderMeta();
+    await this.fillHeader(posterId, headerMeta);
 
-    if (!titleText && !dateISO) return;
+    try {
+      await this.sendCommand('set_poster_title_and_date', {
+        posterId,
+        titleText: headerMeta.title || '',
+        dateISO: headerMeta.date || '',
+        locale: 'en-US'
+      });
+    } catch (error) {
+      console.warn('⚠️ set_poster_title_and_date failed:', error && error.message ? error.message : error);
+    }
 
-    // 只使用 fillHeader 路径，移除 set_poster_title_and_date 避免冲突
-    await this.fillHeader(posterId);
-    // 不再调用 set_poster_title_and_date，它查找的是 'title'/'date' 而不是 'HeaderTitle'/'HeaderDate'
+    try { await this.sendCommand('flush_layout', {}); } catch {}
+    await this.sleep(80);
+
+    return headerMeta;
   }
 
   async run() {
