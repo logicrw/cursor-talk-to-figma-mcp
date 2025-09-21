@@ -542,10 +542,9 @@ class WeeklyPosterRunner {
       };
     }
 
-    // 注释掉单个海报处理中的调用，在末尾统一处理
-    // await this.resizePosterHeightToContent(posterId);
+    // 每张海报完成后也做一次 flush，确保布局稳定
     try { await this.sendCommand('flush_layout', {}); } catch {}
-    await this.sleep(160);
+    await this.sleep(100);
     const exportPath = await this.exportPosterFrame(posterName, posterId);
 
     return {
@@ -690,8 +689,12 @@ class WeeklyPosterRunner {
       if (!info) return;
       if (info.visible === false) return;
       const name = String(info.name || '');
-      if (!/^(imgSlot\d+)$/i.test(name)) return;
-      if (info.type !== 'FRAME' && info.type !== 'RECTANGLE') return;
+      // 放宽规则：优先 imgSlotN，但也接受其他可填充类型
+      const isNamedSlot = /^(imgSlot\d+)$/i.test(name);
+      const isFillableType = ['FRAME', 'RECTANGLE', 'VECTOR', 'ELLIPSE'].includes(info.type);
+      if (!isNamedSlot && !isFillableType) return;
+      // 如果是 FRAME 但不是 imgSlotN，跳过（避免误选容器）
+      if (info.type === 'FRAME' && !isNamedSlot) return;
       seen.add(id);
       candidates.push(id);
     };
@@ -819,6 +822,10 @@ class WeeklyPosterRunner {
       console.warn('⚠️ clear_card_content (figure) failed:', error && error.message ? error.message : error);
     }
 
+    // 在 clear 后强制布局结算，避免立即填图导致测量为 0
+    try { await this.sendCommand('flush_layout', {}); } catch {}
+    await this.sleep(80);
+
     const titleName = slots.figure?.title_text || 'titleText';
     const titleId = await this.dfsFindChildIdByName(rootId, titleName);
     if (titleId) {
@@ -945,6 +952,11 @@ class WeeklyPosterRunner {
     } catch (error) {
       console.warn('⚠️ clear_card_content (body) failed:', error && error.message ? error.message : error);
     }
+
+    // 在 clear 后强制布局结算
+    try { await this.sendCommand('flush_layout', {}); } catch {}
+    await this.sleep(80);
+
     const slots = this.mapping.anchors?.slots || {};
     const bodySlot = slots.body?.body || 'slot:BODY';
     const bodyId = await this.dfsFindChildIdByName(rootId, bodySlot);
@@ -1059,20 +1071,9 @@ class WeeklyPosterRunner {
 
     if (!titleText && !dateISO) return;
 
+    // 只使用 fillHeader 路径，移除 set_poster_title_and_date 避免冲突
     await this.fillHeader(posterId);
-    try {
-      const result = await this.sendCommand('set_poster_title_and_date', {
-        posterId,
-        titleText,
-        dateISO,
-        locale: 'en-US'
-      });
-      if (!(result && result.success)) {
-        console.warn('⚠️ set_poster_title_and_date returned:', result);
-      }
-    } catch (error) {
-      console.warn('⚠️ set_poster_title_and_date failed:', error && error.message ? error.message : error);
-    }
+    // 不再调用 set_poster_title_and_date，它查找的是 'title'/'date' 而不是 'HeaderTitle'/'HeaderDate'
   }
 
   async run() {
@@ -1103,6 +1104,10 @@ class WeeklyPosterRunner {
 
     // 在所有海报处理完成后统一调整高度
     await this.fitAllPostersAtEnd();
+
+    // 最终再 flush 一次确保稳定
+    try { await this.sendCommand('flush_layout', {}); } catch {}
+    await this.sleep(100);
 
     const overall = {
       dataset: this.dataset,
