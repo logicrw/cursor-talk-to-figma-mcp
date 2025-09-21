@@ -145,8 +145,7 @@ async function hugFrameToContent(frame, container, padding) {
   var target = container || findContentContainer(frame);
   if (!target) return { success: false, message: 'content container missing' };
 
-  // 0) 结算：字体 + 布局
-  try { await figma.loadAllFontsAsync(); } catch (e) {}
+  // 0) 仅结算布局，不全局加载字体
   if (typeof figma.flushAsync === 'function') {
     try { await figma.flushAsync(); } catch (flushError) {}
   }
@@ -5061,8 +5060,7 @@ async function resizePosterToFit(params) {
     return { success: false, message: "poster not a FRAME" };
   }
 
-  // 结算布局（文本/自动布局变更生效）
-  try { await figma.loadAllFontsAsync(); } catch(e) {}
+  // 仅结算布局，不加载字体（避免破坏其他操作）
   await _flushLayoutAsync();
 
   // 选锚点
