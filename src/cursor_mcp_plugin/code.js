@@ -127,7 +127,8 @@ function waitForNextFrame() {
 
 function findContentContainer(frame) {
   if (!frame || !('findOne' in frame)) return null;
-  var candidates = ['内容容器', 'content', 'cards', '卡片容器', '容器', 'ContentAndPlate', 'ContentContainer', 'Odaily固定板', 'EXIO固定板', '干货铺固定板'];
+  // ContentAndPlate 必须优先于 ContentContainer
+  var candidates = ['ContentAndPlate', '内容容器', 'content', 'cards', '卡片容器', '容器', 'ContentContainer', 'Odaily固定板', 'EXIO固定板', '干货铺固定板'];
   var lowered = candidates.map(function (n) { return String(n || '').trim().toLowerCase(); });
   var found = frame.findOne(function (node) {
     if (!node || !node.name) return false;
@@ -144,63 +145,78 @@ async function hugFrameToContent(frame, container, padding) {
   var target = container || findContentContainer(frame);
   if (!target) return { success: false, message: 'content container missing' };
 
+  // 0) 结算：字体 + 布局
   try { await figma.loadAllFontsAsync(); } catch (e) {}
   if (typeof figma.flushAsync === 'function') {
     try { await figma.flushAsync(); } catch (flushError) {}
   }
+  // 再让出两帧，确保异步排版完成
   await waitForNextFrame();
   await waitForNextFrame();
 
-  function absBottom(node) {
-    if (!node) return 0;
-    var render = node.absoluteRenderBounds;
-    if (render) return render.y + render.height;
-    var maxBottom = 0;
-    if ('children' in node && node.children) {
-      for (var i = 0; i < node.children.length; i++) {
-        var child = node.children[i];
-        if (!child || child.visible === false) continue;
-        var childBottom = absBottom(child);
-        if (childBottom > maxBottom) maxBottom = childBottom;
-      }
-    }
-    var bbox = node.absoluteBoundingBox;
-    if (bbox) {
-      var fallback = bbox.y + bbox.height;
-      if (fallback > maxBottom) maxBottom = fallback;
-    }
-    return maxBottom;
+  // 日志输出，便于调试
+  console.log('[hug] pick anchor =', target.name, target.type);
+
+  // 量"渲染底"：RB优先 → AB回退 → 子树并集兜底
+  function rectOf(node) {
+    var rb = node.absoluteRenderBounds;
+    if (rb) return {y: rb.y, h: rb.height};
+    var ab = node.absoluteBoundingBox; // 可能短少描边/阴影
+    if (ab) return {y: ab.y, h: ab.height};
+    return null;
   }
 
-  var frameTop = (frame.absoluteRenderBounds && frame.absoluteRenderBounds.y) || frame.absoluteTransform[1][2];
-  var contentBottom = absBottom(target);
-  if (!contentBottom) return { success: false, message: 'unable to measure content bottom' };
-
-  var desiredHeight = Math.round((contentBottom - frameTop) + (typeof padding === 'number' ? padding : DEFAULT_RESIZE_PADDING));
-  var previousLayout = frame.layoutMode;
-  try {
-    if (previousLayout && previousLayout !== 'NONE') {
-      frame.layoutMode = 'NONE';
+  // 获取poster顶部位置
+  var posterTop = (frame.absoluteRenderBounds || frame.absoluteBoundingBox).y;
+  
+  // 获取锚点的矩形
+  var r = rectOf(target);
+  if (!r && 'children' in target) { // 并集兜底
+    var y1 = +Infinity, y2 = -Infinity;
+    for (var i = 0; i < target.children.length; i++) {
+      var child = target.children[i];
+      if (!child || child.visible === false) continue;
+      var c = rectOf(child);
+      if (!c) continue;
+      y1 = Math.min(y1, c.y);
+      y2 = Math.max(y2, c.y + c.h);
     }
-  } catch (layoutError) {}
+    if (isFinite(y1) && isFinite(y2)) r = {y: y1, h: y2 - y1};
+  }
+  
+  if (!r) return { success: false, message: 'cannot measure anchor' };
 
+  var bottom = r.y + r.h;
+  var newH = Math.round((bottom - posterTop) + (typeof padding === 'number' ? padding : DEFAULT_RESIZE_PADDING));
+  
+  console.log('[hug] posterRB.y =', posterTop, 'anchorRB.y/h =', r.y, r.h);
+  console.log('[hug] oldH -> newH =', frame.height, '->', newH, 'padding=', padding || DEFAULT_RESIZE_PADDING);
+
+  // 3) 规避 Auto-layout 干扰：临时固定或关闭，再恢复
+  var prevLayout = frame.layoutMode;              // 'NONE' | 'HORIZONTAL' | 'VERTICAL'
+  var prevCounter = frame.counterAxisSizingMode;  // 'AUTO' | 'FIXED'
+  
   try {
+    if (prevLayout && prevLayout !== 'NONE') {
+      frame.counterAxisSizingMode = 'FIXED';      // 文档推荐在有AL时先固定高度
+    }
     if (typeof frame.resizeWithoutConstraints === 'function') {
-      frame.resizeWithoutConstraints(frame.width, desiredHeight);
+      frame.resizeWithoutConstraints(frame.width, newH);
     } else {
-      frame.resize(frame.width, desiredHeight);
+      frame.resize(frame.width, newH);
     }
   } catch (resizeError) {
     return { success: false, message: resizeError && resizeError.message ? resizeError.message : String(resizeError) };
-  }
-
-  try {
-    if (previousLayout && previousLayout !== 'NONE') {
-      frame.layoutMode = previousLayout;
+  } finally {
+    // 恢复原状态
+    if (prevLayout && prevLayout !== 'NONE' && prevCounter) {
+      try {
+        frame.counterAxisSizingMode = prevCounter;
+      } catch (e) {}
     }
-  } catch (restoreError) {}
-
-  return { success: true, height: desiredHeight };
+  }
+  
+  return { success: true, height: newH, anchor: target.name };
 }
 
 // Handle commands from UI
@@ -4984,29 +5000,130 @@ async function appendCardToContainer(params) {
   }
 }
 
-async function resizePosterToFit(params) {
-  var posterId = params && params.posterId;
-  var containerId = params && params.anchorId;
-  var bottomPadding = (params && typeof params.bottomPadding === 'number') ? params.bottomPadding : DEFAULT_RESIZE_PADDING;
-  if (!posterId) throw new Error('Missing posterId');
+// 工具：容错 flush（无官方API时用双帧降级）
+async function _flushLayoutAsync() {
+  try {
+    if (typeof figma.flushAsync === 'function') {
+      await figma.flushAsync();
+      return;
+    }
+  } catch (e) {}
+  await new Promise(function(r) { setTimeout(r, 0); });
+  await new Promise(function(r) { setTimeout(r, 0); });
+}
 
-  var poster = await figma.getNodeByIdAsync(posterId);
-  if (!poster || poster.type !== 'FRAME') {
-    return { success: false, message: 'poster not a FRAME' };
-  }
-
-  var container = null;
-  if (containerId) {
-    var explicit = await figma.getNodeByIdAsync(containerId);
-    if (explicit && 'children' in explicit) {
-      container = explicit;
+// 工具：求节点渲染 bottom（RB>AB>子树并集）
+function _nodeBottomAbs(n) {
+  if (!n) return -Infinity;
+  var rb = n.absoluteRenderBounds; // 含描边/阴影
+  if (rb) return rb.y + rb.height;
+  var ab = n.absoluteBoundingBox;
+  if (ab) return ab.y + ab.height;
+  // 并集兜底
+  var maxB = -Infinity;
+  if ("children" in n && n.children) {
+    for (var i = 0; i < n.children.length; i++) {
+      var b = _nodeBottomAbs(n.children[i]);
+      if (b > maxB) maxB = b;
     }
   }
-  if (!container) {
-    container = findContentContainer(poster);
+  return maxB;
+}
+
+// 工具：在 poster 内寻找锚点（优先 ContentAndPlate 及别名）
+function _pickAnchorsUnderPoster(poster) {
+  var names = ["ContentAndPlate","ContentContainer","Odaily固定板","EXIO固定板","干货铺固定板"];
+  var cands = [];
+  if ("children" in poster) {
+    for (var i = 0; i < poster.children.length; i++) {
+      var ch = poster.children[i];
+      if (!ch || ch.visible === false) continue;
+      var nm = String(ch.name || "");
+      for (var j = 0; j < names.length; j++) {
+        if (nm === names[j]) { cands.push(ch); break; }
+      }
+    }
+  }
+  return cands;
+}
+
+// 主体：把 poster 高度调为 anchor 底 + padding
+async function resizePosterToFit(params) {
+  var posterId = params && params.posterId;
+  var anchorId = params && params.anchorId;
+  var bottomPadding = (params && typeof params.bottomPadding === 'number') ? params.bottomPadding : DEFAULT_RESIZE_PADDING;
+  var minHeight = (params && typeof params.minHeight === 'number') ? params.minHeight : 0;
+  var maxHeight = (params && typeof params.maxHeight === 'number') ? params.maxHeight : 1000000;
+
+  if (!posterId) throw new Error("Missing posterId");
+  var poster = await figma.getNodeByIdAsync(posterId);
+  if (!poster || poster.type !== 'FRAME') {
+    return { success: false, message: "poster not a FRAME" };
   }
 
-  return await hugFrameToContent(poster, container, bottomPadding);
+  // 结算布局（文本/自动布局变更生效）
+  try { await figma.loadAllFontsAsync(); } catch(e) {}
+  await _flushLayoutAsync();
+
+  // 选锚点
+  var anchors = [];
+  if (anchorId) {
+    var a = await figma.getNodeByIdAsync(anchorId);
+    if (a && a.visible !== false) anchors.push(a);
+  }
+  if (anchors.length === 0) anchors = _pickAnchorsUnderPoster(poster);
+  if (anchors.length === 0) {
+    // 如果还是没找到，尝试使用 findContentContainer 作为后备
+    var container = findContentContainer(poster);
+    if (container) anchors.push(container);
+  }
+  if (anchors.length === 0) return { success: false, message: "no anchor found under poster" };
+
+  // 求 poster 顶的绝对 y（RB > AB）
+  var pTop = (poster.absoluteRenderBounds ? poster.absoluteRenderBounds.y :
+             (poster.absoluteBoundingBox ? poster.absoluteBoundingBox.y : poster.absoluteTransform[1][2]));
+
+  // 求所有候选锚点的最大 bottom（绝对），再转相对 poster 顶
+  var maxAbsBottom = -Infinity;
+  for (var i = 0; i < anchors.length; i++) {
+    var b = _nodeBottomAbs(anchors[i]);
+    if (b > maxAbsBottom) maxAbsBottom = b;
+  }
+  if (!isFinite(maxAbsBottom)) return { success: false, message: "cannot measure anchors" };
+
+  var contentBottomRel = Math.max(0, maxAbsBottom - pTop);
+  var newHeight = Math.round(contentBottomRel + bottomPadding);
+  if (newHeight < minHeight) newHeight = minHeight;
+  if (newHeight > maxHeight) newHeight = maxHeight;
+
+  // 若 poster 自身是 Auto‑layout，临时固定 counter 轴以避免弹回
+  var prevCounter = null, isAuto = false;
+  try {
+    if (poster.layoutMode === 'HORIZONTAL' || poster.layoutMode === 'VERTICAL') {
+      isAuto = true;
+      prevCounter = poster.counterAxisSizingMode;
+      poster.counterAxisSizingMode = 'FIXED'; // 临时固定，操作完成再还原
+    }
+  } catch (e) {}
+
+  var oldHeight = poster.height;
+  try {
+    if (typeof poster.resizeWithoutConstraints === 'function') {
+      poster.resizeWithoutConstraints(poster.width, newHeight);
+    } else {
+      poster.resize(poster.width, newHeight);
+    }
+  } catch (e) {
+    return { success: false, message: "resize failed: " + (e && e.message ? e.message : e) };
+  } finally {
+    if (isAuto && prevCounter) {
+      try { poster.counterAxisSizingMode = prevCounter; } catch (e) {}
+    }
+  }
+
+  await _flushLayoutAsync();
+  console.log('[hug] poster resized: oldH=' + oldHeight + ' -> newH=' + newHeight + ', padding=' + bottomPadding);
+  return { success: true, height: newHeight };
 }
 
 async function hugFrameToContentCommand(params) {

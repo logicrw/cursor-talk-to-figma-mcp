@@ -542,7 +542,8 @@ class WeeklyPosterRunner {
       };
     }
 
-    await this.resizePosterHeightToContent(posterId);
+    // 注释掉单个海报处理中的调用，在末尾统一处理
+    // await this.resizePosterHeightToContent(posterId);
     try { await this.sendCommand('flush_layout', {}); } catch {}
     await this.sleep(160);
     const exportPath = await this.exportPosterFrame(posterName, posterId);
@@ -981,7 +982,7 @@ class WeeklyPosterRunner {
     return '';
   }
 
-  async resizePosterHeightToContent(posterId) {
+  async resizePosterHeightToContent(posterId, posterName) {
     if (!posterId) return;
 
     const anchorsCfg = this.mapping.anchors || {};
@@ -1016,13 +1017,36 @@ class WeeklyPosterRunner {
         minHeight: 0
       });
       if (res && res.success) {
-        console.log(`✅ Poster resized: height=${res.height}`);
+        console.log(`✅ Poster resized (${posterName || posterId}): height=${res.height}`);
       } else {
-        console.warn('⚠️ Poster resize returned:', res);
+        console.warn(`⚠️ Poster resize returned for ${posterName || posterId}:`, res);
       }
     } catch (error) {
-      console.warn('⚠️ Poster resize failed:', error.message || error);
+      console.warn(`⚠️ Poster resize failed (${posterName || posterId}):`, error.message || error);
+      // 关键兜底：若是"插件未连接"类错误，打出更直观提示
+      if ((error && /timeout|not connected|no plugin|WebSocket/i.test(String(error.message || error)))) {
+        console.warn('❗ 检测到 Figma 插件未连接：请在 Figma 中打开插件以建立 WebSocket 会话。');
+      }
     }
+  }
+
+  async fitAllPostersAtEnd() {
+    console.log('\n🎯 开始统一调整所有海报高度...');
+    const posterNames = ["Odaily特供海报","EXIO特供海报","干货铺特供海报"];
+
+    for (const name of posterNames) {
+      const posterId = await this.findPosterFrameIdByName
+        ? await this.findPosterFrameIdByName(name)
+        : await this.dfsFindChildIdByName(this.rootFrameId, name);
+
+      if (!posterId) {
+        console.warn("⚠️ Poster not found:", name);
+        continue;
+      }
+
+      await this.resizePosterHeightToContent(posterId, name);
+    }
+    console.log('🎆 海报高度调整完成');
   }
 
   async updatePosterMetaFromDoc(targetPosterId) {
@@ -1076,6 +1100,9 @@ class WeeklyPosterRunner {
       }
       await this.sleep(500);
     }
+
+    // 在所有海报处理完成后统一调整高度
+    await this.fitAllPostersAtEnd();
 
     const overall = {
       dataset: this.dataset,
