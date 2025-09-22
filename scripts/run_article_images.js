@@ -255,7 +255,7 @@ class ArticleImageRunner {
     }
   }
 
-  async createShortCardInstance(component, x = 0, y = 0) {
+  async createShortCardInstance(component, x = 0, y = 0, parentId = null) {
     try {
       // 支持传入 component.id 或 component.key
       const params = {
@@ -269,6 +269,10 @@ class ArticleImageRunner {
         params.componentKey = component.key;
       } else {
         throw new Error('组件缺少 id 或 key');
+      }
+
+      if (parentId) {
+        params.parentId = parentId;
       }
 
       const result = await this.sendCommand('create_component_instance', params);
@@ -676,20 +680,19 @@ class ArticleImageRunner {
     const hasTitle = figures.some(f => !!f.title);
     const firstTitle = hasTitle ? figures.find(f => !!f.title)?.title : '';
 
-    // 收集来源信息（使用 credit_tokens 如果存在）
-    const sources = new Set();
-    figures.forEach(f => {
-      if (f.credit_tokens && Array.isArray(f.credit_tokens)) {
-        f.credit_tokens.forEach(token => sources.add(token));
-      } else if (f.credit) {
-        const credits = f.credit.split(/[,，、;；/｜|]+/);
-        credits.forEach(c => {
-          const clean = c.replace(/^(?:source|来源|Source)\s*[:：]\s*/i, '').trim();
-          if (clean) sources.add(clean);
-        });
+    const creditTokens = [];
+    let fallbackCredit = null;
+    for (const fig of figures) {
+      if (Array.isArray(fig?.credit_tokens)) {
+        for (const token of fig.credit_tokens) {
+          if (token) creditTokens.push(String(token).trim());
+        }
+      } else if (!fallbackCredit && fig?.credit) {
+        fallbackCredit = String(fig.credit).trim();
       }
-    });
-    const sourceText = Array.from(sources).join(', ');
+    }
+    const preparatorySourceLine = this.formatSourceLine(creditTokens, fallbackCredit);
+    const initialHasSource = !!preparatorySourceLine;
 
     // 收集图片（只获取 asset_id）
     const imageAssetIds = figures
@@ -698,7 +701,7 @@ class ArticleImageRunner {
 
     await this.applyVisibilityControl(instanceId, {
       hasTitle,
-      hasSource: sources.size > 0,
+      hasSource: initialHasSource,
       imageCount: imageAssetIds.length
     });
 
@@ -720,7 +723,6 @@ class ArticleImageRunner {
     const titleSlotId = await this.findChildByName(rootId, 'slot:TITLE');
     const decorationId = await this.findChildByName(rootId, '路径');
     const imageGridId = await this.findChildByName(rootId, 'slot:IMAGE_GRID');
-    const sourceSlotId = await this.findChildByName(rootId, 'slot:SOURCE');
 
     // 清理动态内容（保留品牌元素）
     try {
@@ -767,58 +769,26 @@ class ArticleImageRunner {
       }
     }
 
-    // 设置来源文本
-    let sourceTextId = null;
-    if (sourceText) {
-      try {
-        sourceTextId = sourceSlotId || await this.findChildByName(rootId, 'slot:SOURCE');
-        if (sourceTextId) {
-          await this.sendCommand('set_text_auto_resize', {
-            nodeId: sourceTextId,
-            autoResize: 'WIDTH_AND_HEIGHT'
-          });
-          await this.sendCommand('set_text_content', {
-            nodeId: sourceTextId,
-            text: `Source: ${sourceText}`
-          });
-          try {
-            await this.sendCommand('flush_layout', {});
-          } catch (error) {
-            console.warn('⚠️ 来源 flush 失败:', error.message || error);
-          }
-          await this.sleep(40);
-          console.log('📐 来源文本设为自动调整尺寸');
-        }
-      } catch (error) {
-        console.warn('⚠️ 设置来源失败:', error.message);
-      }
-    }
+    // 填充图片
+    await this.fillImages(rootId, imageAssetIds, lang);
+
+    const sourceResult = await this.fillSource(rootId, figures, lang);
 
     await this.reflowShortCard(rootId, {
       titleSlotId,
       titleTextId: titleId,
       adornmentId: decorationId,
       imageGridId,
-      sourceNodeId: sourceTextId,
+      sourceNodeId: sourceResult.nodeId,
       hasTitle,
-      hasSource: sources.size > 0
+      hasSource: sourceResult.hasSource
     });
-
-    // 填充图片
-    await this.fillImages(rootId, imageAssetIds, lang);
 
     await this.applyVisibilityFallback(rootId, {
       hasTitle,
-      hasSource: sources.size > 0,
+      hasSource: sourceResult.hasSource,
       imageCount: imageAssetIds.length
     });
-
-    try {
-      await this.sendCommand('flush_layout', {});
-    } catch (error) {
-      console.warn('⚠️ flush_layout 失败:', error.message || error);
-    }
-    await this.sleep(80);
 
     return rootId;
   }
@@ -901,6 +871,60 @@ class ArticleImageRunner {
     }
   }
 
+  async fillSource(rootId, figures, lang) {
+    const tokens = [];
+    let fallbackCredit = null;
+    for (const fig of figures || []) {
+      if (Array.isArray(fig?.credit_tokens)) {
+        for (const token of fig.credit_tokens) {
+          if (token) tokens.push(String(token).trim());
+        }
+      } else if (!fallbackCredit && fig?.credit) {
+        fallbackCredit = String(fig.credit).trim();
+      }
+    }
+
+    const line = this.formatSourceLine(tokens, fallbackCredit);
+    const hasSource = !!line;
+
+    const textNodeId = await this.findSourceTextNodeId(rootId);
+    if (!textNodeId) {
+      console.warn('⚠️ 源文本节点未找到 (sourceText/slot:SOURCE)');
+      return { hasSource: false, nodeId: null };
+    }
+
+    try {
+      await this.sendCommand('set_text_content', {
+        nodeId: textNodeId,
+        text: line
+      });
+    } catch (error) {
+      console.warn('⚠️ 设置来源文本失败:', error.message || error);
+    }
+
+    try {
+      await this.sendCommand('set_text_auto_resize', {
+        nodeId: textNodeId,
+        autoResize: 'WIDTH_AND_HEIGHT'
+      });
+    } catch (error) {
+      console.warn('⚠️ set_text_auto_resize(source) 失败:', error.message || error);
+    }
+
+    try {
+      await this.sendCommand('set_layout_sizing', {
+        nodeId: textNodeId,
+        layoutSizingHorizontal: 'HUG',
+        layoutSizingVertical: 'HUG'
+      });
+    } catch {}
+
+    try { await this.sendCommand('flush_layout', {}); } catch {}
+    await this.sleep(80);
+
+    return { hasSource, nodeId: textNodeId };
+  }
+
   async findChildByName(parentId, name) {
     try {
       const nodeInfo = await this.sendCommand('get_node_info', { nodeId: parentId });
@@ -928,6 +952,55 @@ class ArticleImageRunner {
       return search(nodeInfo);
     } catch (error) {
       console.warn(`⚠️ 查找子节点 ${name} 失败:`, error.message);
+      return null;
+    }
+  }
+
+  formatSourceLine(creditsTokens, fallbackCredit) {
+    const sourceSet = new Set();
+    if (Array.isArray(creditsTokens)) {
+      for (const token of creditsTokens) {
+        if (token) sourceSet.add(String(token).trim());
+      }
+    }
+    if (fallbackCredit) {
+      sourceSet.add(String(fallbackCredit).trim());
+    }
+    const arr = Array.from(sourceSet).filter(Boolean);
+    if (!arr.length) return '';
+    return `Source: ${arr.join(', ')}`;
+  }
+
+  async findSourceTextNodeId(rootId) {
+    const candidates = ['sourceText', 'slot:SOURCE', 'SOURCE', 'Source', '来源'];
+    for (const name of candidates) {
+      const nodeId = await this.findChildByName(rootId, name);
+      if (nodeId) return nodeId;
+    }
+    return null;
+  }
+
+  async createShortRootFrame(name = '短图', width = 1920, height = 3049, x = 0, y = 0) {
+    const res = await this.sendCommand('create_frame', { name, width, height, x, y });
+    return res && (res.id || res.nodeId || res.frameId);
+  }
+
+  async resizeShortRootToContent(posterId, anchorId, bottomPadding = 150) {
+    if (!posterId || !anchorId) return null;
+    try {
+      await this.sendCommand('flush_layout', {});
+    } catch {}
+    await this.sleep(80);
+    try {
+      const res = await this.sendCommand('resize_poster_to_fit', {
+        posterId,
+        anchorId,
+        bottomPadding,
+        minHeight: 0
+      });
+      return res;
+    } catch (error) {
+      console.warn('⚠️ resize_poster_to_fit 失败:', error.message || error);
       return null;
     }
   }
@@ -1016,20 +1089,29 @@ class ArticleImageRunner {
       console.log(`\n📝 [${lang}] 处理第 ${i + 1}/${content.items.length} 条`);
 
       try {
-        // 创建实例
-        const instanceId = await this.createShortCardInstance(component, x, y);
+        const shortRootId = await this.createShortRootFrame(`短图-${lang}-${i + 1}`, 1920, 3049, x, y);
+        if (!shortRootId) {
+          console.warn('⚠️ 创建短图根 Frame 失败，跳过此项');
+          continue;
+        }
 
-        // 填充内容
+        const instanceId = await this.createShortCardInstance(component, 0, 0, shortRootId);
         const cardId = await this.fillShortCard(instanceId, item, lang);
+
+        try { await this.sendCommand('flush_layout', {}); } catch {}
+        await this.sleep(80);
+
+        await this.resizeShortRootToContent(shortRootId, cardId, 150);
 
         // 导出（如果启用）
         const filename = `${lang}_card_${String(i + 1).padStart(3, '0')}.png`;
-        const exportPath = await this.exportCard(cardId, filename);
+        const exportPath = await this.exportCard(shortRootId, filename);
 
         results.push({
           index: i,
           instanceId,
           cardId,
+          frameId: shortRootId,
           exportPath
         });
 
