@@ -339,6 +339,10 @@ async function handleCommand(command, params) {
       }
     case "set_layout_mode":
       return await setLayoutMode(params);
+    case "set_node_visible":
+      return await setNodeVisible(params);
+    case "hide_nodes_by_name":
+      return await hideNodesByName(params);
     case "set_padding":
       return await setPadding(params);
     case "set_axis_align":
@@ -1230,6 +1234,77 @@ async function resizeNode(params) {
     name: node.name,
     width: node.width,
     height: node.height,
+  };
+}
+
+async function setNodeVisible(params) {
+  const { nodeId, visible } = params || {};
+
+  if (!nodeId) {
+    throw new Error("Missing nodeId parameter");
+  }
+
+  const node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    throw new Error(`Node not found with ID: ${nodeId}`);
+  }
+
+  if (!('visible' in node)) {
+    throw new Error(`Node ${nodeId} does not support visibility toggling`);
+  }
+
+  node.visible = visible !== false;
+
+  return {
+    success: true,
+    nodeId: node.id,
+    visible: node.visible
+  };
+}
+
+async function hideNodesByName(params) {
+  const { rootId, names } = params || {};
+
+  if (!rootId) {
+    throw new Error("Missing rootId parameter");
+  }
+
+  if (!Array.isArray(names) || names.length === 0) {
+    throw new Error("names parameter must be a non-empty array");
+  }
+
+  const targets = Array.from(new Set(names.map((name) => String(name || '').trim()).filter(Boolean)));
+  if (!targets.length) {
+    return { success: true, hidden: [], requested: [] };
+  }
+
+  const root = await figma.getNodeByIdAsync(rootId);
+  if (!root) {
+    throw new Error(`Node not found with ID: ${rootId}`);
+  }
+
+  const hidden = [];
+  const targetSet = new Set(targets);
+
+  const traverse = (node) => {
+    if (!node) return;
+    if ('visible' in node && targetSet.has(node.name)) {
+      node.visible = false;
+      hidden.push({ id: node.id, name: node.name });
+    }
+    if ('children' in node && Array.isArray(node.children)) {
+      for (const child of node.children) {
+        traverse(child);
+      }
+    }
+  };
+
+  traverse(root);
+
+  return {
+    success: true,
+    hidden,
+    requested: targets
   };
 }
 

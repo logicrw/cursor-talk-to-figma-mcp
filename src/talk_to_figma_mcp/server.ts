@@ -2823,6 +2823,8 @@ type FigmaCommand =
   | "set_axis_align"
   | "set_layout_sizing"
   | "set_item_spacing"
+  | "set_node_visible"
+  | "hide_nodes_by_name"
   | "get_reactions"
   | "set_default_connector"
   | "create_connections"
@@ -2977,6 +2979,14 @@ type CommandParams = {
   scan_nodes_by_types: {
     nodeId: string;
     types: Array<string>;
+  };
+  set_node_visible: {
+    nodeId: string;
+    visible?: boolean;
+  };
+  hide_nodes_by_name: {
+    rootId: string;
+    names: string[];
   };
   get_reactions: { nodeIds: string[] };
   set_default_connector: {
