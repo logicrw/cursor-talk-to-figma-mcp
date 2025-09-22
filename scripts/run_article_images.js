@@ -680,19 +680,18 @@ class ArticleImageRunner {
     const hasTitle = figures.some(f => !!f.title);
     const firstTitle = hasTitle ? figures.find(f => !!f.title)?.title : '';
 
-    const creditTokens = [];
-    let fallbackCredit = null;
-    for (const fig of figures) {
-      if (Array.isArray(fig?.credit_tokens)) {
-        for (const token of fig.credit_tokens) {
-          if (token) creditTokens.push(String(token).trim());
-        }
-      } else if (!fallbackCredit && fig?.credit) {
-        fallbackCredit = String(fig.credit).trim();
-      }
-    }
-    const preparatorySourceLine = this.formatSourceLine(creditTokens, fallbackCredit);
-    const initialHasSource = !!preparatorySourceLine;
+    const primaryFigure = figures.find((fig) => {
+      const tokens = Array.isArray(fig?.credit_tokens) ? fig.credit_tokens.filter(Boolean) : [];
+      const raw = fig?.credit ? String(fig.credit).trim() : '';
+      return tokens.length > 0 || !!raw;
+    }) || figures[0] || null;
+    const formattedSourceText = this.formatSourceText(primaryFigure, lang);
+    const hasSourceData = figures.some((fig) => {
+      const tokens = Array.isArray(fig?.credit_tokens) ? fig.credit_tokens.filter(Boolean) : [];
+      const raw = fig?.credit ? String(fig.credit).trim() : '';
+      return tokens.length > 0 || !!raw;
+    });
+    const initialHasSource = hasSourceData || !!formattedSourceText;
 
     // 收集图片（只获取 asset_id）
     const imageAssetIds = figures
@@ -772,7 +771,7 @@ class ArticleImageRunner {
     // 填充图片
     await this.fillImages(rootId, imageAssetIds, lang);
 
-    const sourceResult = await this.fillSource(rootId, figures, lang);
+    const sourceResult = await this.fillSource(rootId, formattedSourceText);
 
     await this.reflowShortCard(rootId, {
       titleSlotId,
@@ -871,58 +870,83 @@ class ArticleImageRunner {
     }
   }
 
-  async fillSource(rootId, figures, lang) {
-    const tokens = [];
-    let fallbackCredit = null;
-    for (const fig of figures || []) {
-      if (Array.isArray(fig?.credit_tokens)) {
-        for (const token of fig.credit_tokens) {
-          if (token) tokens.push(String(token).trim());
+  async fillSource(rootId, sourceText) {
+    const hasSource = !!sourceText;
+    const sourceFrameId = await this.findChildByName(rootId, 'slot:SOURCE');
+    let textNodeId = null;
+
+    if (sourceFrameId) {
+      const candidates = ['sourceText', 'slot:SOURCE', 'SOURCE', 'Source', '来源'];
+      for (const name of candidates) {
+        const candidateId = await this.findChildByName(sourceFrameId, name);
+        if (candidateId) {
+          const info = await this.sendCommand('get_node_info', { nodeId: candidateId });
+          if (info?.type === 'TEXT') {
+            textNodeId = candidateId;
+            break;
+          }
         }
-      } else if (!fallbackCredit && fig?.credit) {
-        fallbackCredit = String(fig.credit).trim();
+      }
+
+      if (!textNodeId) {
+        try {
+          const frameInfo = await this.sendCommand('get_node_info', { nodeId: sourceFrameId });
+          const queue = (frameInfo?.children || []).slice();
+          while (queue.length) {
+            const node = queue.shift();
+            if (!node) continue;
+            if (node.type === 'TEXT') {
+              textNodeId = node.id;
+              break;
+            }
+            if (node.children) queue.push(...node.children);
+          }
+        } catch (error) {
+          console.warn('⚠️ 解析 slot:SOURCE 子节点失败:', error.message || error);
+        }
       }
     }
 
-    const line = this.formatSourceLine(tokens, fallbackCredit);
-    const hasSource = !!line;
-
-    const textNodeId = await this.findSourceTextNodeId(rootId);
     if (!textNodeId) {
-      console.warn('⚠️ 源文本节点未找到 (sourceText/slot:SOURCE)');
-      return { hasSource: false, nodeId: null };
+      textNodeId = await this.findSourceTextNodeId(rootId);
     }
 
-    try {
-      await this.sendCommand('set_text_content', {
-        nodeId: textNodeId,
-        text: line
-      });
-    } catch (error) {
-      console.warn('⚠️ 设置来源文本失败:', error.message || error);
+    if (textNodeId) {
+      try {
+        await this.sendCommand('set_text_content', {
+          nodeId: textNodeId,
+          text: sourceText || ''
+        });
+      } catch (error) {
+        console.warn('⚠️ 设置来源文本失败:', error.message || error);
+      }
+
+      try {
+        await this.sendCommand('set_text_auto_resize', {
+          nodeId: textNodeId,
+          autoResize: 'HEIGHT'
+        });
+      } catch (error) {
+        console.warn('⚠️ set_text_auto_resize(source) 失败:', error.message || error);
+      }
     }
 
-    try {
-      await this.sendCommand('set_text_auto_resize', {
-        nodeId: textNodeId,
-        autoResize: 'WIDTH_AND_HEIGHT'
-      });
-    } catch (error) {
-      console.warn('⚠️ set_text_auto_resize(source) 失败:', error.message || error);
+    if (sourceFrameId) {
+      try {
+        await this.sendCommand('set_layout_sizing', {
+          nodeId: sourceFrameId,
+          layoutSizingHorizontal: 'FILL',
+          layoutSizingVertical: 'HUG'
+        });
+      } catch (error) {
+        console.warn('⚠️ set_layout_sizing(slot:SOURCE) 失败:', error.message || error);
+      }
     }
-
-    try {
-      await this.sendCommand('set_layout_sizing', {
-        nodeId: textNodeId,
-        layoutSizingHorizontal: 'HUG',
-        layoutSizingVertical: 'HUG'
-      });
-    } catch {}
 
     try { await this.sendCommand('flush_layout', {}); } catch {}
     await this.sleep(80);
 
-    return { hasSource, nodeId: textNodeId };
+    return { hasSource, nodeId: textNodeId, frameId: sourceFrameId };
   }
 
   async findChildByName(parentId, name) {
@@ -956,53 +980,132 @@ class ArticleImageRunner {
     }
   }
 
-  formatSourceLine(creditsTokens, fallbackCredit) {
-    const sourceSet = new Set();
-    if (Array.isArray(creditsTokens)) {
-      for (const token of creditsTokens) {
-        if (token) sourceSet.add(String(token).trim());
-      }
-    }
-    if (fallbackCredit) {
-      sourceSet.add(String(fallbackCredit).trim());
-    }
-    const arr = Array.from(sourceSet).filter(Boolean);
-    if (!arr.length) return '';
-    return `Source: ${arr.join(', ')}`;
+  formatSourceText(block, locale = 'en-US') {
+    if (!block) return '';
+    const tokens = Array.isArray(block.credit_tokens)
+      ? block.credit_tokens.filter(Boolean).map((t) => String(t).trim())
+      : [];
+    const raw = block.credit ? String(block.credit).trim() : '';
+    const joined = tokens.length ? tokens.join(', ') : raw;
+    if (!joined) return '';
+    return (`Source: ${joined}`).replace(/^(?:Source:\s*)+/i, 'Source: ');
   }
 
   async findSourceTextNodeId(rootId) {
+    if (!rootId) return null;
+    const frameId = await this.findChildByName(rootId, 'slot:SOURCE');
+    const searchQueue = [];
     const candidates = ['sourceText', 'slot:SOURCE', 'SOURCE', 'Source', '来源'];
-    for (const name of candidates) {
-      const nodeId = await this.findChildByName(rootId, name);
-      if (nodeId) return nodeId;
+
+    if (frameId) {
+      for (const name of candidates) {
+        const nodeId = await this.findChildByName(frameId, name);
+        if (nodeId) {
+          const info = await this.sendCommand('get_node_info', { nodeId });
+          if (info?.type === 'TEXT') return nodeId;
+        }
+      }
+      try {
+        const frameInfo = await this.sendCommand('get_node_info', { nodeId: frameId });
+        if (frameInfo?.children) {
+          searchQueue.push(...frameInfo.children);
+        }
+      } catch (error) {
+        console.warn('⚠️ 获取 slot:SOURCE 信息失败:', error.message || error);
+      }
     }
+
+    if (!searchQueue.length) {
+      try {
+        const rootInfo = await this.sendCommand('get_node_info', { nodeId: rootId });
+        if (rootInfo?.children) {
+          searchQueue.push(...rootInfo.children);
+        }
+      } catch (error) {}
+    }
+
+    while (searchQueue.length) {
+      const node = searchQueue.shift();
+      if (!node) continue;
+      if (node.type === 'TEXT') return node.id;
+      if (node.children) {
+        searchQueue.push(...node.children);
+      }
+    }
+
     return null;
   }
 
-  async createShortRootFrame(name = '短图', width = 1920, height = 3049, x = 0, y = 0) {
-    const res = await this.sendCommand('create_frame', { name, width, height, x, y });
-    return res && (res.id || res.nodeId || res.frameId);
-  }
+  async resizeShortRootToContent(posterId, bottomPadding = 150) {
+    if (!posterId) return null;
+    try {
+      await this.sendCommand('flush_layout', {});
+    } catch {}
+    await this.sleep(120);
 
-  async resizeShortRootToContent(posterId, anchorId, bottomPadding = 150) {
-    if (!posterId || !anchorId) return null;
+    let shortCardId = await this.findChildByName(posterId, 'shortCard');
+    if (!shortCardId) {
+      const posterInfo = await this.sendCommand('get_node_info', { nodeId: posterId });
+      if (posterInfo && normalizeNameUtil(posterInfo.name) === normalizeNameUtil('shortCard')) {
+        shortCardId = posterId;
+      }
+      if (!shortCardId) {
+        const fallbacks = ['ContentAndPlate', 'ContentContainer', 'content_anchor', 'slot:CONTENT', 'slot:IMAGE_GRID'];
+        for (const name of fallbacks) {
+          shortCardId = await this.findChildByName(posterId, name);
+          if (shortCardId) break;
+        }
+      }
+    }
+
+    const containerId = shortCardId || posterId;
+    let result = null;
+    try {
+      result = await this.sendCommand('hug_frame_to_content', {
+        posterId,
+        containerId,
+        padding: bottomPadding
+      });
+    } catch (error) {
+      console.warn('⚠️ hug_frame_to_content 首次执行失败:', error.message || error);
+    }
+
     try {
       await this.sendCommand('flush_layout', {});
     } catch {}
     await this.sleep(80);
-    try {
-      const res = await this.sendCommand('resize_poster_to_fit', {
-        posterId,
-        anchorId,
-        bottomPadding,
-        minHeight: 0
-      });
-      return res;
-    } catch (error) {
-      console.warn('⚠️ resize_poster_to_fit 失败:', error.message || error);
-      return null;
+
+    if (containerId && shortCardId) {
+      try {
+        const scInfo = await this.sendCommand('get_node_info', { nodeId: containerId });
+        const posterInfo = await this.sendCommand('get_node_info', { nodeId: posterId });
+        const posterHeight = posterInfo?.height ?? posterInfo?.absoluteBoundingBox?.height ?? 0;
+        const posterTop = posterInfo?.absoluteRenderBounds?.y ?? posterInfo?.absoluteBoundingBox?.y ?? posterInfo?.absoluteTransform?.[1]?.[2] ?? 0;
+        const scBottom = (() => {
+          if (scInfo?.absoluteRenderBounds) return scInfo.absoluteRenderBounds.y + scInfo.absoluteRenderBounds.height;
+          if (scInfo?.absoluteBoundingBox) return scInfo.absoluteBoundingBox.y + scInfo.absoluteBoundingBox.height;
+          return posterTop + posterHeight;
+        })();
+        const expectedHeight = Math.max(0, scBottom - posterTop) + bottomPadding;
+        if (posterHeight < expectedHeight - 2) {
+          try {
+            result = await this.sendCommand('hug_frame_to_content', {
+              posterId,
+              containerId,
+              padding: bottomPadding
+            });
+            try { await this.sendCommand('flush_layout', {}); } catch {}
+            await this.sleep(60);
+          } catch (error) {
+            console.warn('⚠️ hug_frame_to_content 二次执行失败:', error.message || error);
+          }
+        }
+      } catch (error) {
+        console.warn('⚠️ 校验 Hug 结果失败:', error.message || error);
+      }
     }
+
+    return result;
   }
 
   async imageToBase64(assetId, contentPath) {
@@ -1081,7 +1184,6 @@ class ArticleImageRunner {
     for (let i = 0; i < content.items.length; i++) {
       const item = content.items[i];
 
-      // 只处理有图片的内容
       if (!item.figures || item.figures.length === 0) {
         continue;
       }
@@ -1089,44 +1191,34 @@ class ArticleImageRunner {
       console.log(`\n📝 [${lang}] 处理第 ${i + 1}/${content.items.length} 条`);
 
       try {
-        const shortRootId = await this.createShortRootFrame(`短图-${lang}-${i + 1}`, 1920, 3049, x, y);
-        if (!shortRootId) {
-          console.warn('⚠️ 创建短图根 Frame 失败，跳过此项');
-          continue;
-        }
-
-        const instanceId = await this.createShortCardInstance(component, 0, 0, shortRootId);
+        const instanceId = await this.createShortCardInstance(component, x, y);
         const cardId = await this.fillShortCard(instanceId, item, lang);
 
         try { await this.sendCommand('flush_layout', {}); } catch {}
         await this.sleep(80);
 
-        await this.resizeShortRootToContent(shortRootId, cardId, 150);
+        await this.resizeShortRootToContent(cardId, 150);
 
-        // 导出（如果启用）
         const filename = `${lang}_card_${String(i + 1).padStart(3, '0')}.png`;
-        const exportPath = await this.exportCard(shortRootId, filename);
+        const exportPath = await this.exportCard(cardId, filename);
 
         results.push({
           index: i,
           instanceId,
           cardId,
-          frameId: shortRootId,
           exportPath
         });
 
-        // 更新下一个位置
         x += spacing;
-        if ((i + 1) % 5 === 0) {  // 每行 5 个
+        if ((i + 1) % 5 === 0) {
           x = 0;
-          y += 3500;  // 行间距
+          y += 3500;
         }
 
       } catch (error) {
         console.error(`❌ [${lang}] 第 ${i + 1} 条处理失败:`, error.message);
       }
 
-      // 节流
       if (THROTTLE_MS > 0) {
         await this.sleep(THROTTLE_MS);
       }

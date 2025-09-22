@@ -5106,7 +5106,7 @@ function _nodeBottomAbs(n) {
 
 // 工具：在 poster 内寻找锚点（优先 ContentAndPlate 及别名）
 function _pickAnchorsUnderPoster(poster) {
-  var names = ["ContentAndPlate","ContentContainer","Odaily固定板","EXIO固定板","干货铺固定板"];
+  var names = ["shortCard","ContentAndPlate","ContentContainer","Odaily固定板","EXIO固定板","干货铺固定板"];
   var cands = [];
   if ("children" in poster) {
     for (var i = 0; i < poster.children.length; i++) {
