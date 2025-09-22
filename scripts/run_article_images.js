@@ -1041,7 +1041,7 @@ class ArticleImageRunner {
     try {
       await this.sendCommand('flush_layout', {});
     } catch {}
-    await this.sleep(120);
+    await this.sleep(150);
 
     let shortCardId = await this.findChildByName(posterId, 'shortCard');
     if (!shortCardId) {
@@ -1106,6 +1106,28 @@ class ArticleImageRunner {
     }
 
     return result;
+  }
+
+  async findPosterRootForCard(cardId) {
+    if (!cardId) return null;
+    let currentId = cardId;
+    const visited = new Set();
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId);
+      const info = await this.sendCommand('get_node_info', { nodeId: currentId });
+      if (!info) break;
+      const name = (info.name || '').trim();
+      if (info.type === 'FRAME' && /^(短图|shortPoster)/i.test(name)) {
+        return info.id || currentId;
+      }
+      const parentId = info.parentId;
+      if (!parentId) {
+        if (info.type === 'FRAME') return info.id || currentId;
+        break;
+      }
+      currentId = parentId;
+    }
+    return null;
   }
 
   async imageToBase64(assetId, contentPath) {
@@ -1197,15 +1219,20 @@ class ArticleImageRunner {
         try { await this.sendCommand('flush_layout', {}); } catch {}
         await this.sleep(80);
 
-        await this.resizeShortRootToContent(cardId, 150);
+        const posterId = await this.findPosterRootForCard(cardId);
+        if (posterId) {
+          await this.resizeShortRootToContent(posterId, 150);
+        }
 
         const filename = `${lang}_card_${String(i + 1).padStart(3, '0')}.png`;
-        const exportPath = await this.exportCard(cardId, filename);
+        const exportTargetId = posterId || cardId;
+        const exportPath = await this.exportCard(exportTargetId, filename);
 
         results.push({
           index: i,
           instanceId,
           cardId,
+          posterId,
           exportPath
         });
 

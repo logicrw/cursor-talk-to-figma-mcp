@@ -459,6 +459,7 @@ function filterFigmaNode(node) {
     id: node.id,
     name: node.name,
     type: node.type,
+    parentId: node.parent ? node.parent.id : undefined,
   };
 
   if (node.fills && node.fills.length > 0) {
