@@ -128,7 +128,7 @@ function waitForNextFrame() {
 function findContentContainer(frame) {
   if (!frame || !('findOne' in frame)) return null;
   // ContentAndPlate 必须优先于 ContentContainer
-  var candidates = ['shortCard', '短图', '短卡片', 'ContentAndPlate', '内容容器', 'content', 'cards', '卡片容器', '容器', 'ContentContainer', 'Odaily固定板', 'EXIO固定板', '干货铺固定板'];
+  var candidates = ['shortCard', 'ContentAndPlate', '内容容器', 'content', 'cards', '卡片容器', '容器', 'ContentContainer', 'Odaily固定板', 'EXIO固定板', '干货铺固定板'];
   var lowered = candidates.map(function (n) { return String(n || '').trim().toLowerCase(); });
   var found = frame.findOne(function (node) {
     if (!node || !node.name) return false;
@@ -5212,6 +5212,82 @@ async function hugFrameToContentCommand(params) {
     }
   }
   return await hugFrameToContent(poster, container, padding);
+}
+
+async function frameHugToAnchor(params) {
+  var frameId = params && params.frameId;
+  var anchorId = params && params.anchorId;
+  var padding = (params && typeof params.padding === 'number') ? params.padding : DEFAULT_RESIZE_PADDING;
+  var minHeight = (params && typeof params.minHeight === 'number') ? params.minHeight : 0;
+  var maxHeight = (params && typeof params.maxHeight === 'number') ? params.maxHeight : 1000000;
+
+  if (!frameId || !anchorId) throw new Error('Missing frameId or anchorId');
+
+  var frame = await figma.getNodeByIdAsync(frameId);
+  if (!frame || frame.type !== 'FRAME') {
+    return { success: false, message: 'frame not a FRAME' };
+  }
+  var anchor = await figma.getNodeByIdAsync(anchorId);
+  if (!anchor || anchor.visible === false) {
+    return { success: false, message: 'anchor not found or invisible' };
+  }
+
+  await _flushLayoutAsync();
+
+  function getRect(node) {
+    if (!node) return null;
+    var rb = node.absoluteRenderBounds;
+    if (rb) return { y: rb.y, h: rb.height };
+    var ab = node.absoluteBoundingBox;
+    if (ab) return { y: ab.y, h: ab.height };
+    return null;
+  }
+
+  var frameTop = (frame.absoluteRenderBounds ? frame.absoluteRenderBounds.y :
+                  (frame.absoluteBoundingBox ? frame.absoluteBoundingBox.y : frame.absoluteTransform[1][2]));
+
+  var rect = getRect(anchor);
+  if (!rect && 'children' in anchor) {
+    var y1 = +Infinity, y2 = -Infinity;
+    for (var i = 0; i < anchor.children.length; i++) {
+      var childRect = getRect(anchor.children[i]);
+      if (!childRect) continue;
+      y1 = Math.min(y1, childRect.y);
+      y2 = Math.max(y2, childRect.y + childRect.h);
+    }
+    if (isFinite(y1) && isFinite(y2)) rect = { y: y1, h: y2 - y1 };
+  }
+  if (!rect) {
+    return { success: false, message: 'cannot measure anchor' };
+  }
+
+  var bottom = rect.y + rect.h;
+  var newHeight = Math.round((bottom - frameTop) + padding);
+  if (newHeight < minHeight) newHeight = minHeight;
+  if (newHeight > maxHeight) newHeight = maxHeight;
+
+  var prevLayout = frame.layoutMode;
+  var prevCounter = frame.counterAxisSizingMode;
+  try {
+    if (prevLayout && prevLayout !== 'NONE') {
+      frame.counterAxisSizingMode = 'FIXED';
+    }
+    if (typeof frame.resizeWithoutConstraints === 'function') {
+      frame.resizeWithoutConstraints(frame.width, newHeight);
+    } else {
+      frame.resize(frame.width, newHeight);
+    }
+  } catch (e) {
+    return { success: false, message: e && e.message ? e.message : String(e) };
+  } finally {
+    if (prevLayout && prevLayout !== 'NONE' && prevCounter) {
+      try { frame.counterAxisSizingMode = prevCounter; } catch (e) {}
+    }
+  }
+
+  await _flushLayoutAsync();
+  console.log(`✅ short poster resized: ${newHeight}`);
+  return { success: true, height: newHeight, anchor: anchor.name };
 }
 
 async function setNodeName(params) {

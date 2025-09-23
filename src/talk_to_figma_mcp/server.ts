@@ -844,6 +844,35 @@ server.tool(
   }
 );
 
+server.tool(
+  "frame_hug_to_anchor",
+  "Resize frame height to anchor bottom plus padding",
+  {
+    frameId: z.string().describe("Frame id to resize"),
+    anchorId: z.string().describe("Anchor node id to measure"),
+    padding: z.number().optional().describe("Extra bottom padding"),
+    minHeight: z.number().optional().describe("Minimum height clamp"),
+    maxHeight: z.number().optional().describe("Maximum height clamp"),
+  },
+  async ({ frameId, anchorId, padding, minHeight, maxHeight }: any) => {
+    const result = await sendCommandToFigma("frame_hug_to_anchor", {
+      frameId,
+      anchorId,
+      padding,
+      minHeight,
+      maxHeight,
+    });
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(result),
+        },
+      ],
+    };
+  }
+);
+
 // Clone Node Tool
 server.tool(
   "clone_node",

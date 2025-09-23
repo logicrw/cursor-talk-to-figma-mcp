@@ -935,11 +935,20 @@ class ArticleImageRunner {
       try {
         await this.sendCommand('set_layout_sizing', {
           nodeId: sourceFrameId,
-          layoutSizingHorizontal: 'FILL',
+          layoutSizingHorizontal: 'HUG',
           layoutSizingVertical: 'HUG'
         });
       } catch (error) {
         console.warn('⚠️ set_layout_sizing(slot:SOURCE) 失败:', error.message || error);
+      }
+      try {
+        await this.sendCommand('set_axis_align', {
+          nodeId: sourceFrameId,
+          axis: 'HORIZONTAL',
+          align: 'MIN'
+        });
+      } catch (error) {
+        console.warn('⚠️ set_axis_align(slot:SOURCE) 失败:', error.message || error);
       }
     }
 
@@ -974,15 +983,6 @@ class ArticleImageRunner {
       currentId = parentId;
     }
     return fallbackFrameId;
-  }
-
-  async ensurePosterFrame(cardId, lang, index) {
-    const posterId = await this.findPosterRootForCard(cardId);
-    if (posterId) {
-      return posterId;
-    }
-    console.warn('⚠️ poster frame missing, creating wrapper...');
-    return null;
   }
 
   async findChildByName(parentId, name) {
@@ -1075,11 +1075,11 @@ class ArticleImageRunner {
   async resizeShortRootToContent(posterId, bottomPadding = 150, anchorId) {
     if (!posterId) return null;
     try { await this.sendCommand('flush_layout', {}); } catch {}
-    await this.sleep(120);
+    await this.sleep(140);
 
     let shortCardId = anchorId || await this.findChildByName(posterId, 'shortCard');
     if (!shortCardId) {
-      const fallbacks = ['ContentAndPlate', 'ContentContainer', 'slot:IMAGE_GRID', 'slot:CONTENT'];
+      const fallbacks = ['slot:IMAGE_GRID', 'ContentAndPlate'];
       for (const name of fallbacks) {
         shortCardId = await this.findChildByName(posterId, name);
         if (shortCardId) break;
@@ -1087,23 +1087,17 @@ class ArticleImageRunner {
     }
 
     try {
-      await this.sendCommand('hug_frame_to_content', {
-        posterId,
-        containerId: shortCardId || posterId,
+      await this.sendCommand('frame_hug_to_anchor', {
+        frameId: posterId,
+        anchorId: shortCardId || posterId,
         padding: bottomPadding
       });
-    } catch (e) {
-      try {
-        await this.sendCommand('resize_poster_to_fit', {
-          posterId,
-          anchorId: shortCardId,
-          bottomPadding
-        });
-      } catch (_) {}
+    } catch (error) {
+      console.warn('⚠️ frame_hug_to_anchor 失败:', error.message || error);
     }
 
     try { await this.sendCommand('flush_layout', {}); } catch {}
-    await this.sleep(80);
+    await this.sleep(100);
   }
 
   async imageToBase64(assetId, contentPath) {
