@@ -1060,12 +1060,19 @@ class ArticleImageRunner {
 
     const containerId = shortCardId || posterId;
     let result = null;
+    let hugSuccess = false;
     try {
       result = await this.sendCommand('hug_frame_to_content', {
         posterId,
         containerId,
         padding: bottomPadding
       });
+      if (result && result.success === false) {
+        console.warn('⚠️ hug_frame_to_content 首次执行失败:', result.message || result);
+      } else if (result) {
+        hugSuccess = true;
+        console.log('✅ hug_frame_to_content 首次执行成功');
+      }
     } catch (error) {
       console.warn('⚠️ hug_frame_to_content 首次执行失败:', error.message || error);
     }
@@ -1074,6 +1081,8 @@ class ArticleImageRunner {
       await this.sendCommand('flush_layout', {});
     } catch {}
     await this.sleep(80);
+
+    let needsFallback = !hugSuccess;
 
     if (containerId && shortCardId) {
       try {
@@ -1094,40 +1103,104 @@ class ArticleImageRunner {
               containerId,
               padding: bottomPadding
             });
+            if (result && result.success === false) {
+              console.warn('⚠️ hug_frame_to_content 二次执行失败:', result.message || result);
+            } else if (result) {
+              hugSuccess = true;
+              console.log('✅ hug_frame_to_content 二次执行成功');
+            }
             try { await this.sendCommand('flush_layout', {}); } catch {}
             await this.sleep(60);
           } catch (error) {
             console.warn('⚠️ hug_frame_to_content 二次执行失败:', error.message || error);
           }
         }
+        try {
+          const verifyPoster = await this.sendCommand('get_node_info', { nodeId: posterId });
+          const verifyContainer = await this.sendCommand('get_node_info', { nodeId: containerId });
+          const finalPosterHeight = verifyPoster?.height ?? verifyPoster?.absoluteBoundingBox?.height ?? 0;
+          const finalPosterTop = verifyPoster?.absoluteRenderBounds?.y ?? verifyPoster?.absoluteBoundingBox?.y ?? verifyPoster?.absoluteTransform?.[1]?.[2] ?? 0;
+          const finalBottom = (() => {
+            if (verifyContainer?.absoluteRenderBounds) return verifyContainer.absoluteRenderBounds.y + verifyContainer.absoluteRenderBounds.height;
+            if (verifyContainer?.absoluteBoundingBox) return verifyContainer.absoluteBoundingBox.y + verifyContainer.absoluteBoundingBox.height;
+            return finalPosterTop + finalPosterHeight;
+          })();
+          const finalExpectedHeight = Math.max(0, finalBottom - finalPosterTop) + bottomPadding;
+          if (finalPosterHeight < finalExpectedHeight - 2) {
+            needsFallback = true;
+          } else {
+            needsFallback = false;
+          }
+        } catch (error) {
+          console.warn('⚠️ 校验 Hug 高度失败:', error.message || error);
+        }
       } catch (error) {
         console.warn('⚠️ 校验 Hug 结果失败:', error.message || error);
       }
     }
 
-    return result;
+    let fallbackResult = result;
+    if (needsFallback) {
+      try {
+        const res = await this.sendCommand('resize_poster_to_fit', {
+          posterId,
+          containerNameCandidates: ['shortCard', 'ContentAndPlate', 'slot:IMAGE_GRID', 'content_anchor'],
+          bottomPadding
+        });
+        fallbackResult = res;
+        if (res && res.success === false) {
+          console.warn('⚠️ resize_poster_to_fit fallback 失败:', res.message || res);
+        } else if (res) {
+          console.log('✅ fallback resize_poster_to_fit');
+          hugSuccess = true;
+        }
+      } catch (error) {
+        console.warn('⚠️ resize_poster_to_fit fallback 异常:', error.message || error);
+      }
+    }
+
+    try {
+      await this.sendCommand('flush_layout', {});
+    } catch {}
+    await this.sleep(80);
+
+    return fallbackResult;
   }
 
   async findPosterRootForCard(cardId) {
     if (!cardId) return null;
     let currentId = cardId;
     const visited = new Set();
+    let fallbackFrameId = null;
     while (currentId && !visited.has(currentId)) {
       visited.add(currentId);
       const info = await this.sendCommand('get_node_info', { nodeId: currentId });
       if (!info) break;
       const name = (info.name || '').trim();
-      if (info.type === 'FRAME' && /^(短图|shortPoster)/i.test(name)) {
-        return info.id || currentId;
+      if (info.type === 'FRAME') {
+        if (/^(短图|shortPoster)/i.test(name)) {
+          return info.id || currentId;
+        }
+        if (!fallbackFrameId) {
+          fallbackFrameId = info.id || currentId;
+        }
       }
       const parentId = info.parentId;
       if (!parentId) {
-        if (info.type === 'FRAME') return info.id || currentId;
         break;
       }
       currentId = parentId;
     }
-    return null;
+    return fallbackFrameId;
+  }
+
+  async ensurePosterFrame(cardId, lang, index) {
+    const posterId = await this.findPosterRootForCard(cardId);
+    if (posterId) {
+      return posterId;
+    }
+    console.warn('⚠️ poster frame missing, creating wrapper...');
+    return cardId;
   }
 
   async imageToBase64(assetId, contentPath) {
@@ -1217,11 +1290,14 @@ class ArticleImageRunner {
         const cardId = await this.fillShortCard(instanceId, item, lang);
 
         try { await this.sendCommand('flush_layout', {}); } catch {}
-        await this.sleep(80);
+        await this.sleep(150);
 
-        const posterId = await this.findPosterRootForCard(cardId);
+        const posterId = await this.ensurePosterFrame(cardId, lang, i);
         if (posterId) {
+          console.log(`🎯 posterId: ${posterId}`);
           await this.resizeShortRootToContent(posterId, 150);
+        } else {
+          console.warn('⚠️ 无法确定短图根 Frame，跳过 Hug');
         }
 
         const filename = `${lang}_card_${String(i + 1).padStart(3, '0')}.png`;
