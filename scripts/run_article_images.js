@@ -74,7 +74,6 @@ class ArticleImageRunner {
     // 内容数据
     this.contents = {};
     this.assets = {};
-    this.posterByCard = new Map();
   }
 
   getArg(flag) {
@@ -1073,23 +1072,6 @@ class ArticleImageRunner {
     return null;
   }
 
-  async createPosterFrame(lang, index, x, y, width = 1920, height = 3200) {
-    const name = `短图-${lang}-${index + 1}`;
-    try {
-      const res = await this.sendCommand('create_frame', {
-        name,
-        x,
-        y,
-        width,
-        height
-      });
-      return res && (res.id || res.nodeId || res.frameId) ? (res.id || res.nodeId || res.frameId) : null;
-    } catch (error) {
-      console.warn('⚠️ 创建短图根 Frame 失败:', error.message || error);
-      return null;
-    }
-  }
-
   async resizeShortRootToContent(posterId, bottomPadding = 150, anchorId) {
     if (!posterId) return null;
     try { await this.sendCommand('flush_layout', {}); } catch {}
@@ -1207,22 +1189,28 @@ class ArticleImageRunner {
       console.log(`\n📝 [${lang}] 处理第 ${i + 1}/${content.items.length} 条`);
 
       try {
-        let posterId = await this.createPosterFrame(lang, i, x, y);
-        const instanceId = await this.createShortCardInstance(component, 0, 0, posterId || undefined);
+        const instanceId = await this.createShortCardInstance(component, x, y);
         const cardId = await this.fillShortCard(instanceId, item, lang);
 
-        if (!posterId) {
-          posterId = await this.ensurePosterFrame(cardId, lang, i);
-        }
+        try { await this.sendCommand('flush_layout', {}); } catch {}
+        await this.sleep(150);
 
+        let posterId = await this.findPosterRootForCard(cardId);
+        let anchorId = null;
         if (posterId) {
-          this.posterByCard.set(cardId, posterId);
-          await this.resizeShortRootToContent(posterId, 150, cardId);
+          const posterName = `短图-${lang}-${i}`;
+          try { await this.sendCommand('set_node_name', { nodeId: posterId, name: posterName }); } catch (error) {
+            console.warn('⚠️ 重命名短图失败:', error.message || error);
+          }
+          anchorId = await this.findChildByName(posterId, 'shortCard') ||
+                     await this.findChildByName(posterId, 'slot:IMAGE_GRID') ||
+                     await this.findChildByName(posterId, 'ContentAndPlate');
+          await this.resizeShortRootToContent(posterId, 150, anchorId || cardId);
         } else {
           console.warn('⚠️ 无法确定短图根 Frame，跳过 Hug');
         }
 
-        const filename = `${lang}_card_${String(i + 1).padStart(3, '0')}.png`;
+        const filename = `${lang}_card_${String(i).padStart(3, '0')}.png`;
         const exportTargetId = posterId || cardId;
         const exportPath = await this.exportCard(exportTargetId, filename);
 

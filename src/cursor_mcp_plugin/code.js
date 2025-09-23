@@ -145,13 +145,7 @@ async function hugFrameToContent(frame, container, padding) {
   var target = container || findContentContainer(frame);
   if (!target) return { success: false, message: 'content container missing' };
 
-  // 0) 仅结算布局，不全局加载字体
-  if (typeof figma.flushAsync === 'function') {
-    try { await figma.flushAsync(); } catch (flushError) {}
-  }
-  // 再让出两帧，确保异步排版完成
-  await waitForNextFrame();
-  await waitForNextFrame();
+  await _flushLayoutAsync();
 
   // 量"渲染底"：RB优先 → AB回退 → 子树并集兜底
   function rectOf(node) {
@@ -369,6 +363,8 @@ async function handleCommand(command, params) {
       return await flushLayout();
     case "hug_frame_to_content":
       return await hugFrameToContentCommand(params);
+    case "set_node_name":
+      return await setNodeName(params);
     case "clear_card_content":
       return await clearCardContent(params);
     case "export_frame_to_server":
@@ -5072,24 +5068,21 @@ async function appendCardToContainer(params) {
 
 // 工具：容错 flush（无官方API时用双帧降级）
 async function _flushLayoutAsync() {
-  try {
-    if (typeof figma.flushAsync === 'function') {
-      await figma.flushAsync();
-      return;
-    }
-  } catch (e) {}
-  await new Promise(function(r) { setTimeout(r, 0); });
-  await new Promise(function(r) { setTimeout(r, 0); });
+  try { await figma.loadAllFontsAsync(); } catch (e) {}
+  if (typeof figma.flushAsync === 'function') {
+    try { await figma.flushAsync(); } catch (e) {}
+  }
+  await waitForNextFrame();
+  await waitForNextFrame();
 }
 
 // 工具：求节点渲染 bottom（RB>AB>子树并集）
 function _nodeBottomAbs(n) {
   if (!n) return -Infinity;
-  var rb = n.absoluteRenderBounds; // 含描边/阴影
+  var rb = n.absoluteRenderBounds;
   if (rb) return rb.y + rb.height;
   var ab = n.absoluteBoundingBox;
   if (ab) return ab.y + ab.height;
-  // 并集兜底
   var maxB = -Infinity;
   if ("children" in n && n.children) {
     for (var i = 0; i < n.children.length; i++) {
@@ -5097,24 +5090,24 @@ function _nodeBottomAbs(n) {
       if (b > maxB) maxB = b;
     }
   }
-  return maxB;
+  if (isFinite(maxB)) return maxB;
+  if (n.absoluteTransform && Array.isArray(n.absoluteTransform) && n.absoluteTransform[1]) {
+    return n.absoluteTransform[1][2] + (typeof n.height === 'number' ? n.height : 0);
+  }
+  return -Infinity;
 }
 
 // 工具：在 poster 内寻找锚点（优先 ContentAndPlate 及别名）
-function _pickAnchorsUnderPoster(poster) {
-  var names = ["shortCard","ContentAndPlate","ContentContainer","Odaily固定板","EXIO固定板","干货铺固定板"];
-  var cands = [];
-  if ("children" in poster) {
-    for (var i = 0; i < poster.children.length; i++) {
-      var ch = poster.children[i];
-      if (!ch || ch.visible === false) continue;
-      var nm = String(ch.name || "");
-      for (var j = 0; j < names.length; j++) {
-        if (nm === names[j]) { cands.push(ch); break; }
-      }
-    }
-  }
-  return cands;
+function _pickAnchorsUnderPoster(poster, names) {
+  if (!poster || !('findAll' in poster)) return [];
+  var lowered = (names || []).map(function (n) { return String(n || '').trim().toLowerCase(); });
+  return poster.findAll(function (node) {
+    if (!node || !node.name) return false;
+    if (node.visible === false) return false;
+    if (!('children' in node)) return false;
+    var nm = String(node.name || '').trim().toLowerCase();
+    return lowered.indexOf(nm) !== -1;
+  }) || [];
 }
 
 // 主体：把 poster 高度调为 anchor 底 + padding
@@ -5142,30 +5135,31 @@ async function resizePosterToFit(params) {
   var anchors = [];
   if (anchorId) {
     var a = await figma.getNodeByIdAsync(anchorId);
-    if (a && a.visible !== false) anchors.push(a);
+    if (a && a.visible !== false && 'children' in a) anchors.push(a);
   }
-  if (anchors.length === 0) anchors = _pickAnchorsUnderPoster(poster);
   if (anchors.length === 0) {
-    // 如果还是没找到，尝试使用 findContentContainer 作为后备
+    anchors = _pickAnchorsUnderPoster(poster, ['shortcard', 'slot:image_grid', 'contentandplate']);
+  }
+  if (anchors.length === 0) {
     var container = findContentContainer(poster);
     if (container) anchors.push(container);
   }
   if (anchors.length === 0) return { success: false, message: "no anchor found under poster" };
 
   // 求 poster 顶的绝对 y（RB > AB）
-  var pTop = (poster.absoluteRenderBounds ? poster.absoluteRenderBounds.y :
-             (poster.absoluteBoundingBox ? poster.absoluteBoundingBox.y : poster.absoluteTransform[1][2]));
+  var posterTop = (poster.absoluteRenderBounds ? poster.absoluteRenderBounds.y :
+                  (poster.absoluteBoundingBox ? poster.absoluteBoundingBox.y : poster.absoluteTransform[1][2]));
 
-  // 求所有候选锚点的最大 bottom（绝对），再转相对 poster 顶
-  var maxAbsBottom = -Infinity;
+  var maxRelBottom = 0;
   for (var i = 0; i < anchors.length; i++) {
-    var b = _nodeBottomAbs(anchors[i]);
-    if (b > maxAbsBottom) maxAbsBottom = b;
+    var absBottom = _nodeBottomAbs(anchors[i]);
+    if (!isFinite(absBottom)) continue;
+    var rel = absBottom - posterTop;
+    if (rel > maxRelBottom) maxRelBottom = rel;
   }
-  if (!isFinite(maxAbsBottom)) return { success: false, message: "cannot measure anchors" };
+  if (!isFinite(maxRelBottom)) return { success: false, message: "cannot measure anchors" };
 
-  var contentBottomRel = Math.max(0, maxAbsBottom - pTop);
-  var newHeight = Math.round(contentBottomRel + bottomPadding);
+  var newHeight = Math.round(Math.max(0, maxRelBottom) + bottomPadding);
   if (newHeight < minHeight) newHeight = minHeight;
   if (newHeight > maxHeight) newHeight = maxHeight;
 
@@ -5218,6 +5212,19 @@ async function hugFrameToContentCommand(params) {
     }
   }
   return await hugFrameToContent(poster, container, padding);
+}
+
+async function setNodeName(params) {
+  var nodeId = params && params.nodeId;
+  var name = params && params.name;
+  if (!nodeId) throw new Error('Missing nodeId');
+  var node = await figma.getNodeByIdAsync(nodeId);
+  if (!node) {
+    return { success: false, message: 'node not found' };
+  }
+  node.name = String(name || '');
+  await _flushLayoutAsync();
+  return { success: true, id: node.id, name: node.name };
 }
 
 async function clearCardContent(params) {

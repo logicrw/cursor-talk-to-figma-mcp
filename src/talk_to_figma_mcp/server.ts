@@ -824,6 +824,26 @@ server.tool(
   }
 );
 
+server.tool(
+  "set_node_name",
+  "Rename a Figma node by id",
+  {
+    nodeId: z.string(),
+    name: z.string(),
+  },
+  async ({ nodeId, name }: any) => {
+    const result = await sendCommandToFigma("set_node_name", { nodeId, name });
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(result),
+        },
+      ],
+    };
+  }
+);
+
 // Clone Node Tool
 server.tool(
   "clone_node",
@@ -2825,6 +2845,7 @@ type FigmaCommand =
   | "set_item_spacing"
   | "set_node_visible"
   | "hide_nodes_by_name"
+  | "set_node_name"
   | "get_reactions"
   | "set_default_connector"
   | "create_connections"
@@ -2987,6 +3008,10 @@ type CommandParams = {
   hide_nodes_by_name: {
     rootId: string;
     names: string[];
+  };
+  set_node_name: {
+    nodeId: string;
+    name: string;
   };
   get_reactions: { nodeIds: string[] };
   set_default_connector: {
