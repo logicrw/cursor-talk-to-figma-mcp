@@ -74,6 +74,7 @@ class ArticleImageRunner {
     // 内容数据
     this.contents = {};
     this.assets = {};
+    this.posterByCard = new Map();
   }
 
   getArg(flag) {
@@ -949,6 +950,42 @@ class ArticleImageRunner {
     return { hasSource, nodeId: textNodeId, frameId: sourceFrameId };
   }
 
+  async findPosterRootForCard(cardId) {
+    if (!cardId) return null;
+    let currentId = cardId;
+    const visited = new Set();
+    let fallbackFrameId = null;
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId);
+      const info = await this.sendCommand('get_node_info', { nodeId: currentId });
+      if (!info) break;
+      const name = String(info.name || '').trim();
+      if (info.type === 'FRAME') {
+        if (/^(短图|shortPoster)/i.test(name)) {
+          return info.id || currentId;
+        }
+        if (!fallbackFrameId) {
+          fallbackFrameId = info.id || currentId;
+        }
+      }
+      const parentId = info.parentId;
+      if (!parentId) {
+        break;
+      }
+      currentId = parentId;
+    }
+    return fallbackFrameId;
+  }
+
+  async ensurePosterFrame(cardId, lang, index) {
+    const posterId = await this.findPosterRootForCard(cardId);
+    if (posterId) {
+      return posterId;
+    }
+    console.warn('⚠️ poster frame missing, creating wrapper...');
+    return null;
+  }
+
   async findChildByName(parentId, name) {
     try {
       const nodeInfo = await this.sendCommand('get_node_info', { nodeId: parentId });
@@ -1036,171 +1073,55 @@ class ArticleImageRunner {
     return null;
   }
 
-  async resizeShortRootToContent(posterId, bottomPadding = 150) {
-    if (!posterId) return null;
+  async createPosterFrame(lang, index, x, y, width = 1920, height = 3200) {
+    const name = `短图-${lang}-${index + 1}`;
     try {
-      await this.sendCommand('flush_layout', {});
-    } catch {}
-    await this.sleep(150);
+      const res = await this.sendCommand('create_frame', {
+        name,
+        x,
+        y,
+        width,
+        height
+      });
+      return res && (res.id || res.nodeId || res.frameId) ? (res.id || res.nodeId || res.frameId) : null;
+    } catch (error) {
+      console.warn('⚠️ 创建短图根 Frame 失败:', error.message || error);
+      return null;
+    }
+  }
 
-    let shortCardId = await this.findChildByName(posterId, 'shortCard');
+  async resizeShortRootToContent(posterId, bottomPadding = 150, anchorId) {
+    if (!posterId) return null;
+    try { await this.sendCommand('flush_layout', {}); } catch {}
+    await this.sleep(120);
+
+    let shortCardId = anchorId || await this.findChildByName(posterId, 'shortCard');
     if (!shortCardId) {
-      const posterInfo = await this.sendCommand('get_node_info', { nodeId: posterId });
-      if (posterInfo && normalizeNameUtil(posterInfo.name) === normalizeNameUtil('shortCard')) {
-        shortCardId = posterId;
-      }
-      if (!shortCardId) {
-        const fallbacks = ['ContentAndPlate', 'ContentContainer', 'content_anchor', 'slot:CONTENT', 'slot:IMAGE_GRID'];
-        for (const name of fallbacks) {
-          shortCardId = await this.findChildByName(posterId, name);
-          if (shortCardId) break;
-        }
+      const fallbacks = ['ContentAndPlate', 'ContentContainer', 'slot:IMAGE_GRID', 'slot:CONTENT'];
+      for (const name of fallbacks) {
+        shortCardId = await this.findChildByName(posterId, name);
+        if (shortCardId) break;
       }
     }
 
-    const containerId = shortCardId || posterId;
-    let result = null;
-    let hugSuccess = false;
     try {
-      result = await this.sendCommand('hug_frame_to_content', {
+      await this.sendCommand('hug_frame_to_content', {
         posterId,
-        containerId,
+        containerId: shortCardId || posterId,
         padding: bottomPadding
       });
-      if (result && result.success === false) {
-        console.warn('⚠️ hug_frame_to_content 首次执行失败:', result.message || result);
-      } else if (result) {
-        hugSuccess = true;
-        console.log('✅ hug_frame_to_content 首次执行成功');
-      }
-    } catch (error) {
-      console.warn('⚠️ hug_frame_to_content 首次执行失败:', error.message || error);
-    }
-
-    try {
-      await this.sendCommand('flush_layout', {});
-    } catch {}
-    await this.sleep(80);
-
-    let needsFallback = !hugSuccess;
-
-    if (containerId && shortCardId) {
+    } catch (e) {
       try {
-        const scInfo = await this.sendCommand('get_node_info', { nodeId: containerId });
-        const posterInfo = await this.sendCommand('get_node_info', { nodeId: posterId });
-        const posterHeight = posterInfo?.height ?? posterInfo?.absoluteBoundingBox?.height ?? 0;
-        const posterTop = posterInfo?.absoluteRenderBounds?.y ?? posterInfo?.absoluteBoundingBox?.y ?? posterInfo?.absoluteTransform?.[1]?.[2] ?? 0;
-        const scBottom = (() => {
-          if (scInfo?.absoluteRenderBounds) return scInfo.absoluteRenderBounds.y + scInfo.absoluteRenderBounds.height;
-          if (scInfo?.absoluteBoundingBox) return scInfo.absoluteBoundingBox.y + scInfo.absoluteBoundingBox.height;
-          return posterTop + posterHeight;
-        })();
-        const expectedHeight = Math.max(0, scBottom - posterTop) + bottomPadding;
-        if (posterHeight < expectedHeight - 2) {
-          try {
-            result = await this.sendCommand('hug_frame_to_content', {
-              posterId,
-              containerId,
-              padding: bottomPadding
-            });
-            if (result && result.success === false) {
-              console.warn('⚠️ hug_frame_to_content 二次执行失败:', result.message || result);
-            } else if (result) {
-              hugSuccess = true;
-              console.log('✅ hug_frame_to_content 二次执行成功');
-            }
-            try { await this.sendCommand('flush_layout', {}); } catch {}
-            await this.sleep(60);
-          } catch (error) {
-            console.warn('⚠️ hug_frame_to_content 二次执行失败:', error.message || error);
-          }
-        }
-        try {
-          const verifyPoster = await this.sendCommand('get_node_info', { nodeId: posterId });
-          const verifyContainer = await this.sendCommand('get_node_info', { nodeId: containerId });
-          const finalPosterHeight = verifyPoster?.height ?? verifyPoster?.absoluteBoundingBox?.height ?? 0;
-          const finalPosterTop = verifyPoster?.absoluteRenderBounds?.y ?? verifyPoster?.absoluteBoundingBox?.y ?? verifyPoster?.absoluteTransform?.[1]?.[2] ?? 0;
-          const finalBottom = (() => {
-            if (verifyContainer?.absoluteRenderBounds) return verifyContainer.absoluteRenderBounds.y + verifyContainer.absoluteRenderBounds.height;
-            if (verifyContainer?.absoluteBoundingBox) return verifyContainer.absoluteBoundingBox.y + verifyContainer.absoluteBoundingBox.height;
-            return finalPosterTop + finalPosterHeight;
-          })();
-          const finalExpectedHeight = Math.max(0, finalBottom - finalPosterTop) + bottomPadding;
-          if (finalPosterHeight < finalExpectedHeight - 2) {
-            needsFallback = true;
-          } else {
-            needsFallback = false;
-          }
-        } catch (error) {
-          console.warn('⚠️ 校验 Hug 高度失败:', error.message || error);
-        }
-      } catch (error) {
-        console.warn('⚠️ 校验 Hug 结果失败:', error.message || error);
-      }
-    }
-
-    let fallbackResult = result;
-    if (needsFallback) {
-      try {
-        const res = await this.sendCommand('resize_poster_to_fit', {
+        await this.sendCommand('resize_poster_to_fit', {
           posterId,
-          containerNameCandidates: ['shortCard', 'ContentAndPlate', 'slot:IMAGE_GRID', 'content_anchor'],
+          anchorId: shortCardId,
           bottomPadding
         });
-        fallbackResult = res;
-        if (res && res.success === false) {
-          console.warn('⚠️ resize_poster_to_fit fallback 失败:', res.message || res);
-        } else if (res) {
-          console.log('✅ fallback resize_poster_to_fit');
-          hugSuccess = true;
-        }
-      } catch (error) {
-        console.warn('⚠️ resize_poster_to_fit fallback 异常:', error.message || error);
-      }
+      } catch (_) {}
     }
 
-    try {
-      await this.sendCommand('flush_layout', {});
-    } catch {}
+    try { await this.sendCommand('flush_layout', {}); } catch {}
     await this.sleep(80);
-
-    return fallbackResult;
-  }
-
-  async findPosterRootForCard(cardId) {
-    if (!cardId) return null;
-    let currentId = cardId;
-    const visited = new Set();
-    let fallbackFrameId = null;
-    while (currentId && !visited.has(currentId)) {
-      visited.add(currentId);
-      const info = await this.sendCommand('get_node_info', { nodeId: currentId });
-      if (!info) break;
-      const name = (info.name || '').trim();
-      if (info.type === 'FRAME') {
-        if (/^(短图|shortPoster)/i.test(name)) {
-          return info.id || currentId;
-        }
-        if (!fallbackFrameId) {
-          fallbackFrameId = info.id || currentId;
-        }
-      }
-      const parentId = info.parentId;
-      if (!parentId) {
-        break;
-      }
-      currentId = parentId;
-    }
-    return fallbackFrameId;
-  }
-
-  async ensurePosterFrame(cardId, lang, index) {
-    const posterId = await this.findPosterRootForCard(cardId);
-    if (posterId) {
-      return posterId;
-    }
-    console.warn('⚠️ poster frame missing, creating wrapper...');
-    return cardId;
   }
 
   async imageToBase64(assetId, contentPath) {
@@ -1286,16 +1207,17 @@ class ArticleImageRunner {
       console.log(`\n📝 [${lang}] 处理第 ${i + 1}/${content.items.length} 条`);
 
       try {
-        const instanceId = await this.createShortCardInstance(component, x, y);
+        let posterId = await this.createPosterFrame(lang, i, x, y);
+        const instanceId = await this.createShortCardInstance(component, 0, 0, posterId || undefined);
         const cardId = await this.fillShortCard(instanceId, item, lang);
 
-        try { await this.sendCommand('flush_layout', {}); } catch {}
-        await this.sleep(150);
+        if (!posterId) {
+          posterId = await this.ensurePosterFrame(cardId, lang, i);
+        }
 
-        const posterId = await this.ensurePosterFrame(cardId, lang, i);
         if (posterId) {
-          console.log(`🎯 posterId: ${posterId}`);
-          await this.resizeShortRootToContent(posterId, 150);
+          this.posterByCard.set(cardId, posterId);
+          await this.resizeShortRootToContent(posterId, 150, cardId);
         } else {
           console.warn('⚠️ 无法确定短图根 Frame，跳过 Hug');
         }

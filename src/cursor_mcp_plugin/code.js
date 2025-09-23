@@ -128,7 +128,7 @@ function waitForNextFrame() {
 function findContentContainer(frame) {
   if (!frame || !('findOne' in frame)) return null;
   // ContentAndPlate 必须优先于 ContentContainer
-  var candidates = ['ContentAndPlate', '内容容器', 'content', 'cards', '卡片容器', '容器', 'ContentContainer', 'Odaily固定板', 'EXIO固定板', '干货铺固定板'];
+  var candidates = ['shortCard', '短图', '短卡片', 'ContentAndPlate', '内容容器', 'content', 'cards', '卡片容器', '容器', 'ContentContainer', 'Odaily固定板', 'EXIO固定板', '干货铺固定板'];
   var lowered = candidates.map(function (n) { return String(n || '').trim().toLowerCase(); });
   var found = frame.findOne(function (node) {
     if (!node || !node.name) return false;
@@ -152,9 +152,6 @@ async function hugFrameToContent(frame, container, padding) {
   // 再让出两帧，确保异步排版完成
   await waitForNextFrame();
   await waitForNextFrame();
-
-  // 日志输出，便于调试
-  console.log('[hug] pick anchor =', target.name, target.type);
 
   // 量"渲染底"：RB优先 → AB回退 → 子树并集兜底
   function rectOf(node) {
@@ -188,9 +185,6 @@ async function hugFrameToContent(frame, container, padding) {
   var bottom = r.y + r.h;
   var newH = Math.round((bottom - posterTop) + (typeof padding === 'number' ? padding : DEFAULT_RESIZE_PADDING));
   
-  console.log('[hug] posterRB.y =', posterTop, 'anchorRB.y/h =', r.y, r.h);
-  console.log('[hug] oldH -> newH =', frame.height, '->', newH, 'padding=', padding || DEFAULT_RESIZE_PADDING);
-
   // 3) 规避 Auto-layout 干扰：临时固定或关闭，再恢复
   var prevLayout = frame.layoutMode;              // 'NONE' | 'HORIZONTAL' | 'VERTICAL'
   var prevCounter = frame.counterAxisSizingMode;  // 'AUTO' | 'FIXED'
@@ -215,6 +209,7 @@ async function hugFrameToContent(frame, container, padding) {
     }
   }
   
+  console.log(`✅ short poster resized: ${newH}`);
   return { success: true, height: newH, anchor: target.name };
 }
 
@@ -5136,8 +5131,12 @@ async function resizePosterToFit(params) {
     return { success: false, message: "poster not a FRAME" };
   }
 
-  // 仅结算布局，不加载字体（避免破坏其他操作）
-  await _flushLayoutAsync();
+  try { await figma.loadAllFontsAsync(); } catch (e) {}
+  if (typeof figma.flushAsync === 'function') {
+    try { await figma.flushAsync(); } catch (e) {}
+  }
+  await waitForNextFrame();
+  await waitForNextFrame();
 
   // 选锚点
   var anchors = [];
@@ -5196,7 +5195,7 @@ async function resizePosterToFit(params) {
   }
 
   await _flushLayoutAsync();
-  console.log('[hug] poster resized: oldH=' + oldHeight + ' -> newH=' + newHeight + ', padding=' + bottomPadding);
+  console.log(`✅ short poster resized: ${newHeight}`);
   return { success: true, height: newHeight };
 }
 
