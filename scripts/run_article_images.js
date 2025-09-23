@@ -1075,29 +1075,20 @@ class ArticleImageRunner {
   async resizeShortRootToContent(posterId, bottomPadding = 150, anchorId) {
     if (!posterId) return null;
     try { await this.sendCommand('flush_layout', {}); } catch {}
-    await this.sleep(140);
-
-    let shortCardId = anchorId || await this.findChildByName(posterId, 'shortCard');
-    if (!shortCardId) {
-      const fallbacks = ['slot:IMAGE_GRID', 'ContentAndPlate'];
-      for (const name of fallbacks) {
-        shortCardId = await this.findChildByName(posterId, name);
-        if (shortCardId) break;
-      }
-    }
+    await this.sleep(120);
 
     try {
-      await this.sendCommand('frame_hug_to_anchor', {
-        frameId: posterId,
-        anchorId: shortCardId || posterId,
-        padding: bottomPadding
+      await this.sendCommand('resize_poster_to_fit', {
+        posterId,
+        anchorId,
+        bottomPadding
       });
     } catch (error) {
-      console.warn('⚠️ frame_hug_to_anchor 失败:', error.message || error);
+      console.warn('⚠️ resize_poster_to_fit 失败:', error.message || error);
     }
 
     try { await this.sendCommand('flush_layout', {}); } catch {}
-    await this.sleep(100);
+    await this.sleep(80);
   }
 
   async imageToBase64(assetId, contentPath) {
@@ -1190,18 +1181,15 @@ class ArticleImageRunner {
         await this.sleep(150);
 
         let posterId = await this.findPosterRootForCard(cardId);
-        let anchorId = null;
         if (posterId) {
           const posterName = `短图-${lang}-${i}`;
           try { await this.sendCommand('set_node_name', { nodeId: posterId, name: posterName }); } catch (error) {
             console.warn('⚠️ 重命名短图失败:', error.message || error);
           }
-          anchorId = await this.findChildByName(posterId, 'shortCard') ||
-                     await this.findChildByName(posterId, 'slot:IMAGE_GRID') ||
-                     await this.findChildByName(posterId, 'ContentAndPlate');
-          await this.resizeShortRootToContent(posterId, 150, anchorId || cardId);
+          // 统一命令：明确以 shortCard 实例作为 anchor
+          await this.resizeShortRootToContent(posterId, 150, cardId);
         } else {
-          console.warn('⚠️ 无法确定短图根 Frame，跳过 Hug');
+          console.warn('⚠️ 无法确定短图根 Frame，跳过自适应高度');
         }
 
         const filename = `${lang}_card_${String(i).padStart(3, '0')}.png`;

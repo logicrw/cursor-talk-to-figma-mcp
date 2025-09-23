@@ -362,7 +362,17 @@ async function handleCommand(command, params) {
     case "flush_layout":
       return await flushLayout();
     case "hug_frame_to_content":
-      return await hugFrameToContentCommand(params);
+      return await resizePosterToFit({
+        posterId: params && (params.posterId || params.frameId),
+        anchorId: params && (params.containerId || params.anchorId),
+        bottomPadding: params && (typeof params.padding === 'number' ? params.padding : params && params.bottomPadding)
+      });
+    case "frame_hug_to_anchor":
+      return await resizePosterToFit({
+        posterId: params && (params.posterId || params.frameId),
+        anchorId: params && (params.anchorId || params.containerId),
+        bottomPadding: params && params.bottomPadding
+      });
     case "set_node_name":
       return await setNodeName(params);
     case "clear_card_content":
@@ -5066,9 +5076,8 @@ async function appendCardToContainer(params) {
   }
 }
 
-// 工具：容错 flush（无官方API时用双帧降级）
+// 工具：容错 flush（无官方API时用双帧降级）；禁止 loadAllFontsAsync
 async function _flushLayoutAsync() {
-  try { await figma.loadAllFontsAsync(); } catch (e) {}
   if (typeof figma.flushAsync === 'function') {
     try { await figma.flushAsync(); } catch (e) {}
   }
@@ -5124,31 +5133,25 @@ async function resizePosterToFit(params) {
     return { success: false, message: "poster not a FRAME" };
   }
 
-  try { await figma.loadAllFontsAsync(); } catch (e) {}
-  if (typeof figma.flushAsync === 'function') {
-    try { await figma.flushAsync(); } catch (e) {}
-  }
-  await waitForNextFrame();
-  await waitForNextFrame();
+  await _flushLayoutAsync();
 
   // 选锚点
   var anchors = [];
   if (anchorId) {
     var a = await figma.getNodeByIdAsync(anchorId);
-    if (a && a.visible !== false && 'children' in a) anchors.push(a);
+    if (a && a.visible !== false) anchors.push(a);
   }
   if (anchors.length === 0) {
-    anchors = _pickAnchorsUnderPoster(poster, ['shortcard', 'slot:image_grid', 'contentandplate']);
-  }
-  if (anchors.length === 0) {
-    var container = findContentContainer(poster);
-    if (container) anchors.push(container);
+    anchors = _pickAnchorsUnderPoster(poster, ['shortcard','contentandplate','contentcontainer','odaily固定板','exio固定板','干货铺固定板','slot:image_grid']);
   }
   if (anchors.length === 0) return { success: false, message: "no anchor found under poster" };
 
   // 求 poster 顶的绝对 y（RB > AB）
   var posterTop = (poster.absoluteRenderBounds ? poster.absoluteRenderBounds.y :
-                  (poster.absoluteBoundingBox ? poster.absoluteBoundingBox.y : poster.absoluteTransform[1][2]));
+                  (poster.absoluteBoundingBox ? poster.absoluteBoundingBox.y : undefined));
+  if (posterTop === undefined) {
+    return { success: false, message: "cannot measure poster top" };
+  }
 
   var maxRelBottom = 0;
   for (var i = 0; i < anchors.length; i++) {
@@ -5592,9 +5595,7 @@ async function setPosterTitleAndDate(params) {
 
 async function flushLayout() {
   try {
-    if (typeof figma.flushAsync === 'function') {
-      await figma.flushAsync();
-    }
+    await _flushLayoutAsync();
     return { success: true };
   } catch (error) {
     const message = error && error.message ? error.message : 'flushLayout failed';
