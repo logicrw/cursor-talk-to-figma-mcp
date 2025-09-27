@@ -1,0 +1,80 @@
+name: cursor-talk-to-figma-mcp
+description: Figma MCP server for cursor integration
+
+output:
+  path: .context
+  format: markdown
+
+documents:
+  - name: overview
+    source:
+      type: tree
+      include:
+        - "src/**/*.ts"
+        - "plugin/**/*.ts"
+        - "*.json"
+        - "*.md"
+      exclude:
+        - "node_modules/**"
+        - "dist/**"
+        - "build/**"
+        - ".git/**"
+        - ".serena/**"
+    modifiers:
+      - type: removeComments
+        enabled: false
+      - type: removeEmptyLines
+        enabled: false
+
+  - name: source_mcp_server
+    source:
+      type: file
+      files:
+        - src/index.ts
+        - src/server/Server.ts
+        - src/types.ts
+        - src/server/FigmaPluginServer.ts
+        - src/client/FigmaPluginClient.ts
+    modifiers:
+      - type: lineNumbers
+        enabled: true
+      - type: removeComments
+        enabled: false
+
+  - name: source_plugin
+    source:
+      type: file
+      files:
+        - plugin/src/main.ts
+        - plugin/src/utils.ts
+        - plugin/src/componentHelper.ts
+        - plugin/src/annotationHelper.ts
+    modifiers:
+      - type: lineNumbers
+        enabled: true
+      - type: removeComments
+        enabled: false
+
+  - name: config
+    source:
+      type: file
+      files:
+        - package.json
+        - tsconfig.json
+        - mcp-config.json
+        - plugin/manifest.json
+        - plugin/tsconfig.json
+    modifiers:
+      - type: removeComments
+        enabled: false
+
+  - name: documentation
+    source:
+      type: file
+      files:
+        - readme.md
+        - AGENTS.md
+        - DRAGME.md
+    modifiers:
+      - type: removeComments
+        enabled: false

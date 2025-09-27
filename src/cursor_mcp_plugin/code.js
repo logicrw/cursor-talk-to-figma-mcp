@@ -5041,16 +5041,26 @@ function _nodeBottomAbs(n) {
   return -Infinity;
 }
 
-// 工具：在 poster 内寻找锚点（优先 ContentAndPlate 及别名）
+// 工具：在 poster 内寻找锚点（大小写不敏感匹配）
 function _pickAnchorsUnderPoster(poster, names) {
   if (!poster || !('findAll' in poster)) return [];
-  var lowered = (names || []).map(function (n) { return String(n || '').trim().toLowerCase(); });
+  var normalizedNames = (names || []).map(function (n) {
+    return String(n || '').trim().toLowerCase().replace(/[_\-\s]/g, '');
+  });
+
   return poster.findAll(function (node) {
     if (!node || !node.name) return false;
     if (node.visible === false) return false;
-    if (!('children' in node)) return false;
-    var nm = String(node.name || '').trim().toLowerCase();
-    return lowered.indexOf(nm) !== -1;
+    // 不再限制必须有 children，因为有些锚点可能是叶子节点
+    var nodeName = String(node.name || '').trim().toLowerCase().replace(/[_\-\s]/g, '');
+
+    // 精确匹配或包含匹配
+    for (var i = 0; i < normalizedNames.length; i++) {
+      if (nodeName === normalizedNames[i] || nodeName.indexOf(normalizedNames[i]) !== -1) {
+        return true;
+      }
+    }
+    return false;
   }) || [];
 }
 
@@ -5062,24 +5072,52 @@ async function resizePosterToFit(params) {
   var minHeight = (params && typeof params.minHeight === 'number') ? params.minHeight : 0;
   var maxHeight = (params && typeof params.maxHeight === 'number') ? params.maxHeight : 1000000;
 
-  if (!posterId) throw new Error("Missing posterId");
+  if (!posterId) {
+    console.error('❌ resizePosterToFit: Missing posterId');
+    throw new Error("Missing posterId");
+  }
+
+  console.log('🔍 resizePosterToFit: Starting with params:', {
+    posterId: posterId,
+    anchorId: anchorId,
+    bottomPadding: bottomPadding,
+    minHeight: minHeight,
+    maxHeight: maxHeight
+  });
+
   var poster = await figma.getNodeByIdAsync(posterId);
   if (!poster || poster.type !== 'FRAME') {
+    console.error(`❌ resizePosterToFit: Invalid poster - type: ${poster ? poster.type : 'null'}`);
     return { success: false, message: "poster not a FRAME" };
   }
+
+  console.log(`📋 Found poster: "${poster.name}" (${poster.width}x${poster.height})`);
 
   await _flushLayoutAsync();
 
   // 选锚点
   var anchors = [];
   if (anchorId) {
+    console.log(`🔍 Looking for anchor by ID: ${anchorId}`);
     var a = await figma.getNodeByIdAsync(anchorId);
-    if (a && a.visible !== false) anchors.push(a);
+    if (a && a.visible !== false) {
+      anchors.push(a);
+      console.log(`✅ Found anchor by ID: "${a.name}"`);
+    } else {
+      console.warn(`⚠️ Anchor ID ${anchorId} not found or invisible`);
+    }
   }
   if (anchors.length === 0) {
-    anchors = _pickAnchorsUnderPoster(poster, ['shortcard','contentandplate','contentcontainer','odaily固定板','exio固定板','干货铺固定板','slot:image_grid']);
+    console.log('🔍 Searching for anchors by name under poster...');
+    anchors = _pickAnchorsUnderPoster(poster, ['shortCard','ContentAndPlate','ContentContainer','content_anchor','Odaily固定板','EXIO固定板','干货铺固定板','slot:IMAGE_GRID']);
+    if (anchors.length > 0) {
+      console.log(`✅ Found ${anchors.length} anchor(s) by name:`, anchors.map(function(a) { return a.name; }));
+    }
   }
-  if (anchors.length === 0) return { success: false, message: "no anchor found under poster" };
+  if (anchors.length === 0) {
+    console.error('❌ No anchor found under poster');
+    return { success: false, message: "no anchor found under poster" };
+  }
 
   // 求 poster 顶的绝对 y（RB > AB）
   var posterTop = (poster.absoluteRenderBounds ? poster.absoluteRenderBounds.y :
@@ -5127,8 +5165,26 @@ async function resizePosterToFit(params) {
   }
 
   await _flushLayoutAsync();
-  console.log(`✅ short poster resized: ${newHeight}`);
-  return { success: true, height: newHeight };
+
+  // 详细的成功日志
+  console.log(`✅ Poster resized successfully:`, {
+    posterId: posterId,
+    posterName: poster.name,
+    anchorId: anchors[0].id,
+    anchorName: anchors[0].name,
+    oldHeight: oldHeight,
+    newHeight: newHeight,
+    bottomPadding: bottomPadding,
+    anchorBottom: maxRelBottom
+  });
+
+  return {
+    success: true,
+    height: newHeight,
+    posterName: poster.name,
+    anchorName: anchors[0].name,
+    oldHeight: oldHeight
+  };
 }
 
 // NOTE: Legacy hug command handlers removed; switch now redirects to resizePosterToFit for compatibility
