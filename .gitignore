@@ -1,4 +1,6 @@
 node_modules/
 .cursor/
+.serena/
+.cursor/
 dist/
 docs/
