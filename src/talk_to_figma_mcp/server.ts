@@ -2789,6 +2789,70 @@ server.tool(
   }
 );
 
+// Set Focus Tool
+server.tool(
+  "set_focus",
+  "Set focus on a specific node in Figma by selecting it and scrolling viewport to it",
+  {
+    nodeId: z.string().describe("The ID of the node to focus on"),
+  },
+  async ({ nodeId }: any) => {
+    try {
+      const result = await sendCommandToFigma("set_focus", { nodeId });
+      const typedResult = result as { name: string; id: string };
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Focused on node "${typedResult.name}" (ID: ${typedResult.id})`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error setting focus: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
+// Set Selections Tool
+server.tool(
+  "set_selections",
+  "Set selection to multiple nodes in Figma and scroll viewport to show them",
+  {
+    nodeIds: z.array(z.string()).describe("Array of node IDs to select"),
+  },
+  async ({ nodeIds }: any) => {
+    try {
+      const result = await sendCommandToFigma("set_selections", { nodeIds });
+      const typedResult = result as { selectedNodes: Array<{ name: string; id: string }>; count: number };
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Selected ${typedResult.count} nodes: ${typedResult.selectedNodes.map(node => `"${node.name}" (${node.id})`).join(', ')}`,
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error setting selections: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
 // Strategy for converting Figma prototype reactions to connector lines
 server.prompt(
   "reaction_to_connector_strategy",
@@ -2927,7 +2991,9 @@ type FigmaCommand =
   | "export_frame_to_server"
   | "export_frame"
   | "clear_card_content"
-  | "set_poster_title_and_date";
+  | "set_poster_title_and_date"
+  | "set_focus"
+  | "set_selections";
 
 type CommandParams = {
   get_document_info: Record<string, never>;
@@ -3157,6 +3223,12 @@ type CommandParams = {
     titleText?: string;
     dateISO?: string;
     locale?: string;
+  };
+  set_focus: {
+    nodeId: string;
+  };
+  set_selections: {
+    nodeIds: string[];
   };
 };
 
