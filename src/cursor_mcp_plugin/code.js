@@ -389,14 +389,62 @@ function rgbaToHex(color) {
   );
 }
 
+function _toPlainRect(rect) {
+  if (!rect) return null;
+  if (typeof rect.x !== 'number' || typeof rect.y !== 'number') return null;
+  return {
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+function _cloneArray(input, depth) {
+  if (!Array.isArray(input)) return undefined;
+  return input.map(function (entry) {
+    if (Array.isArray(entry) && depth > 0) {
+      return _cloneArray(entry, depth - 1);
+    }
+    return entry;
+  });
+}
+
 function filterFigmaNode(node) {
+  if (!node) return null;
+
+  var type = typeof node.type === 'string' ? node.type : (node.type ? String(node.type) : undefined);
 
   var filtered = {
     id: node.id,
     name: node.name,
-    type: node.type,
+    type: type,
     parentId: node.parent ? node.parent.id : undefined,
   };
+
+  if ('visible' in node) {
+    filtered.visible = node.visible !== false;
+  }
+
+  if (typeof node.width === 'number') {
+    filtered.width = node.width;
+  }
+
+  if (typeof node.height === 'number') {
+    filtered.height = node.height;
+  }
+
+  if (node.absoluteBoundingBox) {
+    filtered.absoluteBoundingBox = _toPlainRect(node.absoluteBoundingBox);
+  }
+
+  if (node.absoluteRenderBounds) {
+    filtered.absoluteRenderBounds = _toPlainRect(node.absoluteRenderBounds);
+  }
+
+  if (node.relativeTransform) {
+    filtered.relativeTransform = _cloneArray(node.relativeTransform, 2);
+  }
 
   if (node.fills && node.fills.length > 0) {
     filtered.fills = node.fills.map((fill) => {
@@ -438,10 +486,6 @@ function filterFigmaNode(node) {
 
   if (node.cornerRadius !== undefined) {
     filtered.cornerRadius = node.cornerRadius;
-  }
-
-  if (node.absoluteBoundingBox) {
-    filtered.absoluteBoundingBox = node.absoluteBoundingBox;
   }
 
   if (node.characters) {
@@ -525,36 +569,51 @@ filterFigmaNode = function(node) {
 }
 
 async function getNodeInfo(nodeId) {
-  const node = await figma.getNodeByIdAsync(nodeId);
-
-  if (!node) {
-    throw new Error(`Node not found with ID: ${nodeId}`);
+  if (!nodeId) {
+    return { success: false, message: 'missing nodeId' };
   }
 
-  // Traverse live node graph and build filtered JSON
-  return filterFigmaNode(node);
+  let node = null;
+  try {
+    node = await figma.getNodeByIdAsync(nodeId);
+  } catch (error) {
+    console.error('❌ getNodeInfo: lookup failed', error && error.message ? error.message : error);
+    return {
+      success: false,
+      message: 'lookup failed',
+      nodeId: nodeId,
+      error: error && error.message ? error.message : String(error || ''),
+    };
+  }
+
+  if (!node) {
+    return { success: false, message: 'node not found', nodeId: nodeId };
+  }
+
+  var serialized = filterFigmaNode(node);
+  if (!serialized) {
+    return { success: false, message: 'unable to serialize node', nodeId: nodeId };
+  }
+
+  var payload = Object.assign({ success: true, nodeId: nodeId }, serialized);
+  payload.node = serialized;
+  payload.type = serialized.type;
+  return payload;
 }
 
 async function getNodesInfo(nodeIds) {
-  try {
-    // Load all nodes in parallel
-    const nodes = await Promise.all(
-      nodeIds.map((id) => figma.getNodeByIdAsync(id))
-    );
-
-    // Filter out any null values (nodes that weren't found)
-    const validNodes = nodes.filter((node) => node !== null);
-
-    // Build filtered info for each
-    const responses = validNodes.map((node) => ({
-      nodeId: node.id,
-      document: filterFigmaNode(node)
-    }));
-
-    return responses;
-  } catch (error) {
-    throw new Error(`Error getting nodes info: ${error.message}`);
+  if (!Array.isArray(nodeIds)) {
+    return [];
   }
+
+  const results = await Promise.all(
+    nodeIds.map(async (id) => {
+      const info = await getNodeInfo(id);
+      return Object.assign({ nodeId: id }, info);
+    })
+  );
+
+  return results;
 }
 
 async function getReactions(nodeIds) {
@@ -5085,6 +5144,7 @@ async function resizePosterToFit(params) {
   var bottomPadding = (params && typeof params.bottomPadding === 'number') ? params.bottomPadding : DEFAULT_RESIZE_PADDING;
   var minHeight = (params && typeof params.minHeight === 'number') ? params.minHeight : 0;
   var maxHeight = (params && typeof params.maxHeight === 'number') ? params.maxHeight : 1000000;
+  var warnings = [];
 
   if (!posterId) {
     console.error('❌ resizePosterToFit: Missing posterId');
@@ -5100,9 +5160,15 @@ async function resizePosterToFit(params) {
   });
 
   var poster = await figma.getNodeByIdAsync(posterId);
-  if (!poster || poster.type !== 'FRAME') {
-    console.error(`❌ resizePosterToFit: Invalid poster - type: ${poster ? poster.type : 'null'}`);
-    return { success: false, message: "poster not a FRAME" };
+  if (!poster) {
+    console.error('❌ resizePosterToFit: Poster not found');
+    return { success: false, message: 'poster not found' };
+  }
+
+  var posterType = poster.type;
+  if (posterType !== 'FRAME' && posterType !== 'INSTANCE') {
+    console.warn('⚠️ resizePosterToFit: unexpected poster type, continuing cautiously:', posterType);
+    warnings.push('unexpected poster type: ' + posterType);
   }
 
   console.log(`📋 Found poster: "${poster.name}" (${poster.width}x${poster.height})`);
@@ -5145,6 +5211,7 @@ async function resizePosterToFit(params) {
       contentBottom = anchorBottom;
     }
   }
+  var maxRelBottom = contentBottom;
 
   if (!isFinite(contentBottom) || contentBottom < posterTop) {
     console.error('❌ Cannot measure anchor bottom properly');
@@ -5170,6 +5237,12 @@ async function resizePosterToFit(params) {
     }
   } catch (e) {}
 
+  var canResize = (typeof poster.resizeWithoutConstraints === 'function') || (typeof poster.resize === 'function');
+  if (!canResize) {
+    console.error('❌ resizePosterToFit: poster does not support resizing');
+    return { success: false, message: 'poster does not support resizing', warnings: warnings };
+  }
+
   var oldHeight = poster.height;
   try {
     if (typeof poster.resizeWithoutConstraints === 'function') {
@@ -5178,7 +5251,7 @@ async function resizePosterToFit(params) {
       poster.resize(poster.width, newHeight);
     }
   } catch (e) {
-    return { success: false, message: "resize failed: " + (e && e.message ? e.message : e) };
+    return { success: false, message: "resize failed: " + (e && e.message ? e.message : e), warnings: warnings };
   } finally {
     if (isAuto && prevCounter) {
       try { poster.counterAxisSizingMode = prevCounter; } catch (e) {}
@@ -5196,7 +5269,8 @@ async function resizePosterToFit(params) {
     oldHeight: oldHeight,
     newHeight: newHeight,
     bottomPadding: bottomPadding,
-    anchorBottom: maxRelBottom
+    anchorBottom: maxRelBottom,
+    warnings: warnings
   });
 
   return {
@@ -5204,7 +5278,8 @@ async function resizePosterToFit(params) {
     height: newHeight,
     posterName: poster.name,
     anchorName: anchors[0].name,
-    oldHeight: oldHeight
+    oldHeight: oldHeight,
+    warnings: warnings
   };
 }
 

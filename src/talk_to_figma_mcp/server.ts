@@ -335,16 +335,61 @@ function rgbaToHex(color: any): string {
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}${a === 255 ? '' : a.toString(16).padStart(2, '0')}`;
 }
 
+function toPlainRect(rect: any) {
+  if (!rect || typeof rect.x !== 'number' || typeof rect.y !== 'number') {
+    return undefined;
+  }
+  return {
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height
+  };
+}
+
 function filterFigmaNode(node: any) {
+  if (!node) return null;
+
+  const source = node?.node ? node.node : node;
 
   const filtered: any = {
-    id: node.id,
-    name: node.name,
-    type: node.type,
+    id: source.id,
+    name: source.name,
+    type: source.type,
   };
 
-  if (node.fills && node.fills.length > 0) {
-    filtered.fills = node.fills.map((fill: any) => {
+  if (source.parentId !== undefined) {
+    filtered.parentId = source.parentId;
+  } else if (source.parent && source.parent.id) {
+    filtered.parentId = source.parent.id;
+  }
+
+  if ('visible' in source) {
+    filtered.visible = source.visible !== false;
+  }
+
+  if (typeof source.width === 'number') {
+    filtered.width = source.width;
+  }
+
+  if (typeof source.height === 'number') {
+    filtered.height = source.height;
+  }
+
+  if (source.absoluteBoundingBox) {
+    filtered.absoluteBoundingBox = toPlainRect(source.absoluteBoundingBox) || source.absoluteBoundingBox;
+  }
+
+  if (source.absoluteRenderBounds) {
+    filtered.absoluteRenderBounds = toPlainRect(source.absoluteRenderBounds) || source.absoluteRenderBounds;
+  }
+
+  if (Array.isArray(source.relativeTransform)) {
+    filtered.relativeTransform = source.relativeTransform.map((row: any) => Array.isArray(row) ? [...row] : row);
+  }
+
+  if (source.fills && source.fills.length > 0) {
+    filtered.fills = source.fills.map((fill: any) => {
       const processedFill = { ...fill };
 
       // Remove boundVariables and imageRef
@@ -374,8 +419,8 @@ function filterFigmaNode(node: any) {
     });
   }
 
-  if (node.strokes && node.strokes.length > 0) {
-    filtered.strokes = node.strokes.map((stroke: any) => {
+  if (source.strokes && source.strokes.length > 0) {
+    filtered.strokes = source.strokes.map((stroke: any) => {
       const processedStroke = { ...stroke };
       // Remove boundVariables
       delete processedStroke.boundVariables;
@@ -387,32 +432,28 @@ function filterFigmaNode(node: any) {
     });
   }
 
-  if (node.cornerRadius !== undefined) {
-    filtered.cornerRadius = node.cornerRadius;
+  if (source.cornerRadius !== undefined) {
+    filtered.cornerRadius = source.cornerRadius;
   }
 
-  if (node.absoluteBoundingBox) {
-    filtered.absoluteBoundingBox = node.absoluteBoundingBox;
+  if (source.characters) {
+    filtered.characters = source.characters;
   }
 
-  if (node.characters) {
-    filtered.characters = node.characters;
-  }
-
-  if (node.style) {
+  if (source.style) {
     filtered.style = {
-      fontFamily: node.style.fontFamily,
-      fontStyle: node.style.fontStyle,
-      fontWeight: node.style.fontWeight,
-      fontSize: node.style.fontSize,
-      textAlignHorizontal: node.style.textAlignHorizontal,
-      letterSpacing: node.style.letterSpacing,
-      lineHeightPx: node.style.lineHeightPx
+      fontFamily: source.style.fontFamily,
+      fontStyle: source.style.fontStyle,
+      fontWeight: source.style.fontWeight,
+      fontSize: source.style.fontSize,
+      textAlignHorizontal: source.style.textAlignHorizontal,
+      letterSpacing: source.style.letterSpacing,
+      lineHeightPx: source.style.lineHeightPx
     };
   }
 
-  if (node.children) {
-    filtered.children = node.children
+  if (source.children) {
+    filtered.children = source.children
       .map((child: any) => filterFigmaNode(child))
       .filter((child: any) => child !== null); // Remove null children (VECTOR nodes)
   }
@@ -2882,6 +2923,7 @@ type FigmaCommand =
   | "set_text_auto_resize"
   | "append_card_to_container"
   | "resize_poster_to_fit"
+  | "frame_hug_to_anchor"
   | "export_frame_to_server"
   | "export_frame"
   | "clear_card_content"
@@ -3079,6 +3121,13 @@ type CommandParams = {
     posterId: string;
     anchorId?: string;
     bottomPadding?: number;
+    minHeight?: number;
+    maxHeight?: number;
+  };
+  frame_hug_to_anchor: {
+    frameId: string;
+    anchorId: string;
+    padding?: number;
     minHeight?: number;
     maxHeight?: number;
   };
