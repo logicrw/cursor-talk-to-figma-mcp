@@ -5020,25 +5020,39 @@ async function _flushLayoutAsync() {
   await waitForNextFrame();
 }
 
-// 工具：求节点渲染 bottom（RB>AB>子树并集）
-function _nodeBottomAbs(n) {
-  if (!n) return -Infinity;
+// 工具：获取节点的顶部和底部位置
+function _rectTopBottom(n) {
   var rb = n.absoluteRenderBounds;
-  if (rb) return rb.y + rb.height;
+  if (rb) return { top: rb.y, bottom: rb.y + rb.height };
   var ab = n.absoluteBoundingBox;
-  if (ab) return ab.y + ab.height;
-  var maxB = -Infinity;
-  if ("children" in n && n.children) {
-    for (var i = 0; i < n.children.length; i++) {
-      var b = _nodeBottomAbs(n.children[i]);
-      if (b > maxB) maxB = b;
+  if (ab) return { top: ab.y, bottom: ab.y + ab.height };
+  var t = (n.absoluteTransform && n.absoluteTransform[1] && n.absoluteTransform[1][2]) || 0;
+  var h = ('height' in n && typeof n.height === 'number') ? n.height : 0;
+  return { top: t, bottom: t + h };
+}
+
+// 工具：深度递归测量节点及所有可见子节点的最大底部
+function _deepBottom(n, maxDepth) {
+  // 关键修复：递归测量所有可见子节点，找到真实的内容底部
+  var rect = _rectTopBottom(n);
+  var bottom = rect.bottom;
+
+  if (!n || !('findAll' in n)) return bottom;
+
+  // 递归查找所有可见子节点
+  var nodes = maxDepth
+    ? n.findAll(function(c) { return c.visible !== false && c.depth <= maxDepth; })
+    : n.findAll(function(c) { return c.visible !== false; });
+
+  // 找到最深的底部
+  for (var i = 0; i < nodes.length; i++) {
+    var childRect = _rectTopBottom(nodes[i]);
+    if (childRect.bottom > bottom) {
+      bottom = childRect.bottom;
     }
   }
-  if (isFinite(maxB)) return maxB;
-  if (n.absoluteTransform && Array.isArray(n.absoluteTransform) && n.absoluteTransform[1]) {
-    return n.absoluteTransform[1][2] + (typeof n.height === 'number' ? n.height : 0);
-  }
-  return -Infinity;
+
+  return bottom;
 }
 
 // 工具：在 poster 内寻找锚点（大小写不敏感匹配）
@@ -5119,25 +5133,32 @@ async function resizePosterToFit(params) {
     return { success: false, message: "no anchor found under poster" };
   }
 
-  // 求 poster 顶的绝对 y（RB > AB）
-  var posterTop = (poster.absoluteRenderBounds ? poster.absoluteRenderBounds.y :
-                  (poster.absoluteBoundingBox ? poster.absoluteBoundingBox.y : undefined));
-  if (posterTop === undefined) {
-    return { success: false, message: "cannot measure poster top" };
-  }
+  // 求 poster 顶的绝对 y 和锚点的最深底部（关键修复）
+  var posterRect = _rectTopBottom(poster);
+  var posterTop = posterRect.top;
 
-  var maxRelBottom = 0;
+  // 使用深度递归测量找到锚点的真实内容底部
+  var contentBottom = -Infinity;
   for (var i = 0; i < anchors.length; i++) {
-    var absBottom = _nodeBottomAbs(anchors[i]);
-    if (!isFinite(absBottom)) continue;
-    var rel = absBottom - posterTop;
-    if (rel > maxRelBottom) maxRelBottom = rel;
+    var anchorBottom = _deepBottom(anchors[i]);
+    if (anchorBottom > contentBottom) {
+      contentBottom = anchorBottom;
+    }
   }
-  if (!isFinite(maxRelBottom)) return { success: false, message: "cannot measure anchors" };
 
-  var newHeight = Math.round(Math.max(0, maxRelBottom) + bottomPadding);
+  if (!isFinite(contentBottom) || contentBottom < posterTop) {
+    console.error('❌ Cannot measure anchor bottom properly');
+    return { success: false, message: "cannot measure anchors" };
+  }
+
+  console.log(`📐 Measurement: posterTop=${posterTop}, contentBottom=${contentBottom}, relativeHeight=${contentBottom - posterTop}`);
+
+  // 计算新高度：内容高度 + padding
+  var newHeight = Math.round((contentBottom - posterTop) + bottomPadding);
   if (newHeight < minHeight) newHeight = minHeight;
   if (newHeight > maxHeight) newHeight = maxHeight;
+
+  console.log(`📏 New height calculation: content=${contentBottom - posterTop}, padding=${bottomPadding}, final=${newHeight}`);
 
   // 若 poster 自身是 Auto‑layout，临时固定 counter 轴以避免弹回
   var prevCounter = null, isAuto = false;

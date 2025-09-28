@@ -963,24 +963,37 @@ class ArticleImageRunner {
     let currentId = cardId;
     const visited = new Set();
     let fallbackFrameId = null;
+
+    // 向上查找包含 shortCard 的最外层短图 Frame
     while (currentId && !visited.has(currentId)) {
       visited.add(currentId);
       const info = await this.sendCommand('get_node_info', { nodeId: currentId });
       if (!info) break;
+
       const name = String(info.name || '').trim();
+      console.log(`🔍 Checking node: ${name} (${info.type}) id=${currentId}`);
+
       if (info.type === 'FRAME') {
+        // 匹配 "短图-xx-xx" 格式的根 Frame
         if (/^(短图|shortPoster)/i.test(name)) {
+          console.log(`✅ Found poster root: ${name} (${info.id})`);
           return info.id || currentId;
         }
+        // 记录第一个遇到的 Frame 作为备选
         if (!fallbackFrameId) {
           fallbackFrameId = info.id || currentId;
         }
       }
+
       const parentId = info.parentId;
       if (!parentId) {
         break;
       }
       currentId = parentId;
+    }
+
+    if (fallbackFrameId) {
+      console.log(`⚠️ Using fallback frame as poster root: ${fallbackFrameId}`);
     }
     return fallbackFrameId;
   }
@@ -1074,15 +1087,23 @@ class ArticleImageRunner {
 
   async resizeShortRootToContent(posterId, bottomPadding = 150, anchorId) {
     if (!posterId) return null;
+
+    console.log(`📐 Resizing poster to fit content:`, {
+      posterId: posterId,
+      anchorId: anchorId,
+      bottomPadding: bottomPadding
+    });
+
     try { await this.sendCommand('flush_layout', {}); } catch {}
     await this.sleep(120);
 
     try {
-      await this.sendCommand('resize_poster_to_fit', {
+      const result = await this.sendCommand('resize_poster_to_fit', {
         posterId,
         anchorId,
         bottomPadding
       });
+      console.log('✅ Resize successful:', result);
     } catch (error) {
       console.warn('⚠️ resize_poster_to_fit 失败:', error.message || error);
     }
