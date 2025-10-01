@@ -4,3 +4,8 @@ node_modules/
 .cursor/
 dist/
 docs/
+
+# Lock files - use bun.lock only
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
