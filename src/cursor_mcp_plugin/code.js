@@ -5458,7 +5458,32 @@ async function reflowShortcardTitle(params) {
   try {
     const sep = 'findOne' in titleSlot ? titleSlot.findOne(function (node) { return node && node.name === separatorName; }) : null;
     if (sep && 'y' in sep && 'height' in sep) {
-      sep.y = targetHeight - sep.height - Math.max(0, padBottom);
+      try { if ('layoutPositioning' in sep) sep.layoutPositioning = 'ABSOLUTE'; } catch (error) {}
+      try { if ('constraints' in sep) sep.constraints = { horizontal: 'MIN', vertical: 'MIN' }; } catch (error) {}
+
+      const sepWidth = (typeof sep.width === 'number') ? sep.width
+        : (sep.absoluteBoundingBox ? sep.absoluteBoundingBox.width : undefined);
+      const sepHeight = targetHeight - padTop - Math.max(0, padBottom);
+      const safeHeight = sepHeight > 0 ? sepHeight : 0;
+
+      try {
+        if (sepWidth != null && 'resizeWithoutConstraints' in sep) {
+          sep.resizeWithoutConstraints(sepWidth, safeHeight);
+        } else if (sepWidth != null && 'resize' in sep) {
+          sep.resize(sepWidth, safeHeight);
+        } else if ('height' in sep) {
+          sep.height = safeHeight;
+        }
+      } catch (error) {
+        try { if ('height' in sep) sep.height = safeHeight; } catch (err) {}
+      }
+
+      try {
+        if ('x' in sep) sep.x = padLeft;
+      } catch (error) {}
+      try {
+        if ('y' in sep) sep.y = padTop;
+      } catch (error) {}
     }
   } catch (error) {}
 
