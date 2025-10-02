@@ -1,6 +1,7 @@
 node_modules/
-.cursor/
+.claude/
 .serena/
+.repomap.tags.cache.v1/
 .cursor/
 dist/
 docs/

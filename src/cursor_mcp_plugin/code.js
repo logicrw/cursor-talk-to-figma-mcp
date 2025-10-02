@@ -125,6 +125,11 @@ function waitForNextFrame() {
   });
 }
 
+async function _flushLayout() {
+  try { if (typeof figma.flushAsync === 'function') await figma.flushAsync(); } catch (error) {}
+  await new Promise(function (resolve) { setTimeout(resolve, 0); });
+}
+
 function findContentContainer(frame) {
   if (!frame || !('findOne' in frame)) return null;
   // ContentAndPlate 必须优先于 ContentContainer
@@ -294,6 +299,8 @@ async function handleCommand(command, params) {
       return await resizePosterToFit(params);
     case "set_poster_title_and_date":
       return await setPosterTitleAndDate(params);
+    case "reflow_shortcard_title":
+      return await reflowShortcardTitle(params);
     case "flush_layout":
       return await flushLayout();
     case "hug_frame_to_content":
@@ -5118,6 +5125,108 @@ function _deepBottom(n, maxDepth) {
   return bottom;
 }
 
+async function _flush2() {
+  if (typeof figma.flushAsync === 'function') {
+    try { await figma.flushAsync(); } catch (e) {}
+  }
+  await new Promise(function (resolve) {
+    requestAnimationFrame(function () {
+      requestAnimationFrame(resolve);
+    });
+  });
+}
+
+async function _ensureTextFontsLoaded(node) {
+  if (!node || node.type !== 'TEXT') return;
+  try {
+    var len = node.characters ? node.characters.length : 0;
+    if (len > 0 && typeof node.getRangeAllFontNames === 'function') {
+      var fonts = node.getRangeAllFontNames(0, len);
+      for (var i = 0; i < fonts.length; i++) {
+        try { await figma.loadFontAsync(fonts[i]); } catch (e) {}
+      }
+      return;
+    }
+  } catch (error) {}
+
+  try {
+    var fontName = node.fontName;
+    if (fontName && fontName !== figma.mixed) {
+      await figma.loadFontAsync(fontName);
+    }
+  } catch (err) {}
+}
+
+function _rectRBorAB(n) {
+  var rb = n && n.absoluteRenderBounds;
+  if (rb) {
+    return { y: rb.y || 0, h: rb.height || 0, b: (rb.y || 0) + (rb.height || 0) };
+  }
+  var ab = n && n.absoluteBoundingBox;
+  if (ab) {
+    return { y: ab.y || 0, h: ab.height || 0, b: (ab.y || 0) + (ab.height || 0) };
+  }
+  var ty = 0;
+  if (n && n.absoluteTransform && n.absoluteTransform[1]) {
+    ty = n.absoluteTransform[1][2] || 0;
+  }
+  var h = (n && typeof n.height === 'number') ? n.height : 0;
+  return { y: ty, h: h, b: ty + h };
+}
+
+function _isAutoLayout(node) {
+  return !!(node && (node.layoutMode === 'HORIZONTAL' || node.layoutMode === 'VERTICAL'));
+}
+
+function _maybeMakeAbsolute(node) {
+  try {
+    var parent = node && node.parent;
+    if (parent && _isAutoLayout(parent) && node.layoutPositioning === 'AUTO') {
+      node.layoutPositioning = 'ABSOLUTE';
+    }
+  } catch (error) {}
+}
+
+// 临时把自动布局节点的主/副轴切到 FIXED，供 resize 时使用
+function _withSizingLock(node, target) {
+  if (!node) return function () {};
+
+  var layoutMode = node.layoutMode;
+  var isAuto = layoutMode === 'HORIZONTAL' || layoutMode === 'VERTICAL';
+  var prevPrimary = null;
+  var prevCounter = null;
+
+  if (isAuto) {
+    try { prevPrimary = node.primaryAxisSizingMode; } catch (error) {}
+    try { prevCounter = node.counterAxisSizingMode; } catch (error) {}
+
+    try {
+      if (target === 'HEIGHT') {
+        if (layoutMode === 'VERTICAL') {
+          node.primaryAxisSizingMode = 'FIXED';
+        } else {
+          node.counterAxisSizingMode = 'FIXED';
+        }
+      } else if (target === 'WIDTH') {
+        if (layoutMode === 'HORIZONTAL') {
+          node.primaryAxisSizingMode = 'FIXED';
+        } else {
+          node.counterAxisSizingMode = 'FIXED';
+        }
+      } else {
+        node.primaryAxisSizingMode = 'FIXED';
+        node.counterAxisSizingMode = 'FIXED';
+      }
+    } catch (error) {}
+  }
+
+  return function () {
+    if (!isAuto) return;
+    try { if (prevPrimary !== null && prevPrimary !== undefined) node.primaryAxisSizingMode = prevPrimary; } catch (error) {}
+    try { if (prevCounter !== null && prevCounter !== undefined) node.counterAxisSizingMode = prevCounter; } catch (error) {}
+  };
+}
+
 // 工具：在 poster 内寻找锚点（大小写不敏感匹配）
 function _pickAnchorsUnderPoster(poster, names) {
   if (!poster || !('findAll' in poster)) return [];
@@ -5231,16 +5340,6 @@ async function resizePosterToFit(params) {
 
   console.log(`📏 New height calculation: content=${contentBottom - posterTop}, padding=${bottomPadding}, final=${newHeight}`);
 
-  // 若 poster 自身是 Auto‑layout，临时固定 counter 轴以避免弹回
-  var prevCounter = null, isAuto = false;
-  try {
-    if (poster.layoutMode === 'HORIZONTAL' || poster.layoutMode === 'VERTICAL') {
-      isAuto = true;
-      prevCounter = poster.counterAxisSizingMode;
-      poster.counterAxisSizingMode = 'FIXED'; // 临时固定，操作完成再还原
-    }
-  } catch (e) {}
-
   var canResize = (typeof poster.resizeWithoutConstraints === 'function') || (typeof poster.resize === 'function');
   if (!canResize) {
     console.error('❌ resizePosterToFit: poster does not support resizing');
@@ -5248,6 +5347,7 @@ async function resizePosterToFit(params) {
   }
 
   var oldHeight = poster.height;
+  var unlockPoster = _withSizingLock(poster, 'HEIGHT');
   try {
     if (typeof poster.resizeWithoutConstraints === 'function') {
       poster.resizeWithoutConstraints(poster.width, newHeight);
@@ -5257,9 +5357,7 @@ async function resizePosterToFit(params) {
   } catch (e) {
     return { success: false, message: "resize failed: " + (e && e.message ? e.message : e), warnings: warnings };
   } finally {
-    if (isAuto && prevCounter) {
-      try { poster.counterAxisSizingMode = prevCounter; } catch (e) {}
-    }
+    try { unlockPoster && unlockPoster(); } catch (unlockErr) {}
   }
 
   await _flushLayoutAsync();
@@ -5284,6 +5382,96 @@ async function resizePosterToFit(params) {
     anchorName: anchors[0].name,
     oldHeight: oldHeight,
     warnings: warnings
+  };
+}
+
+async function reflowShortcardTitle(params) {
+  const {
+    rootId,
+    titleTextId,
+    padTop = 8,
+    padBottom = 8,
+    minTitleHeight = 64,
+    separatorName = '路径'
+  } = params || {};
+
+  if (!rootId || !titleTextId) {
+    return { success: false, message: 'missing rootId or titleTextId' };
+  }
+
+  const root = await figma.getNodeByIdAsync(rootId);
+  const titleText = await figma.getNodeByIdAsync(titleTextId);
+  if (!root || !titleText) {
+    return { success: false, message: 'root or titleText not found' };
+  }
+
+  let titleSlot = titleText.parent;
+  while (titleSlot && String(titleSlot.name) !== 'slot:TITLE') {
+    titleSlot = titleSlot.parent;
+  }
+  if (!titleSlot && 'findOne' in root) {
+    titleSlot = root.findOne(function (node) { return node && node.name === 'slot:TITLE'; });
+  }
+  if (!titleSlot || titleSlot.type !== 'FRAME') {
+    return { success: false, message: 'slot:TITLE frame not found' };
+  }
+
+  try { titleText.textAutoResize = 'HEIGHT'; } catch (error) {}
+  await _flushLayout();
+  await _flushLayout();
+  await new Promise(function (resolve) { setTimeout(resolve, 100); });
+
+  const bounds = titleText.absoluteRenderBounds || titleText.absoluteBoundingBox;
+  if (!bounds) {
+    return { success: false, message: 'cannot measure titleText' };
+  }
+  const textHeight = Math.max(0, Math.ceil(bounds.height || 0));
+
+  const oldHeight = typeof titleSlot.height === 'number' ? titleSlot.height : 0;
+  const targetHeight = Math.max(minTitleHeight, Math.round(padTop + textHeight + padBottom));
+
+  try { if ('constraints' in titleSlot) titleSlot.constraints = { horizontal: 'MIN', vertical: 'MIN' }; } catch (error) {}
+  try { if ('layoutSizingVertical' in titleSlot) titleSlot.layoutSizingVertical = 'FIXED'; } catch (error) {}
+  try {
+    if ('paddingTop' in titleSlot) titleSlot.paddingTop = padTop;
+    if ('paddingBottom' in titleSlot) titleSlot.paddingBottom = padBottom;
+  } catch (error) {}
+
+  const width = typeof titleSlot.width === 'number'
+    ? titleSlot.width
+    : (titleSlot.absoluteBoundingBox ? titleSlot.absoluteBoundingBox.width : undefined);
+
+  if (width != null && Math.abs(targetHeight - oldHeight) > 0.5) {
+    try {
+      if ('resizeWithoutConstraints' in titleSlot) {
+        titleSlot.resizeWithoutConstraints(width, targetHeight);
+      } else if ('resize' in titleSlot) {
+        titleSlot.resize(width, targetHeight);
+      }
+    } catch (error) {
+      if ('resize' in titleSlot) {
+        try { titleSlot.resize(width, targetHeight); } catch (error2) {}
+      }
+    }
+  }
+
+  try {
+    const sep = 'findOne' in titleSlot ? titleSlot.findOne(function (node) { return node && node.name === separatorName; }) : null;
+    if (sep && 'y' in sep && 'height' in sep) {
+      sep.y = targetHeight - sep.height - Math.max(0, padBottom);
+    }
+  } catch (error) {}
+
+  await _flushLayout();
+
+  return {
+    success: true,
+    titleTextId: titleTextId,
+    slotId: titleSlot.id,
+    titleTextHeight: textHeight,
+    slotOldHeight: oldHeight,
+    slotNewHeight: targetHeight,
+    delta: targetHeight - oldHeight
   };
 }
 

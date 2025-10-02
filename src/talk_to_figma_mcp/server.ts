@@ -2985,6 +2985,7 @@ type FigmaCommand =
   | "create_connections"
   | "set_image_fill"
   | "set_text_auto_resize"
+  | "reflow_shortcard_title"
   | "append_card_to_container"
   | "resize_poster_to_fit"
   | "frame_hug_to_anchor"
@@ -3176,6 +3177,14 @@ type CommandParams = {
   set_text_auto_resize: {
     nodeId: string;
     autoResize: 'NONE' | 'HEIGHT' | 'WIDTH_AND_HEIGHT';
+  };
+  reflow_shortcard_title: {
+    rootId: string;
+    titleTextId: string;
+    padTop?: number;
+    padBottom?: number;
+    minTitleHeight?: number;
+    separatorName?: string;
   };
   append_card_to_container: {
     containerId: string;
@@ -3780,6 +3789,56 @@ server.tool(
         ],
       };
     }
+  }
+);
+
+server.tool(
+  "set_node_visible",
+  "Set a node's visibility by id",
+  {
+    nodeId: z.string().describe("Target node id"),
+    visible: z.boolean().describe("Whether the node should be visible")
+  },
+  async ({ nodeId, visible }: any) => {
+    const result = await sendCommandToFigma("set_node_visible", { nodeId, visible });
+    return { content: [{ type: "text", text: JSON.stringify(result) }] };
+  }
+);
+
+server.tool(
+  "hide_nodes_by_name",
+  "Hide nodes by exact names under a root frame",
+  {
+    rootId: z.string().describe("Root frame id"),
+    names: z.array(z.string()).describe("Exact node names to hide")
+  },
+  async ({ rootId, names }: any) => {
+    const result = await sendCommandToFigma("hide_nodes_by_name", { rootId, names });
+    return { content: [{ type: "text", text: JSON.stringify(result) }] };
+  }
+);
+
+server.tool(
+  "reflow_shortcard_title",
+  "Resize slot:TITLE to fit titleText within a shortCard",
+  {
+    rootId: z.string().describe("shortCard root frame id"),
+    titleTextId: z.string().describe("titleText node id"),
+    padTop: z.number().optional(),
+    padBottom: z.number().optional(),
+    minTitleHeight: z.number().optional(),
+    separatorName: z.string().optional()
+  },
+  async ({ rootId, titleTextId, padTop, padBottom, minTitleHeight, separatorName }: any) => {
+    const result = await sendCommandToFigma("reflow_shortcard_title", {
+      rootId,
+      titleTextId,
+      padTop,
+      padBottom,
+      minTitleHeight,
+      separatorName,
+    });
+    return { content: [{ type: "text", text: JSON.stringify(result) }] };
   }
 );
 

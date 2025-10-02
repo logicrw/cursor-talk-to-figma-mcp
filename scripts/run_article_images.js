@@ -432,187 +432,6 @@ class ArticleImageRunner {
     await this.applyVisibilityFallbackInternal(rootId, targets);
   }
 
-  async reflowShortCard(rootId, layoutContext = {}) {
-    const {
-      titleSlotId,
-      titleTextId,
-      adornmentId,
-      imageGridId,
-      sourceNodeId,
-      hasTitle,
-      hasSource
-    } = layoutContext;
-
-    const TITLE_TO_GRID_GAP = 40;
-    const GRID_TO_SOURCE_GAP = 32;
-
-    if (!imageGridId) {
-      console.warn('⚠️ 缺少 slot:IMAGE_GRID，跳过重排');
-      return;
-    }
-
-    try {
-      await this.sendCommand('flush_layout', {});
-    } catch {}
-    await this.sleep(150);
-
-    const ids = [rootId, titleSlotId, titleTextId, adornmentId, imageGridId, sourceNodeId].filter(Boolean);
-    const uniqueIds = Array.from(new Set(ids));
-
-    const infoMap = new Map();
-    const ensureDoc = async (nodeId) => {
-      if (!nodeId) return null;
-      if (infoMap.has(nodeId)) return infoMap.get(nodeId);
-      try {
-        const doc = await this.sendCommand('get_node_info', { nodeId });
-        if (doc) infoMap.set(nodeId, doc);
-        return doc || null;
-      } catch (error) {
-        console.warn(`⚠️ 获取节点 ${nodeId} 信息失败:`, error.message || error);
-        return null;
-      }
-    };
-
-    try {
-      const bulk = await this.sendCommand('get_nodes_info', { nodeIds: uniqueIds });
-      if (Array.isArray(bulk)) {
-        for (const entry of bulk) {
-          const nodeId = entry?.nodeId || entry?.id;
-          const doc = entry?.document || entry;
-          if (nodeId && doc) {
-            infoMap.set(nodeId, doc);
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('⚠️ 批量获取节点信息失败:', error.message || error);
-    }
-
-    const extractBounds = (doc) => {
-      if (!doc) return null;
-      const bounds = doc.absoluteRenderBounds || doc.absoluteBoundingBox;
-      if (!bounds) return null;
-      const width = (typeof bounds.width === 'number' ? bounds.width : 0);
-      const height = (typeof bounds.height === 'number' ? bounds.height : 0);
-      const x = (typeof bounds.x === 'number' ? bounds.x : 0);
-      const y = (typeof bounds.y === 'number' ? bounds.y : 0);
-      return {
-        x,
-        y,
-        width,
-        height,
-        top: y,
-        left: x,
-        bottom: y + height,
-        right: x + width
-      };
-    };
-
-    const rootDoc = await ensureDoc(rootId);
-    const gridDoc = await ensureDoc(imageGridId);
-
-    if (!rootDoc || !gridDoc) {
-      console.warn('⚠️ 缺少根节点或图片网格信息，无法重排');
-      return;
-    }
-
-    const titleSlotDoc = await ensureDoc(titleSlotId);
-    const titleTextDoc = await ensureDoc(titleTextId);
-    const adornmentDoc = await ensureDoc(adornmentId);
-    const sourceDoc = await ensureDoc(sourceNodeId);
-
-    const rootBounds = extractBounds(rootDoc);
-    const gridBounds = extractBounds(gridDoc);
-    if (!rootBounds || !gridBounds) {
-      console.warn('⚠️ 无法获取根节点或网格的尺寸信息');
-      return;
-    }
-
-    const titleSlotBounds = extractBounds(titleSlotDoc);
-    const titleTextBounds = extractBounds(titleTextDoc);
-    const adornmentBounds = extractBounds(adornmentDoc);
-    const sourceBounds = extractBounds(sourceDoc);
-
-    const currentGridLocalX = gridBounds.left - rootBounds.left;
-    const currentGridLocalY = gridBounds.top - rootBounds.top;
-    const gridHeight = gridBounds.height;
-
-    let titleBottom = titleSlotBounds ? titleSlotBounds.bottom : (rootBounds.top + TITLE_TO_GRID_GAP);
-
-    if (hasTitle && titleSlotId && titleSlotBounds) {
-      const bottoms = [];
-      if (titleTextBounds) bottoms.push(titleTextBounds.bottom);
-      if (adornmentBounds) bottoms.push(adornmentBounds.bottom);
-      if (bottoms.length) {
-        const desiredBottom = Math.max(...bottoms);
-        const currentHeight = titleSlotBounds.height;
-        const desiredHeight = Math.max(desiredBottom - titleSlotBounds.top, 0);
-        if (Math.abs(desiredHeight - currentHeight) > 0.5) {
-          try {
-            const safeWidth = Math.max(titleSlotBounds.width, titleSlotBounds.right - titleSlotBounds.left, 0);
-            await this.sendCommand('resize_node', {
-              nodeId: titleSlotId,
-              width: safeWidth,
-              height: desiredHeight
-            });
-            titleBottom = titleSlotBounds.top + desiredHeight;
-          } catch (error) {
-            console.warn('⚠️ 调整标题容器高度失败:', error.message || error);
-            titleBottom = Math.max(desiredBottom, titleSlotBounds.bottom);
-          }
-        } else {
-          titleBottom = Math.max(desiredBottom, titleSlotBounds.bottom);
-        }
-      } else {
-        titleBottom = titleSlotBounds.bottom;
-      }
-    } else if (titleSlotBounds) {
-      titleBottom = titleSlotBounds.bottom;
-    }
-
-    const targetGridLocalY = hasTitle && titleSlotBounds
-      ? Math.max(titleBottom + TITLE_TO_GRID_GAP - rootBounds.top, TITLE_TO_GRID_GAP)
-      : Math.max(currentGridLocalY, TITLE_TO_GRID_GAP);
-
-    if (Math.abs(targetGridLocalY - currentGridLocalY) > 0.5) {
-      try {
-        await this.sendCommand('move_node', {
-          nodeId: imageGridId,
-          x: currentGridLocalX,
-          y: targetGridLocalY
-        });
-      } catch (error) {
-        console.warn('⚠️ 移动图片网格失败:', error.message || error);
-      }
-    }
-
-    if (sourceNodeId && hasSource) {
-      const sourceLocalX = sourceBounds ? (sourceBounds.left - rootBounds.left) : 0;
-      const currentSourceLocalY = sourceBounds ? (sourceBounds.top - rootBounds.top) : null;
-      const targetSourceLocalY = targetGridLocalY + gridHeight + GRID_TO_SOURCE_GAP;
-      if (currentSourceLocalY === null || Math.abs(targetSourceLocalY - currentSourceLocalY) > 0.5) {
-        try {
-          await this.sendCommand('move_node', {
-            nodeId: sourceNodeId,
-            x: sourceLocalX,
-            y: targetSourceLocalY
-          });
-        } catch (error) {
-          console.warn('⚠️ 移动来源节点失败:', error.message || error);
-        }
-      }
-    }
-
-    try {
-      await this.sendCommand('flush_layout', {});
-    } catch (error) {
-      console.warn('⚠️ reflow flush 失败:', error.message || error);
-    }
-    await this.sleep(80);
-
-    console.log('✅ 布局重排完成');
-  }
-
   async discoverImageTargets(rootNodeId, expectedCount) {
     // 智能发现图片槽位，按优先级查找
     const candidates = [];
@@ -704,6 +523,32 @@ class ArticleImageRunner {
       imageCount: imageAssetIds.length
     });
 
+    try {
+      await this.sendCommand('flush_layout', {});
+    } catch {}
+    await this.sleep(80);
+
+    const fallbackToHide = [];
+    if (!hasTitle) {
+      fallbackToHide.push('slot:TITLE', 'titleText');
+    }
+    if (!initialHasSource) {
+      fallbackToHide.push('slot:SOURCE', 'sourceText');
+    }
+    const imgCount = imageAssetIds.length;
+    if (imgCount < 2) fallbackToHide.push('imgSlot2');
+    if (imgCount < 3) fallbackToHide.push('imgSlot3');
+    if (imgCount < 4) fallbackToHide.push('imgSlot4');
+    if (fallbackToHide.length) {
+      try {
+        await this.sendCommand('hide_nodes_by_name', { rootId: instanceId, names: fallbackToHide });
+      } catch (error) {
+        console.warn('⚠️ hide_nodes_by_name 失败:', error.message || error);
+      }
+      try { await this.sendCommand('flush_layout', {}); } catch {}
+      await this.sleep(80);
+    }
+
     // 准备根节点 - 这会改变节点结构
     let rootId = instanceId;
     try {
@@ -718,10 +563,6 @@ class ArticleImageRunner {
     } catch (error) {
       console.warn('⚠️ prepare_card_root 失败，使用原始 ID');
     }
-
-    const titleSlotId = await this.findChildByName(rootId, 'slot:TITLE');
-    const decorationId = await this.findChildByName(rootId, '路径');
-    const imageGridId = await this.findChildByName(rootId, 'slot:IMAGE_GRID');
 
     // 清理动态内容（保留品牌元素）
     try {
@@ -747,20 +588,20 @@ class ArticleImageRunner {
       try {
         titleId = await this.findChildByName(rootId, 'titleText');
         if (titleId) {
-          await this.sendCommand('set_text_auto_resize', {
-            nodeId: titleId,
-            autoResize: 'HEIGHT'
-          });
           await this.sendCommand('set_text_content', {
             nodeId: titleId,
             text: firstTitle
+          });
+          await this.sendCommand('set_text_auto_resize', {
+            nodeId: titleId,
+            autoResize: 'HEIGHT'
           });
           try {
             await this.sendCommand('flush_layout', {});
           } catch (error) {
             console.warn('⚠️ 标题 flush 失败:', error.message || error);
           }
-          await this.sleep(80);
+          await this.sleep(120);
           console.log('📝 标题已设置并启用高度自适应');
         }
       } catch (error) {
@@ -773,15 +614,34 @@ class ArticleImageRunner {
 
     const sourceResult = await this.fillSource(rootId, formattedSourceText);
 
-    await this.reflowShortCard(rootId, {
-      titleSlotId,
-      titleTextId: titleId,
-      adornmentId: decorationId,
-      imageGridId,
-      sourceNodeId: sourceResult.nodeId,
-      hasTitle,
-      hasSource: sourceResult.hasSource
-    });
+    try {
+      await this.sendCommand('flush_layout', {});
+    } catch (error) {
+      console.warn('⚠️ 重排前 flush 失败:', error.message || error);
+    }
+    await this.sleep(120);
+
+    let reflowResult = null;
+    try {
+      reflowResult = await this.sendCommand('reflow_shortcard_title', {
+        rootId,
+        titleTextId: titleId,
+        padTop: 8,
+        padBottom: 8,
+        minTitleHeight: 64,
+        separatorName: '路径'
+      });
+      console.log('✅ reflow_shortcard_title:', reflowResult);
+    } catch (error) {
+      console.warn('⚠️ reflow_shortcard_title 失败:', error.message || error);
+    }
+
+    try {
+      await this.sendCommand('flush_layout', {});
+    } catch (error) {
+      console.warn('⚠️ 重排后 flush 失败:', error.message || error);
+    }
+    await this.sleep(80);
 
     await this.applyVisibilityFallback(rootId, {
       hasTitle,
