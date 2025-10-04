@@ -5366,8 +5366,10 @@ async function strictFlush() {
 
 function getBox(node) {
   if (!node) return null;
-  if (node.absoluteRenderBounds) return node.absoluteRenderBounds;
+  // 优先使用 absoluteBoundingBox（Frame 本身的边界）
+  // 而不是 absoluteRenderBounds（包含超出内容的渲染边界）
   if (node.absoluteBoundingBox) return node.absoluteBoundingBox;
+  if (node.absoluteRenderBounds) return node.absoluteRenderBounds;
   return null;
 }
 
@@ -5507,10 +5509,34 @@ async function resizePosterToFit(params) {
     await strictFlush();
 
     posterBox = getBox(poster);
+
+    // Debug: log poster position
+    console.log('[DEBUG] Poster frame:', {
+      id: poster.id,
+      name: poster.name,
+      y: poster.y,
+      posterBox_y: posterBox ? posterBox.y : 'null',
+      absoluteBoundingBox_y: poster.absoluteBoundingBox ? poster.absoluteBoundingBox.y : 'null',
+      absoluteRenderBounds_y: poster.absoluteRenderBounds ? poster.absoluteRenderBounds.y : 'null'
+    });
+
+    // Debug: log anchor box
+    const anchorBox = getBox(anchor);
+    if (anchorBox) {
+      console.log('[DEBUG] ContentAndPlate box:', {
+        name: anchor.name,
+        y: anchorBox.y,
+        height: anchorBox.height,
+        bottom: anchorBox.y + anchorBox.height
+      });
+    }
+
     contentBottom = measureContentBottom(anchor, excludeRegex, true);
     if (!Number.isFinite(contentBottom) || contentBottom === -Infinity) {
       contentBottom = measureContentBottom(poster, excludeRegex, true);
     }
+
+    console.log('[DEBUG] measureContentBottom result:', contentBottom);
   } finally {
     if (typeof previousClipsContent === 'boolean') {
       try {

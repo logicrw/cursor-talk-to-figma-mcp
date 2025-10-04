@@ -14,21 +14,27 @@ function ensureState(ctx) {
 }
 
 export function normalizeToolResult(raw) {
-  if (raw == null) return null;
-
   if (raw && typeof raw === 'object') {
-    const content = Array.isArray(raw.content) ? raw.content : null;
-    if (content) {
-      for (let i = 0; i < content.length; i++) {
-        const entry = content[i];
+    if (Array.isArray(raw.content)) {
+      for (let i = 0; i < raw.content.length; i++) {
+        const entry = raw.content[i];
         if (entry && entry.type === 'text' && typeof entry.text === 'string') {
           try {
             return JSON.parse(entry.text);
           } catch (error) {
-            console.warn('⚠️ normalizeToolResult text parse failed:', error?.message || error);
+            const message = error && error.message ? error.message : error;
+            console.warn('⚠️ normalizeToolResult text parse failed:', message);
           }
         }
       }
+    }
+
+    if (raw.result && typeof raw.result === 'object') {
+      return raw.result;
+    }
+
+    if (!Array.isArray(raw)) {
+      return raw;
     }
   }
 
@@ -36,20 +42,12 @@ export function normalizeToolResult(raw) {
     try {
       return JSON.parse(raw);
     } catch (error) {
-      console.warn('⚠️ normalizeToolResult string parse failed:', error?.message || error);
-      return { text: raw };
+      const message = error && error.message ? error.message : error;
+      console.warn('⚠️ normalizeToolResult string parse failed:', message);
     }
   }
 
-  if (raw && typeof raw === 'object' && raw.result && typeof raw.result === 'object') {
-    return raw.result;
-  }
-
-  if (raw && typeof raw === 'object') {
-    return raw;
-  }
-
-  return raw;
+  return raw || {};
 }
 
 export async function connectWS(ctx, { url, channel, joinPayload } = {}) {

@@ -949,27 +949,39 @@ class ArticleImageRunner {
   async resizeShortRootToContent(posterId, bottomPadding = 150) {
     if (!posterId) return;
 
-    try { await this.sendCommand('flush_layout', {}); } catch (error) {}
-    await this.sleep(120);
+    try {
+      console.log('🔧 flush_layout before resize_poster_to_fit');
+      await this.sendCommand('flush_layout', {});
+    } catch (error) {
+      const message = error && error.message ? error.message : error;
+      console.warn('⚠️ flush_layout before short resize failed:', message);
+    }
 
     try {
-      const raw = await this.sendCommand('resize_poster_to_fit', {
+      const params = {
         posterId,
         anchorNames: ['shortCard'],
-        bottomPadding: 150,
+        bottomPadding,
+        allowShrink: true,
         excludeByNameRegex: '(?:^背景$|^Background$|SignalPlus Logo)'
-      });
+      };
+      console.log('📐 resize_poster_to_fit 入参:', JSON.stringify(params, null, 2));
+
+      const raw = await this.sendCommand('resize_poster_to_fit', params);
       const res = normalizeToolResult(raw);
-      if (!res?.success) {
+      console.log('📦 resize_poster_to_fit 回包:', JSON.stringify(res, null, 2));
+      console.log('[RESIZE] posterId=%s old=%s new=%s diff=%s', posterId, res && res.oldHeight, res && res.newHeight, res && res.diff);
+      console.log('[RESIZE] posterTop=%s contentBottom=%s padding=%s', res && res.posterTop, res && res.contentBottom, bottomPadding);
+      console.log('[RESIZE] anchor=%s(source=%s) success=%s', res && res.anchorName, res && res.anchorSource, res && res.success);
+
+      if (!res || !res.success) {
         throw new Error(`resize failed: ${posterId} → ${JSON.stringify(raw)}`);
       }
       console.log('✅ Short poster resized:', res);
     } catch (error) {
-      console.warn('⚠️ resize_poster_to_fit 失败:', error.message || error);
+      const message = error && error.message ? error.message : error;
+      console.warn('⚠️ resize_poster_to_fit 失败:', message);
     }
-
-    try { await this.sendCommand('flush_layout', {}); } catch (error) {}
-    await this.sleep(80);
   }
 
   async imageToBase64(assetId, contentPath) {
@@ -1058,9 +1070,6 @@ class ArticleImageRunner {
         const instanceId = await this.createShortCardInstance(component, x, y);
         const cardId = await this.fillShortCard(instanceId, item, lang);
 
-        try { await this.sendCommand('flush_layout', {}); } catch {}
-        await this.sleep(150);
-
         let posterId = await this.findPosterRootForCard(cardId);
         if (posterId) {
           const posterName = `短图-${lang}-${i}`;
@@ -1068,7 +1077,7 @@ class ArticleImageRunner {
             console.warn('⚠️ 重命名短图失败:', error.message || error);
           }
           // 统一命令：明确以 shortCard 实例作为 anchor
-          await this.resizeShortRootToContent(posterId, 150, cardId);
+          await this.resizeShortRootToContent(posterId, 150);
         } else {
           console.warn('⚠️ 无法确定短图根 Frame，跳过自适应高度');
         }
