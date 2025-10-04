@@ -3738,21 +3738,24 @@ server.tool(
   {
     posterId: z.string().describe("Poster frame id (FRAME)"),
     anchorId: z.string().optional().describe("Anchor node id (e.g., ContentAndPlate)"),
+    anchorNames: z.array(z.string()).optional().describe("Preferred anchor names (e.g., shortCard, ContentAndPlate)"),
     bottomPadding: z.number().optional().describe("Extra space to add below the anchor bottom"),
     minHeight: z.number().optional().describe("Minimum allowed height"),
-    maxHeight: z.number().optional().describe("Maximum allowed height"),
+    maxHeight: z.number().optional().describe("Maximum allowed height")
   },
-  async ({ posterId, anchorId, bottomPadding, minHeight, maxHeight }: any) => {
+  async ({ posterId, anchorId, anchorNames, bottomPadding, minHeight, maxHeight }: any) => {
     const result = await sendCommandToFigma("resize_poster_to_fit", {
       posterId,
       anchorId,
+      anchorNames,
       bottomPadding,
       minHeight,
       maxHeight,
     });
     return {
-      content: [{ type: "text", text: JSON.stringify(result) }],
-    };
+      content: [{ type: "json", json: result }],
+      structuredContent: { result },
+    } as any;
   }
 );
 

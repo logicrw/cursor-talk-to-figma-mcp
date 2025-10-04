@@ -1079,41 +1079,35 @@ class WeeklyPosterRunner {
   async resizePosterHeightToContent(posterId, posterName) {
     if (!posterId) return;
 
-    const anchorsCfg = this.mapping.anchors || {};
-    const names = [
-      anchorsCfg.poster_content_anchor,
-      anchorsCfg.content_anchor,
-      'ContentAndPlate',
-      'ContentContainer',
-      'Odaily固定板',
-      'EXIO固定板',
-      '干货铺固定板'
-    ].filter(Boolean);
-
-    let anchorId = null;
-    for (let i = 0; i < names.length; i++) {
-      const name = String(names[i] || '').trim();
-      if (!name) continue;
-      try {
-        anchorId = await this.dfsFindChildIdByName(posterId, name);
-      } catch (error) {
-        console.warn('⚠️ Anchor search failed:', error.message || error);
-        anchorId = null;
-      }
-      if (anchorId) break;
+    try { await this.sendCommand('flush_layout', {}); } catch (error) {
+      console.warn('⚠️ flush_layout before poster resize failed:', error?.message || error);
     }
+    await this.sleep(120);
+
+    const before = await this.sendCommand('get_node_info', { nodeId: posterId });
 
     try {
-      const res = await this.sendCommand('resize_poster_to_fit', {
+      const toolResult = await this.sendCommand('resize_poster_to_fit', {
         posterId,
-        anchorId: anchorId || undefined,
-        bottomPadding: 200,
-        minHeight: 0
+        anchorNames: ['ContentAndPlate'],
+        bottomPadding: 200
       });
-      if (res && res.success) {
-        console.log(`✅ Poster resized (${posterName || posterId}): height=${res.height}`);
+      const after = await this.sendCommand('get_node_info', { nodeId: posterId });
+      const diffAbs = Math.abs((toolResult && (typeof toolResult.diffAbs === 'number' ? toolResult.diffAbs : (toolResult.newHeight ?? 0) - (toolResult.oldHeight ?? 0))) || 0);
+      if (toolResult && toolResult.success && diffAbs > 0.5) {
+        console.log(`✅ Poster resized (${posterName || posterId}):`, {
+          posterId,
+          posterName,
+          before: { height: before?.height },
+          after: { height: after?.height },
+          tool: toolResult
+        });
       } else {
-        console.warn(`⚠️ Poster resize returned for ${posterName || posterId}:`, res);
+        console.warn(`⚠️ Poster resize reported no change (${posterName || posterId}):`, {
+          posterId,
+          posterName,
+          tool: toolResult
+        });
       }
     } catch (error) {
       console.warn(`⚠️ Poster resize failed (${posterName || posterId}):`, error.message || error);

@@ -5081,13 +5081,23 @@ async function appendCardToContainer(params) {
   }
 }
 
-// 工具：容错 flush（无官方API时用双帧降级）；禁止 loadAllFontsAsync
+// === 布局稳态：flush + 双 rAF ===
+async function _waitForLayoutStable() {
+  try {
+    if (typeof figma.flushAsync === 'function') {
+      await figma.flushAsync();
+    }
+  } catch (error) {}
+  await new Promise(function (resolve) {
+    requestAnimationFrame(function () {
+      requestAnimationFrame(resolve);
+    });
+  });
+}
+
+// 兼容旧调用
 async function _flushLayoutAsync() {
-  if (typeof figma.flushAsync === 'function') {
-    try { await figma.flushAsync(); } catch (e) {}
-  }
-  await waitForNextFrame();
-  await waitForNextFrame();
+  await _waitForLayoutStable();
 }
 
 // 工具：获取节点的顶部和底部位置
@@ -5123,6 +5133,59 @@ function _deepBottom(n, maxDepth) {
   }
 
   return bottom;
+}
+
+// === 是否在同一棵子树 ===
+function _isDescendant(node, ancestor) {
+  if (!node || !ancestor) return false;
+  var current = node;
+  while (current) {
+    if (current.id === ancestor.id) return true;
+    current = current.parent || null;
+  }
+  return false;
+}
+
+// === 返回绝对 bottom：优先未裁剪几何边界，回退渲染边界，再对子树取最大值 ===
+function _nodeBottomAbs(node, shouldSkip) {
+  var maxBottom = -Infinity;
+
+  var walk = function (n) {
+    if (!n) return;
+    if (shouldSkip && shouldSkip(n)) return;
+    if (n.visible === false) return;
+
+    var rect = n.absoluteBoundingBox || n.absoluteRenderBounds;
+    if (rect) {
+      var b = rect.y + rect.height;
+      if (b > maxBottom) {
+        maxBottom = b;
+      }
+    }
+
+    if ('children' in n && Array.isArray(n.children)) {
+      for (var i = 0; i < n.children.length; i++) {
+        walk(n.children[i]);
+      }
+    }
+  };
+
+  walk(node);
+
+  return maxBottom;
+}
+
+function _topAbs(node) {
+  var rb = node && node.absoluteRenderBounds;
+  if (rb) return rb.y;
+  var ab = node && node.absoluteBoundingBox;
+  if (ab) return ab.y;
+  try {
+    if (node && node.absoluteTransform && node.absoluteTransform[1]) {
+      return node.absoluteTransform[1][2] || 0;
+    }
+  } catch (error) {}
+  return 0;
 }
 
 async function _flush2() {
@@ -5172,6 +5235,30 @@ function _rectRBorAB(n) {
   }
   var h = (n && typeof n.height === 'number') ? n.height : 0;
   return { y: ty, h: h, b: ty + h };
+}
+
+function _normalizeName(name) {
+  return String(name || '').trim().toLowerCase();
+}
+
+function _findFirstByNames(node, names) {
+  if (!node || !names || !names.length) return null;
+  if (!('findOne' in node)) return null;
+  var targets = names.map(function (n) { return _normalizeName(n); });
+  return node.findOne(function (child) {
+    if (!child || child.visible === false) return false;
+    return targets.indexOf(_normalizeName(child.name)) !== -1;
+  }) || null;
+}
+
+function _findAllByNames(node, names) {
+  if (!node || !names || !names.length) return [];
+  if (!('findAll' in node)) return [];
+  var targets = names.map(function (n) { return _normalizeName(n); });
+  return node.findAll(function (child) {
+    if (!child || child.visible === false) return false;
+    return targets.indexOf(_normalizeName(child.name)) !== -1;
+  }) || [];
 }
 
 function _isAutoLayout(node) {
@@ -5227,162 +5314,127 @@ function _withSizingLock(node, target) {
   };
 }
 
-// 工具：在 poster 内寻找锚点（大小写不敏感匹配）
-function _pickAnchorsUnderPoster(poster, names) {
-  if (!poster || !('findAll' in poster)) return [];
-  var normalizedNames = (names || []).map(function (n) {
-    return String(n || '').trim().toLowerCase().replace(/[_\-\s]/g, '');
-  });
 
-  return poster.findAll(function (node) {
-    if (!node || !node.name) return false;
-    if (node.visible === false) return false;
-    // 不再限制必须有 children，因为有些锚点可能是叶子节点
-    var nodeName = String(node.name || '').trim().toLowerCase().replace(/[_\-\s]/g, '');
-
-    // 精确匹配或包含匹配
-    for (var i = 0; i < normalizedNames.length; i++) {
-      if (nodeName === normalizedNames[i] || nodeName.indexOf(normalizedNames[i]) !== -1) {
-        return true;
-      }
-    }
-    return false;
-  }) || [];
-}
-
-// 主体：把 poster 高度调为 anchor 底 + padding
+// 主体：优先按锚点名称测量内容底，失败时回退整棵 poster
 async function resizePosterToFit(params) {
-  var posterId = params && params.posterId;
-  var anchorId = params && params.anchorId;
-  var bottomPadding = (params && typeof params.bottomPadding === 'number') ? params.bottomPadding : DEFAULT_RESIZE_PADDING;
-  var minHeight = (params && typeof params.minHeight === 'number') ? params.minHeight : 0;
-  var maxHeight = (params && typeof params.maxHeight === 'number') ? params.maxHeight : 1000000;
-  var warnings = [];
+  const {
+    posterId,
+    anchorId,
+    anchorNames,
+    bottomPadding = 0,
+    minHeight = 0,
+    maxHeight = 1000000
+  } = params || {};
 
   if (!posterId) {
-    console.error('❌ resizePosterToFit: Missing posterId');
-    throw new Error("Missing posterId");
+    return { success: false, message: 'missing posterId' };
   }
 
-  console.log('🔍 resizePosterToFit: Starting with params:', {
-    posterId: posterId,
-    anchorId: anchorId,
-    bottomPadding: bottomPadding,
-    minHeight: minHeight,
-    maxHeight: maxHeight
-  });
-
-  var poster = await figma.getNodeByIdAsync(posterId);
-  if (!poster) {
-    console.error('❌ resizePosterToFit: Poster not found');
-    return { success: false, message: 'poster not found' };
+  const poster = await figma.getNodeByIdAsync(posterId);
+  if (!poster || (poster.type !== 'FRAME' && poster.type !== 'COMPONENT' && poster.type !== 'INSTANCE')) {
+    return { success: false, message: 'poster not a frame/component/instance' };
   }
 
-  var posterType = poster.type;
-  if (posterType !== 'FRAME' && posterType !== 'INSTANCE') {
-    console.warn('⚠️ resizePosterToFit: unexpected poster type, continuing cautiously:', posterType);
-    warnings.push('unexpected poster type: ' + posterType);
-  }
+  await _waitForLayoutStable();
 
-  console.log(`📋 Found poster: "${poster.name}" (${poster.width}x${poster.height})`);
+  const defaultAnchors = ['shortCard', 'ContentAndPlate'];
+  const namesToSearch = Array.isArray(anchorNames) && anchorNames.length ? anchorNames : defaultAnchors;
+  const skipRegex = /(背景|background|SignalPlus Logo|signalpluslogo|date|日期信封|官方授权组合)/i;
+  const shouldSkip = function (node) {
+    return skipRegex.test(String(node && node.name || ''));
+  };
 
-  await _flushLayoutAsync();
+  let anchor = null;
+  let anchorSource = 'auto';
 
-  // 选锚点
-  var anchors = [];
   if (anchorId) {
-    console.log(`🔍 Looking for anchor by ID: ${anchorId}`);
-    var a = await figma.getNodeByIdAsync(anchorId);
-    if (a && a.visible !== false) {
-      anchors.push(a);
-      console.log(`✅ Found anchor by ID: "${a.name}"`);
-    } else {
-      console.warn(`⚠️ Anchor ID ${anchorId} not found or invisible`);
+    try {
+      const node = await figma.getNodeByIdAsync(anchorId);
+      if (node && _isDescendant(node, poster) && node.visible !== false) {
+        anchor = node;
+        anchorSource = 'explicit-id';
+      }
+    } catch (error) {}
+  }
+
+  if (!anchor) {
+    anchor = _findFirstByNames(poster, namesToSearch);
+    if (anchor) {
+      anchorSource = 'name';
     }
   }
-  if (anchors.length === 0) {
-    console.log('🔍 Searching for anchors by name under poster...');
-    anchors = _pickAnchorsUnderPoster(poster, ['shortCard','ContentAndPlate','ContentContainer','content_anchor','Odaily固定板','EXIO固定板','干货铺固定板','slot:IMAGE_GRID']);
-    if (anchors.length > 0) {
-      console.log(`✅ Found ${anchors.length} anchor(s) by name:`, anchors.map(function(a) { return a.name; }));
+
+  const posterTop = _topAbs(poster);
+  let contentBottom = -Infinity;
+  let anchorRect = null;
+
+  if (anchor) {
+    const rect = anchor.absoluteBoundingBox || anchor.absoluteRenderBounds;
+    if (rect) {
+      contentBottom = rect.y + rect.height;
+      anchorRect = rect;
     }
   }
-  if (anchors.length === 0) {
-    console.error('❌ No anchor found under poster');
-    return { success: false, message: "no anchor found under poster" };
+
+  if (!isFinite(contentBottom) || contentBottom === -Infinity) {
+    contentBottom = _nodeBottomAbs(poster, shouldSkip);
+    anchor = null;
+    anchorSource = 'fallback-union';
   }
 
-  // 求 poster 顶的绝对 y 和锚点的最深底部（关键修复）
-  var posterRect = _rectTopBottom(poster);
-  var posterTop = posterRect.top;
-
-  // 使用深度递归测量找到锚点的真实内容底部
-  var contentBottom = -Infinity;
-  for (var i = 0; i < anchors.length; i++) {
-    var anchorBottom = _deepBottom(anchors[i]);
-    if (anchorBottom > contentBottom) {
-      contentBottom = anchorBottom;
-    }
-  }
-  var maxRelBottom = contentBottom;
-
-  if (!isFinite(contentBottom) || contentBottom < posterTop) {
-    console.error('❌ Cannot measure anchor bottom properly');
-    return { success: false, message: "cannot measure anchors" };
+  if (!isFinite(contentBottom) || contentBottom === -Infinity) {
+    return { success: false, message: 'cannot measure content bottom' };
   }
 
-  console.log(`📐 Measurement: posterTop=${posterTop}, contentBottom=${contentBottom}, relativeHeight=${contentBottom - posterTop}`);
-
-  // 计算新高度：内容高度 + padding
-  var newHeight = Math.round((contentBottom - posterTop) + bottomPadding);
+  let newHeight = Math.round((contentBottom - posterTop) + bottomPadding);
   if (newHeight < minHeight) newHeight = minHeight;
   if (newHeight > maxHeight) newHeight = maxHeight;
 
-  console.log(`📏 New height calculation: content=${contentBottom - posterTop}, padding=${bottomPadding}, final=${newHeight}`);
+  const oldHeight = poster.height;
+  const diff = Math.abs(newHeight - oldHeight);
+  const unlock = _withSizingLock ? _withSizingLock(poster, 'HEIGHT') : function () {};
 
-  var canResize = (typeof poster.resizeWithoutConstraints === 'function') || (typeof poster.resize === 'function');
-  if (!canResize) {
-    console.error('❌ resizePosterToFit: poster does not support resizing');
-    return { success: false, message: 'poster does not support resizing', warnings: warnings };
-  }
-
-  var oldHeight = poster.height;
-  var unlockPoster = _withSizingLock(poster, 'HEIGHT');
   try {
-    if (typeof poster.resizeWithoutConstraints === 'function') {
-      poster.resizeWithoutConstraints(poster.width, newHeight);
-    } else {
-      poster.resize(poster.width, newHeight);
+    if (diff > 0.5) {
+      if (typeof poster.resizeWithoutConstraints === 'function') {
+        poster.resizeWithoutConstraints(poster.width, newHeight);
+      } else {
+        poster.resize(poster.width, newHeight);
+      }
     }
-  } catch (e) {
-    return { success: false, message: "resize failed: " + (e && e.message ? e.message : e), warnings: warnings };
+  } catch (error) {
+    return { success: false, message: 'resize failed: ' + (error && error.message ? error.message : error) };
   } finally {
-    try { unlockPoster && unlockPoster(); } catch (unlockErr) {}
+    try { unlock && unlock(); } catch (error) {}
   }
 
-  await _flushLayoutAsync();
+  if (diff > 0.5) {
+    _repositionLogos(poster, newHeight, bottomPadding);
+  }
 
-  // 详细的成功日志
-  console.log(`✅ Poster resized successfully:`, {
-    posterId: posterId,
-    posterName: poster.name,
-    anchorId: anchors[0].id,
-    anchorName: anchors[0].name,
-    oldHeight: oldHeight,
-    newHeight: newHeight,
-    bottomPadding: bottomPadding,
-    anchorBottom: maxRelBottom,
-    warnings: warnings
-  });
+  await _waitForLayoutStable();
 
-  return {
+  const finalHeight = typeof poster.height === 'number' ? poster.height : newHeight;
+  const result = {
     success: true,
-    height: newHeight,
-    posterName: poster.name,
-    anchorName: anchors[0].name,
+    posterId: posterId,
+    anchorId: anchor ? anchor.id : null,
+    anchorName: anchor ? anchor.name || null : null,
+    anchorSource: anchorSource,
     oldHeight: oldHeight,
-    warnings: warnings
+    newHeight: finalHeight,
+    bottomPadding: bottomPadding,
+    contentBottom: contentBottom,
+    diff: diff
   };
+
+  if (diff <= 0.5) {
+    console.log('[MCP] resize_poster_to_fit:no-op', result);
+  } else {
+    console.log('[MCP] resize_poster_to_fit:', result);
+  }
+
+  return result;
 }
 
 async function reflowShortcardTitle(params) {

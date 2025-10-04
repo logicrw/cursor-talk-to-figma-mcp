@@ -945,30 +945,42 @@ class ArticleImageRunner {
     return null;
   }
 
-  async resizeShortRootToContent(posterId, bottomPadding = 150, anchorId) {
-    if (!posterId) return null;
+  async resizeShortRootToContent(posterId, bottomPadding = 150) {
+    if (!posterId) return;
 
-    console.log(`📐 Resizing poster to fit content:`, {
-      posterId: posterId,
-      anchorId: anchorId,
-      bottomPadding: bottomPadding
-    });
+    const before = await this.sendCommand('get_node_info', { nodeId: posterId });
+    const posterName = before?.name;
 
-    try { await this.sendCommand('flush_layout', {}); } catch {}
+    try { await this.sendCommand('flush_layout', {}); } catch (error) {}
     await this.sleep(120);
 
     try {
-      const result = await this.sendCommand('resize_poster_to_fit', {
+      const toolResult = await this.sendCommand('resize_poster_to_fit', {
         posterId,
-        anchorId,
+        anchorNames: ['shortCard'],
         bottomPadding
       });
-      console.log('✅ Resize successful:', result);
+      const after = await this.sendCommand('get_node_info', { nodeId: posterId });
+      console.log('✅ Short poster resized:', {
+        posterId,
+        posterName,
+        before: { height: before?.height },
+        after: { height: after?.height },
+        tool: toolResult
+      });
+      const diffAbs = Math.abs((toolResult && (typeof toolResult.diffAbs === 'number' ? toolResult.diffAbs : (toolResult.newHeight ?? 0) - (toolResult.oldHeight ?? 0))) || 0);
+      if (!toolResult?.success || diffAbs <= 0.5) {
+        console.warn('↺ Short poster resize reported no change', {
+          posterId,
+          posterName,
+          tool: toolResult
+        });
+      }
     } catch (error) {
       console.warn('⚠️ resize_poster_to_fit 失败:', error.message || error);
     }
 
-    try { await this.sendCommand('flush_layout', {}); } catch {}
+    try { await this.sendCommand('flush_layout', {}); } catch (error) {}
     await this.sleep(80);
   }
 
