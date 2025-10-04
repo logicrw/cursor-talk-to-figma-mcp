@@ -543,9 +543,8 @@ class WeeklyPosterRunner {
       };
     }
 
-    // 每张海报完成后也做一次 flush，确保布局稳定
-    try { await this.sendCommand('flush_layout', {}); } catch {}
-    await this.sleep(100);
+    // 注释掉单个海报的调整，统一在 fitAllPostersAtEnd 中调整
+    // await this.resizePosterHeightToContent(posterId, posterName);
     const exportPath = await this.exportPosterFrame(posterName, posterId);
 
     return {
@@ -1077,30 +1076,71 @@ class WeeklyPosterRunner {
     return resolved;
   }
 
+  async resolvePosterAnchorNames(posterId) {
+    const candidates = ['ContentAndPlate', 'ContentContainer', '内容容器'];
+    const resolved = [];
+    for (let i = 0; i < candidates.length; i++) {
+      const name = candidates[i];
+      if (!name) continue;
+      try {
+        const id = await this.dfsFindChildIdByName(posterId, name);
+        if (id) resolved.push(name);
+      } catch (error) {
+        const message = error && error.message ? error.message : error;
+        console.warn(`⚠️ Anchor probe failed (${name}):`, message);
+      }
+    }
+    if (resolved.length === 0) {
+      resolved.push('ContentAndPlate');
+    }
+    return resolved;
+  }
+
   async resizePosterHeightToContent(posterId, posterName) {
     if (!posterId) return;
 
-    try { await this.sendCommand('flush_layout', {}); } catch (error) {
-      console.warn('⚠️ flush_layout before poster resize failed:', error?.message || error);
+    try {
+      await this.sendCommand('flush_layout', {});
+    } catch (error) {
+      const message = error && error.message ? error.message : error;
+      console.warn('⚠️ flush_layout before poster resize failed:', message);
     }
-    await this.sleep(120);
+
+    let anchorNames = [];
+    try {
+      anchorNames = await this.resolvePosterAnchorNames(posterId);
+    } catch (error) {
+      const message = error && error.message ? error.message : error;
+      console.warn('⚠️ resolvePosterAnchorNames failed:', message);
+    }
+    if (!anchorNames || anchorNames.length === 0) {
+      anchorNames = ['ContentAndPlate'];
+    }
+    const hasPrimary = anchorNames && anchorNames.indexOf('ContentAndPlate') !== -1;
+    if (!hasPrimary) {
+      anchorNames = ['ContentAndPlate'].concat(anchorNames || []);
+    }
 
     try {
       const raw = await this.sendCommand('resize_poster_to_fit', {
         posterId,
-        anchorNames: ['ContentAndPlate', 'ContentContainer'],
+        anchorNames,
         bottomPadding: 200,
+        allowShrink: true,
         excludeByNameRegex: '(?:^背景$|^Background$|SignalPlus Logo)'
       });
       const res = normalizeToolResult(raw);
-      if (!res?.success) {
+      console.log('[RESIZE] posterId=%s old=%s new=%s diff=%s', posterId, res && res.oldHeight, res && res.newHeight, res && res.diff);
+      console.log('[RESIZE] posterTop=%s contentBottom=%s padding=%s', res && res.posterTop, res && res.contentBottom, 200);
+      console.log('[RESIZE] anchor=%s(source=%s) success=%s', res && res.anchorName, res && res.anchorSource, res && res.success);
+      if (!res || !res.success) {
         throw new Error(`weekly resize failed: ${posterId} → ${JSON.stringify(raw)}`);
       }
       console.log('✅ Weekly poster resized:', res);
     } catch (error) {
-      console.warn(`⚠️ Poster resize failed (${posterName || posterId}):`, error.message || error);
-      // 关键兜底：若是"插件未连接"类错误，打出更直观提示
-      if ((error && /timeout|not connected|no plugin|WebSocket/i.test(String(error.message || error)))) {
+      const message = error && error.message ? error.message : error;
+      console.warn(`⚠️ Poster resize failed (${posterName || posterId}):`, message);
+      if (error && /timeout|not connected|no plugin|WebSocket/i.test(String(message || ''))) {
         console.warn('❗ 检测到 Figma 插件未连接：请在 Figma 中打开插件以建立 WebSocket 会话。');
       }
     }
