@@ -12,6 +12,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { spawn } from 'child_process';
 import http from 'http';
+import { normalizeToolResult } from './figma-ipc.js';
 import { resolveContentPath, inferDataset, buildAssetUrl, computeStaticServerUrl, getAssetExtension } from '../src/config-resolver.js';
 
 const THROTTLE_MS = 0;
@@ -1084,31 +1085,18 @@ class WeeklyPosterRunner {
     }
     await this.sleep(120);
 
-    const before = await this.sendCommand('get_node_info', { nodeId: posterId });
-
     try {
-      const toolResult = await this.sendCommand('resize_poster_to_fit', {
+      const raw = await this.sendCommand('resize_poster_to_fit', {
         posterId,
-        anchorNames: ['ContentAndPlate'],
-        bottomPadding: 200
+        anchorNames: ['ContentAndPlate', 'ContentContainer'],
+        bottomPadding: 200,
+        excludeByNameRegex: '(?:^背景$|^Background$|SignalPlus Logo)'
       });
-      const after = await this.sendCommand('get_node_info', { nodeId: posterId });
-      const diffAbs = Math.abs((toolResult && (typeof toolResult.diffAbs === 'number' ? toolResult.diffAbs : (toolResult.newHeight ?? 0) - (toolResult.oldHeight ?? 0))) || 0);
-      if (toolResult && toolResult.success && diffAbs > 0.5) {
-        console.log(`✅ Poster resized (${posterName || posterId}):`, {
-          posterId,
-          posterName,
-          before: { height: before?.height },
-          after: { height: after?.height },
-          tool: toolResult
-        });
-      } else {
-        console.warn(`⚠️ Poster resize reported no change (${posterName || posterId}):`, {
-          posterId,
-          posterName,
-          tool: toolResult
-        });
+      const res = normalizeToolResult(raw);
+      if (!res?.success) {
+        throw new Error(`weekly resize failed: ${posterId} → ${JSON.stringify(raw)}`);
       }
+      console.log('✅ Weekly poster resized:', res);
     } catch (error) {
       console.warn(`⚠️ Poster resize failed (${posterName || posterId}):`, error.message || error);
       // 关键兜底：若是"插件未连接"类错误，打出更直观提示

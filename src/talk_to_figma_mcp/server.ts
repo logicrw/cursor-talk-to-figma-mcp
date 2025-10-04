@@ -3753,9 +3753,13 @@ server.tool(
       maxHeight,
     });
     return {
-      content: [{ type: "json", json: result }],
-      structuredContent: { result },
-    } as any;
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(result)
+        }
+      ]
+    };
   }
 );
 

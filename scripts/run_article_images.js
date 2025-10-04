@@ -29,7 +29,8 @@ import {
   parsePrepareCardRootResult as parsePrepareCardRootResultUtil,
   sleep as sleepUtil,
   normalizeName as normalizeNameUtil,
-  findShallowByName as findShallowByNameUtil
+  findShallowByName as findShallowByNameUtil,
+  normalizeToolResult
 } from './figma-ipc.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -948,34 +949,21 @@ class ArticleImageRunner {
   async resizeShortRootToContent(posterId, bottomPadding = 150) {
     if (!posterId) return;
 
-    const before = await this.sendCommand('get_node_info', { nodeId: posterId });
-    const posterName = before?.name;
-
     try { await this.sendCommand('flush_layout', {}); } catch (error) {}
     await this.sleep(120);
 
     try {
-      const toolResult = await this.sendCommand('resize_poster_to_fit', {
+      const raw = await this.sendCommand('resize_poster_to_fit', {
         posterId,
         anchorNames: ['shortCard'],
-        bottomPadding
+        bottomPadding: 150,
+        excludeByNameRegex: '(?:^背景$|^Background$|SignalPlus Logo)'
       });
-      const after = await this.sendCommand('get_node_info', { nodeId: posterId });
-      console.log('✅ Short poster resized:', {
-        posterId,
-        posterName,
-        before: { height: before?.height },
-        after: { height: after?.height },
-        tool: toolResult
-      });
-      const diffAbs = Math.abs((toolResult && (typeof toolResult.diffAbs === 'number' ? toolResult.diffAbs : (toolResult.newHeight ?? 0) - (toolResult.oldHeight ?? 0))) || 0);
-      if (!toolResult?.success || diffAbs <= 0.5) {
-        console.warn('↺ Short poster resize reported no change', {
-          posterId,
-          posterName,
-          tool: toolResult
-        });
+      const res = normalizeToolResult(raw);
+      if (!res?.success) {
+        throw new Error(`resize failed: ${posterId} → ${JSON.stringify(raw)}`);
       }
+      console.log('✅ Short poster resized:', res);
     } catch (error) {
       console.warn('⚠️ resize_poster_to_fit 失败:', error.message || error);
     }

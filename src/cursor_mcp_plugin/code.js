@@ -5316,124 +5316,213 @@ function _withSizingLock(node, target) {
 
 
 // 主体：优先按锚点名称测量内容底，失败时回退整棵 poster
-async function resizePosterToFit(params) {
-  const {
-    posterId,
-    anchorId,
-    anchorNames,
-    bottomPadding = 0,
-    minHeight = 0,
-    maxHeight = 1000000
-  } = params || {};
-
-  if (!posterId) {
-    return { success: false, message: 'missing posterId' };
+async function strictFlush() {
+  await Promise.resolve();
+  await new Promise(function (resolve) { setTimeout(resolve, 0); });
+  if (typeof figma.flushAsync === 'function') {
+    try { await figma.flushAsync(); } catch (error) {}
   }
-
-  const poster = await figma.getNodeByIdAsync(posterId);
-  if (!poster || (poster.type !== 'FRAME' && poster.type !== 'COMPONENT' && poster.type !== 'INSTANCE')) {
-    return { success: false, message: 'poster not a frame/component/instance' };
+  if (typeof requestAnimationFrame === 'function') {
+    await new Promise(function (resolve) {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { resolve(null); });
+      });
+    });
   }
+  if (typeof figma.flushAsync === 'function') {
+    try { await figma.flushAsync(); } catch (error) {}
+  }
+}
 
-  await _waitForLayoutStable();
+function getBox(node) {
+  return (node && (node.absoluteBoundingBox || node.absoluteRenderBounds)) || null;
+}
 
-  const defaultAnchors = ['shortCard', 'ContentAndPlate'];
-  const namesToSearch = Array.isArray(anchorNames) && anchorNames.length ? anchorNames : defaultAnchors;
-  const skipRegex = /(背景|background|SignalPlus Logo|signalpluslogo|date|日期信封|官方授权组合)/i;
-  const shouldSkip = function (node) {
-    return skipRegex.test(String(node && node.name || ''));
-  };
-
-  let anchor = null;
-  let anchorSource = 'auto';
+function findAnchor(poster, opts) {
+  opts = opts || {};
+  const anchorId = opts.anchorId || null;
+  const anchorNames = Array.isArray(opts.anchorNames) ? opts.anchorNames : [];
+  const excludeRegex = opts.excludeRegex;
+  let exclude = null;
+  if (excludeRegex) {
+    try {
+      exclude = new RegExp(excludeRegex);
+    } catch (error) {
+      console.warn('[MCP] resize_poster_to_fit: invalid exclude regex', excludeRegex, error);
+    }
+  }
 
   if (anchorId) {
     try {
-      const node = await figma.getNodeByIdAsync(anchorId);
-      if (node && _isDescendant(node, poster) && node.visible !== false) {
-        anchor = node;
-        anchorSource = 'explicit-id';
+      const byId = figma.getNodeById(anchorId);
+      if (byId && (byId.type === 'FRAME' || byId.type === 'GROUP' || byId.type === 'COMPONENT' || byId.type === 'INSTANCE')) {
+        if (!poster || typeof _isDescendant !== 'function' || _isDescendant(byId, poster)) {
+          return { node: byId, source: 'id' };
+        }
       }
     } catch (error) {}
   }
 
-  if (!anchor) {
-    anchor = _findFirstByNames(poster, namesToSearch);
-    if (anchor) {
-      anchorSource = 'name';
+  if (poster && typeof poster.findOne === 'function' && anchorNames.length) {
+    for (let i = 0; i < anchorNames.length; i++) {
+      const name = anchorNames[i];
+      if (!name) continue;
+      try {
+        const byName = poster.findOne(function (node) {
+          return !!node && 'name' in node && node.name === name;
+        });
+        if (byName) {
+          return { node: byName, source: 'name' };
+        }
+      } catch (error) {}
     }
   }
 
-  const posterTop = _topAbs(poster);
-  let contentBottom = -Infinity;
-  let anchorRect = null;
-
-  if (anchor) {
-    const rect = anchor.absoluteBoundingBox || anchor.absoluteRenderBounds;
-    if (rect) {
-      contentBottom = rect.y + rect.height;
-      anchorRect = rect;
+  if (poster && typeof poster.findOne === 'function') {
+    const fallbackRegex = /^(shortCard|ContentAndPlate|ContentContainer)$/i;
+    const candidate = poster.findOne(function (node) {
+      if (!node || !('name' in node)) return false;
+      if (exclude && exclude.test(node.name)) return false;
+      return fallbackRegex.test(node.name);
+    });
+    if (candidate) {
+      return { node: candidate, source: 'fallback' };
     }
   }
 
-  if (!isFinite(contentBottom) || contentBottom === -Infinity) {
-    contentBottom = _nodeBottomAbs(poster, shouldSkip);
-    anchor = null;
-    anchorSource = 'fallback-union';
+  return { node: null, source: 'none' };
+}
+
+function measureContentBottom(node, excludeRegex, isRoot) {
+  if (!node || node.visible === false) {
+    return -Infinity;
+  }
+  const hasExclude = !!excludeRegex;
+  const nodeName = String(node.name || '');
+  if (!isRoot && hasExclude && excludeRegex.test(nodeName)) {
+    return -Infinity;
   }
 
-  if (!isFinite(contentBottom) || contentBottom === -Infinity) {
-    return { success: false, message: 'cannot measure content bottom' };
+  let bottom = -Infinity;
+  const box = getBox(node);
+  if (box) {
+    bottom = box.y + box.height;
   }
 
-  let newHeight = Math.round((contentBottom - posterTop) + bottomPadding);
-  if (newHeight < minHeight) newHeight = minHeight;
-  if (newHeight > maxHeight) newHeight = maxHeight;
-
-  const oldHeight = poster.height;
-  const diff = Math.abs(newHeight - oldHeight);
-  const unlock = _withSizingLock ? _withSizingLock(poster, 'HEIGHT') : function () {};
-
-  try {
-    if (diff > 0.5) {
-      if (typeof poster.resizeWithoutConstraints === 'function') {
-        poster.resizeWithoutConstraints(poster.width, newHeight);
-      } else {
-        poster.resize(poster.width, newHeight);
+  if ('children' in node && Array.isArray(node.children)) {
+    for (let i = 0; i < node.children.length; i++) {
+      const childBottom = measureContentBottom(node.children[i], excludeRegex, false);
+      if (childBottom > bottom) {
+        bottom = childBottom;
       }
     }
-  } catch (error) {
-    return { success: false, message: 'resize failed: ' + (error && error.message ? error.message : error) };
+  }
+
+  return bottom;
+}
+
+async function resizePosterToFit(params) {
+  params = params || {};
+  const posterId = params.posterId;
+  const anchorId = params.anchorId || null;
+  const anchorNames = Array.isArray(params.anchorNames) ? params.anchorNames : [];
+  const bottomPadding = typeof params.bottomPadding === 'number' ? params.bottomPadding : 150;
+  const excludeByNameRegex = params.excludeByNameRegex;
+
+  const poster = figma.getNodeById(posterId);
+  if (!poster || poster.type !== 'FRAME') {
+    return { success: false, reason: 'poster_not_found', posterId: posterId || null, anchorId: anchorId, anchorName: null };
+  }
+
+  await strictFlush();
+
+  const anchorResult = findAnchor(poster, { anchorId, anchorNames, excludeRegex: excludeByNameRegex });
+  const anchor = anchorResult.node;
+  const anchorSource = anchorResult.source;
+
+  if (!anchor) {
+    return { success: false, reason: 'anchor_not_found', posterId: poster.id, anchorId: anchorId, anchorName: null };
+  }
+
+  let excludeRegex = null;
+  if (excludeByNameRegex) {
+    try {
+      excludeRegex = new RegExp(excludeByNameRegex);
+    } catch (error) {
+      console.warn('[MCP] resize_poster_to_fit: invalid exclude regex', excludeByNameRegex, error);
+      excludeRegex = null;
+    }
+  }
+  if (!excludeRegex) {
+    excludeRegex = /^(背景|Background|SignalPlus Logo)$/i;
+  }
+
+  let posterBox = null;
+  let contentBottom = -Infinity;
+  const previousClipsContent = typeof poster.clipsContent === 'boolean' ? poster.clipsContent : null;
+
+  try {
+    if (typeof poster.clipsContent === 'boolean') {
+      poster.clipsContent = false;
+    }
+
+    await strictFlush();
+
+    posterBox = getBox(poster);
+    contentBottom = measureContentBottom(anchor, excludeRegex, true);
+    if (!Number.isFinite(contentBottom) || contentBottom === -Infinity) {
+      contentBottom = measureContentBottom(poster, excludeRegex, true);
+    }
   } finally {
-    try { unlock && unlock(); } catch (error) {}
+    if (typeof previousClipsContent === 'boolean') {
+      try {
+        poster.clipsContent = previousClipsContent;
+      } catch (error) {}
+    }
   }
 
-  if (diff > 0.5) {
-    _repositionLogos(poster, newHeight, bottomPadding);
+  if (!posterBox) {
+    return { success: false, reason: 'bounds_null', posterId: poster.id, anchorId: anchor.id, anchorName: anchor.name || null };
   }
 
-  await _waitForLayoutStable();
+  if (!Number.isFinite(contentBottom) || contentBottom === -Infinity) {
+    return { success: false, reason: 'content_bottom_invalid', posterId: poster.id, anchorId: anchor.id, anchorName: anchor.name || null };
+  }
 
-  const finalHeight = typeof poster.height === 'number' ? poster.height : newHeight;
+  const posterTop = posterBox.y;
+  const oldHeight = poster.height;
+
+  let newHeight = Math.ceil(contentBottom - posterTop + bottomPadding);
+  if (!Number.isFinite(newHeight)) {
+    return { success: false, reason: 'calc_invalid', posterId: poster.id, anchorId: anchor.id, anchorName: anchor.name || null };
+  }
+  if (newHeight < oldHeight) {
+    newHeight = oldHeight;
+  }
+
+  try {
+    poster.resizeWithoutConstraints(poster.width, newHeight);
+  } catch (error) {
+    console.error('[MCP] resize_poster_to_fit: resize failed', error);
+    return { success: false, reason: 'resize_failed', posterId: poster.id, anchorId: anchor.id, anchorName: anchor.name || null };
+  }
+
+  await strictFlush();
+
   const result = {
     success: true,
-    posterId: posterId,
-    anchorId: anchor ? anchor.id : null,
-    anchorName: anchor ? anchor.name || null : null,
-    anchorSource: anchorSource,
-    oldHeight: oldHeight,
-    newHeight: finalHeight,
-    bottomPadding: bottomPadding,
-    contentBottom: contentBottom,
-    diff: diff
+    posterId: poster.id,
+    anchorId: anchor.id,
+    anchorName: anchor.name || null,
+    anchorSource,
+    oldHeight,
+    newHeight,
+    bottomPadding,
+    contentBottom,
+    diff: newHeight - oldHeight
   };
 
-  if (diff <= 0.5) {
-    console.log('[MCP] resize_poster_to_fit:no-op', result);
-  } else {
-    console.log('[MCP] resize_poster_to_fit:', result);
-  }
-
+  console.log('[MCP] resize_poster_to_fit:', result);
   return result;
 }
 

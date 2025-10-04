@@ -13,6 +13,45 @@ function ensureState(ctx) {
   if (!ctx.messageId) ctx.messageId = 1;
 }
 
+export function normalizeToolResult(raw) {
+  if (raw == null) return null;
+
+  if (raw && typeof raw === 'object') {
+    const content = Array.isArray(raw.content) ? raw.content : null;
+    if (content) {
+      for (let i = 0; i < content.length; i++) {
+        const entry = content[i];
+        if (entry && entry.type === 'text' && typeof entry.text === 'string') {
+          try {
+            return JSON.parse(entry.text);
+          } catch (error) {
+            console.warn('⚠️ normalizeToolResult text parse failed:', error?.message || error);
+          }
+        }
+      }
+    }
+  }
+
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw);
+    } catch (error) {
+      console.warn('⚠️ normalizeToolResult string parse failed:', error?.message || error);
+      return { text: raw };
+    }
+  }
+
+  if (raw && typeof raw === 'object' && raw.result && typeof raw.result === 'object') {
+    return raw.result;
+  }
+
+  if (raw && typeof raw === 'object') {
+    return raw;
+  }
+
+  return raw;
+}
+
 export async function connectWS(ctx, { url, channel, joinPayload } = {}) {
   if (!url) throw new Error('connectWS requires url');
   ensureState(ctx);
@@ -67,7 +106,10 @@ export function onMessage(ctx, raw) {
         ctx.pending.delete(inner.id);
         if (entry?.timeout) clearTimeout(entry.timeout);
         console.log(`✅ Got result for command id: ${inner.id}`);
-        entry.resolve(inner.result);
+        const payload = inner && Object.prototype.hasOwnProperty.call(inner, 'result')
+          ? inner.result
+          : inner;
+        entry.resolve(normalizeToolResult(payload));
         return;
       }
     }
@@ -136,35 +178,28 @@ export async function sendCommand(ctx, command, params = {}) {
 
 export function parsePrepareCardRootResult(raw) {
   if (!raw) return null;
-  let direct = raw;
-  if (typeof raw === 'string') {
-    try {
-      direct = JSON.parse(raw);
-    } catch (error) {
-      console.warn('⚠️ prepare_card_root string payload parse failed:', error.message || error);
-      return null;
-    }
+  const direct = normalizeToolResult(raw);
+
+  if (direct && typeof direct === 'object' && typeof direct.rootId === 'string') {
+    return direct;
   }
-  if (typeof direct === 'object') {
-    if (direct && typeof direct.rootId === 'string') {
-      return direct;
-    }
-    if (direct && Array.isArray(direct.content)) {
-      for (let i = 0; i < direct.content.length; i++) {
-        const entry = direct.content[i];
-        if (entry && typeof entry.text === 'string') {
-          try {
-            const parsed = JSON.parse(entry.text);
-            if (parsed && typeof parsed.rootId === 'string') {
-              return parsed;
-            }
-          } catch (error) {
-            console.warn('⚠️ prepare_card_root legacy text parse failed:', error.message || error);
+
+  if (direct && typeof direct === 'object' && Array.isArray(direct.content)) {
+    for (let i = 0; i < direct.content.length; i++) {
+      const entry = direct.content[i];
+      if (entry && entry.type === 'text' && typeof entry.text === 'string') {
+        try {
+          const parsed = JSON.parse(entry.text);
+          if (parsed && typeof parsed.rootId === 'string') {
+            return parsed;
           }
+        } catch (error) {
+          console.warn('⚠️ prepare_card_root nested text parse failed:', error?.message || error);
         }
       }
     }
   }
+
   return null;
 }
 
