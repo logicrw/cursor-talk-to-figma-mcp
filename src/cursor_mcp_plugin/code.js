@@ -72,6 +72,7 @@ figma.ui.onmessage = async (msg) => {
       // Execute commands received from UI (which gets them from WebSocket)
       try {
         const result = await handleCommand(msg.command, msg.params);
+
         // Send result back to UI
         figma.ui.postMessage({
           type: "command-result",
@@ -119,9 +120,13 @@ function sanitizeFileName(name) {
 
 function waitForNextFrame() {
   return new Promise(function (resolve) {
-    requestAnimationFrame(function () {
-      resolve();
-    });
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(function () {
+        resolve();
+      });
+    } else {
+      setTimeout(resolve, 0);
+    }
   });
 }
 
@@ -296,7 +301,18 @@ async function handleCommand(command, params) {
     case "append_card_to_container":
       return await appendCardToContainer(params);
     case "resize_poster_to_fit":
-      return await resizePosterToFit(params);
+      return await resizePosterToFit({
+        posterId: params && params.posterId,
+        anchorId: params && params.anchorId,
+        anchorNames: params && params.anchorNames,
+        bottomPadding: params
+          ? (typeof params.padding === 'number' ? params.padding : params.bottomPadding)
+          : undefined,
+        allowShrink: params && params.allowShrink,
+        minHeight: params && params.minHeight,
+        maxHeight: params && params.maxHeight,
+        excludeByNameRegex: params && params.excludeByNameRegex
+      });
     case "set_poster_title_and_date":
       return await setPosterTitleAndDate(params);
     case "reflow_shortcard_title":
@@ -307,13 +323,27 @@ async function handleCommand(command, params) {
       return await resizePosterToFit({
         posterId: params && (params.posterId || params.frameId),
         anchorId: params && (params.containerId || params.anchorId),
-        bottomPadding: params && (typeof params.padding === 'number' ? params.padding : params && params.bottomPadding)
+        anchorNames: params && params.anchorNames,
+        bottomPadding: params
+          ? (typeof params.padding === 'number' ? params.padding : params.bottomPadding)
+          : undefined,
+        allowShrink: params && params.allowShrink,
+        minHeight: params && params.minHeight,
+        maxHeight: params && params.maxHeight,
+        excludeByNameRegex: params && params.excludeByNameRegex
       });
     case "frame_hug_to_anchor":
       return await resizePosterToFit({
         posterId: params && (params.posterId || params.frameId),
         anchorId: params && (params.anchorId || params.containerId),
-        bottomPadding: params && params.bottomPadding
+        anchorNames: params && params.anchorNames,
+        bottomPadding: params
+          ? (typeof params.padding === 'number' ? params.padding : params.bottomPadding)
+          : undefined,
+        allowShrink: params && params.allowShrink,
+        minHeight: params && params.minHeight,
+        maxHeight: params && params.maxHeight,
+        excludeByNameRegex: params && params.excludeByNameRegex
       });
     case "set_node_name":
       return await setNodeName(params);
@@ -5335,7 +5365,10 @@ async function strictFlush() {
 }
 
 function getBox(node) {
-  return (node && (node.absoluteBoundingBox || node.absoluteRenderBounds)) || null;
+  if (!node) return null;
+  if (node.absoluteRenderBounds) return node.absoluteRenderBounds;
+  if (node.absoluteBoundingBox) return node.absoluteBoundingBox;
+  return null;
 }
 
 function findAnchor(poster, opts) {
@@ -5426,17 +5459,22 @@ async function resizePosterToFit(params) {
   const posterId = params.posterId;
   const anchorId = params.anchorId || null;
   const anchorNames = Array.isArray(params.anchorNames) ? params.anchorNames : [];
-  const bottomPadding = typeof params.bottomPadding === 'number' ? params.bottomPadding : 150;
+  var bottomPadding = typeof params.bottomPadding === 'number'
+    ? params.bottomPadding
+    : (typeof params.padding === 'number' ? params.padding : 150);
   const excludeByNameRegex = params.excludeByNameRegex;
+  const allowShrink = params.allowShrink === false ? false : true;
+  const minHeight = typeof params.minHeight === 'number' ? params.minHeight : null;
+  const maxHeight = typeof params.maxHeight === 'number' ? params.maxHeight : null;
 
-  const poster = figma.getNodeById(posterId);
+  const poster = await figma.getNodeByIdAsync(posterId);
   if (!poster || poster.type !== 'FRAME') {
     return { success: false, reason: 'poster_not_found', posterId: posterId || null, anchorId: anchorId, anchorName: null };
   }
 
   await strictFlush();
 
-  const anchorResult = findAnchor(poster, { anchorId, anchorNames, excludeRegex: excludeByNameRegex });
+  const anchorResult = await findAnchor(poster, { anchorId, anchorNames, excludeRegex: excludeByNameRegex });
   const anchor = anchorResult.node;
   const anchorSource = anchorResult.source;
 
@@ -5492,11 +5530,17 @@ async function resizePosterToFit(params) {
   const posterTop = posterBox.y;
   const oldHeight = poster.height;
 
-  let newHeight = Math.ceil(contentBottom - posterTop + bottomPadding);
+  var newHeight = Math.ceil(contentBottom - posterTop + bottomPadding);
   if (!Number.isFinite(newHeight)) {
     return { success: false, reason: 'calc_invalid', posterId: poster.id, anchorId: anchor.id, anchorName: anchor.name || null };
   }
-  if (newHeight < oldHeight) {
+  if (minHeight !== null && newHeight < minHeight) {
+    newHeight = minHeight;
+  }
+  if (maxHeight !== null && newHeight > maxHeight) {
+    newHeight = maxHeight;
+  }
+  if (!allowShrink && newHeight < oldHeight) {
     newHeight = oldHeight;
   }
 
@@ -5509,17 +5553,21 @@ async function resizePosterToFit(params) {
 
   await strictFlush();
 
+  const diff = newHeight - oldHeight;
+
   const result = {
     success: true,
     posterId: poster.id,
     anchorId: anchor.id,
     anchorName: anchor.name || null,
     anchorSource,
+    posterTop,
     oldHeight,
     newHeight,
     bottomPadding,
     contentBottom,
-    diff: newHeight - oldHeight
+    diff: diff,
+    diffAbs: Math.abs(diff)
   };
 
   console.log('[MCP] resize_poster_to_fit:', result);
