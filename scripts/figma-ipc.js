@@ -588,7 +588,7 @@ export async function sendCommandSafe(ctx, command, params = {}, options = {}) {
 }
 
 /**
- * 创建组件实例并设置属性（支持降级策略）
+ * 创建组件实例并设置属性
  * @param {Object} ctx - 上下文对象
  * @param {Object} options - 配置选项
  * @param {string} options.componentKey - 组件 Key
@@ -597,7 +597,6 @@ export async function sendCommandSafe(ctx, command, params = {}, options = {}) {
  * @param {number} options.x - X 位置（默认 0）
  * @param {number} options.y - Y 位置（默认 0）
  * @param {Object} options.properties - 实例属性
- * @param {string} options.seedFallback - Seed 降级模板 ID
  * @returns {Promise<string>} - 实例 ID
  */
 export async function createInstance(ctx, options = {}) {
@@ -607,8 +606,7 @@ export async function createInstance(ctx, options = {}) {
     parentId,
     x = 0,
     y = 0,
-    properties = {},
-    seedFallback = null
+    properties = {}
   } = options;
 
   let instanceId = null;
