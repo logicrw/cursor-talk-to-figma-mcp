@@ -343,6 +343,42 @@ curl -I http://127.0.0.1:3056/assets/250818_summer_break/not-exist.png          
 3. 插件用错了（用了原版而非 Fork 版）
 </details>
 
+<details>
+<summary><b>Q5: 为什么脚本报错"找不到节点"或"高度调整失败"？</b></summary>
+
+**答**：99% 是因为 Figma 组件设计不符合要求。
+
+**最常见错误：使用 Group 而非 Frame**
+
+| 问题 | 原因 | 解决方案 |
+|------|------|---------|
+| 找不到节点 | 节点命名不规范 | 使用 `slot:XXX` 格式命名 |
+| 高度调整失败 | 根容器是 Group | 转换为 Frame（按 `F`） |
+| 图片填充失败 | 图片容器是 Group | 使用 Frame 或 Rectangle |
+| 文本溢出 | 未设置 textAutoResize | 设置为 `HEIGHT` |
+| Auto Layout 不生效 | 使用了 Group | Group 不支持 Auto Layout |
+
+**完整规范**: 见 [FIGMA_COMPONENT_GUIDE.md](docs/FIGMA_COMPONENT_GUIDE.md)（必读！）
+</details>
+
+<details>
+<summary><b>Q6: MCP 对开发脚本有什么帮助？</b></summary>
+
+**答**：MCP 在**开发调试阶段**非常有用，但生产环境不需要。
+
+**主要用途**:
+- ✅ 快速验证节点名称与结构（"帮我查看选中节点的子节点"）
+- ✅ 测试 API 调用参数（"测试 resize_poster_to_fit 命令"）
+- ✅ 用 AI 生成脚本框架（"生成一个卡片填充脚本"）
+- ✅ 错误分析（"为什么 fillImage 报错？"）
+
+**工作流推荐**:
+1. **开发阶段**：用 MCP + Claude Code 探索文件结构、验证 API
+2. **生产阶段**：直接运行脚本（`node scripts/xxx.js`），无需 MCP
+
+详见 [INSTALLATION.md - MCP 对脚本开发的帮助](docs/INSTALLATION.md#mcp-对脚本开发的帮助)
+</details>
+
 ### English Documentation (Original)
 
 See sections below for original documentation in English.

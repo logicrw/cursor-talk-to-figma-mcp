@@ -244,6 +244,67 @@ cp mcp-config.example.json mcp-config.json
 3. 在聊天中输入 `/mcp` 或查看可用工具
 4. 应该能看到 `talk-to-figma` 相关的 57 个工具
 
+### MCP 对脚本开发的帮助
+
+虽然运行脚本不需要 MCP，但在**开发调试阶段**，MCP + Claude Code 可以显著提升效率。
+
+#### 开发时的典型工作流
+
+**场景：开发新脚本时需要探索 Figma 文件结构**
+
+**第 1 步：快速验证节点名称**
+```plaintext
+User: "帮我查看当前选中节点的子节点列表，列出节点名称和类型"
+Claude: [调用 get_selection → get_node_info]
+返回: slot:IMAGE_GRID (Frame), titleText (Text), slot:CARDS_STACK (Frame)...
+```
+
+**第 2 步：验证 API 调用参数**
+```plaintext
+User: "帮我测试 resize_poster_to_fit 命令，锚点是 ContentAndPlate，底部留 200px"
+Claude: [调用 resize_poster_to_fit]
+返回: 成功/失败 + 错误信息
+```
+
+**第 3 步：生成脚本框架代码**
+```plaintext
+User: "基于我的 Figma 文件结构，生成一个卡片填充脚本"
+Claude: [分析节点结构 → 生成代码框架]
+返回: 可直接运行的脚本模板
+```
+
+#### MCP vs 直接运行脚本
+
+| 对比项 | 直接运行脚本 | 使用 MCP + AI |
+|--------|------------|--------------|
+| **执行速度** | ✅ 快（无中间层） | ⚠️ 慢（需 AI 推理） |
+| **适用场景** | 生产环境、批量任务 | 开发调试、探索验证 |
+| **灵活性** | ⚠️ 需修改代码重新运行 | ✅ 自然语言交互 |
+| **错误排查** | ⚠️ 需手动添加日志 | ✅ AI 辅助分析根因 |
+| **学习成本** | ⚠️ 需熟悉 API 文档 | ✅ 边问边学 |
+
+#### 推荐工作流
+
+1. **开发阶段**：配置 MCP，用 Claude Code 快速验证 API + 探索文件结构
+2. **调试阶段**：用 MCP 定位节点、测试参数、分析错误
+3. **生产阶段**：直接运行脚本，不依赖 MCP（无需 AI，速度更快）
+
+**示例：开发新脚本的完整流程**
+```plaintext
+1. 在 Claude Code 中：
+   "帮我查看 ProductCard 组件的所有子节点结构"
+
+2. 确认节点名称后：
+   "生成一个脚本，填充 productName、price、description"
+
+3. 获得脚本框架后：
+   直接运行 `node scripts/my_product_script.js`
+
+4. 如果出错：
+   "为什么 fillImage 报错 'nodeId undefined'？"
+   Claude 会分析代码并指出 prepare_card_root 返回值解析问题
+```
+
 ---
 
 ## 六、运行示例脚本

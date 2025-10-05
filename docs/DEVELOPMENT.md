@@ -8,6 +8,32 @@
 
 ---
 
+## ⚠️ 开始开发前必读
+
+### 黄金规则：必须使用 Frame，不能用 Group
+
+**这是最重要的规则！违反会导致脚本完全失败。**
+
+> **官方依据**: [Figma Help Center - The difference between frames and groups](https://help.figma.com/hc/en-us/articles/360039832054)
+
+| 使用 Group 会导致 | 正确使用 Frame 的好处 |
+|------------------|---------------------|
+| ❌ 无法使用 Auto Layout | ✅ 自动调整尺寸与间距 |
+| ❌ 子元素布局无法控制 | ✅ 支持 padding/spacing/alignment |
+| ❌ 无法设置 constraints | ✅ 响应式布局 |
+| ❌ 无法 clip content | ✅ 防止内容溢出 |
+| ❌ 脚本无法调整高度 | ✅ `resize_poster_to_fit` 可用 |
+| ❌ 无法设置填充/描边 | ✅ 样式属性完整支持 |
+| ❌ 图片填充失败 | ✅ `set_image_fill` 正常工作 |
+
+**快速检查**:
+- 按 `F` 创建 Frame（正确）
+- 按 `Cmd/Ctrl + G` 创建 Group（错误，脚本会失败）
+
+**详细说明**: 见 [FIGMA_COMPONENT_GUIDE.md](FIGMA_COMPONENT_GUIDE.md)
+
+---
+
 ## 一、开发环境设置
 
 ### 1.1 环境要求
