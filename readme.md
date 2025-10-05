@@ -6,7 +6,7 @@
 >
 > **Fork 起点**: Commit [8513030](https://github.com/grab/cursor-talk-to-figma-mcp/commit/8513030755c4f6fcf43a930f42ba9afcbfab29bd) (2025-08-30)
 >
-> **当前状态**: 154 个提交，包含大量功能改进与代码优化
+> **当前状态**: 157 个提交，包含大量功能改进与代码优化
 >
 > **核心改进**:
 > - 无种子组件创建（Seedless Architecture）- 基于 Figma 官方 `setProperties` API
