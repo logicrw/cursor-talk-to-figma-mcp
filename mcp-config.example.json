@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "talk-to-figma": {
+      "command": "node",
+      "args": ["<PROJECT_ROOT>/dist/server.js"]
+    }
+  }
+}

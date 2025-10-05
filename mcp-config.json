@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "talk-to-figma": {
-      "command": "node",
-      "args": ["/Users/chenrongwei/Projects/cursor-talk-to-figma-mcp/dist/server.js"]
-    }
-  }
-}

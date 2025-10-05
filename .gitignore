@@ -7,6 +7,9 @@ node_modules/
 .repomap.tags.cache.v1/
 .cursor/
 
+# Local MCP configuration (contains absolute paths)
+mcp-config.json
+
 # Build output
 dist/
 
