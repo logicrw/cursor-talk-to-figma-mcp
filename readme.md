@@ -22,43 +22,119 @@
 >
 > ---
 
-本项目实现了 Model Context Protocol (MCP) 集成，连接 Cursor AI / Claude Code 与 Figma，允许 AI 读取设计文件并通过编程方式修改 Figma 设计。
+## 这是什么？
+
+**本 Fork 版本专注于生产级 Figma 海报自动化**，提供可直接运行的脚本和稳定的工程实践。
+
+### 核心能力
+
+✅ **周报海报自动化** - 一键生成三联海报（`run_weekly_poster.js`）
+✅ **多语言短图生成** - 批量生成文章配图（`run_article_images.js`）
+✅ **稳定的图片填充** - URL-first + Base64 降级 + 限流机制
+✅ **智能布局计算** - 海报高度自适应、文本自动调整
+✅ **无种子组件创建** - 使用 Figma 官方 API 直接控制组件
+
+### 与原项目的区别
+
+| 项目 | 原作者版本 | 本 Fork 版本 |
+|------|----------|------------|
+| **定位** | MCP 工具库（需配合 AI 使用） | 生产级自动化脚本（独立运行） |
+| **使用方式** | 在 Claude Code 中用自然语言操作 Figma | 直接运行 Node.js 脚本生成海报 |
+| **核心产物** | 57 个 MCP 工具 | 2 个完整工作流脚本 + 优化后的 MCP 工具 |
+| **适用场景** | 探索性设计、AI 辅助设计 | 批量内容生成、周期性海报制作 |
+| **稳定性** | 实验性 | 生产验证（146+ commits） |
+
+### 两种使用模式
+
+**模式 1: 直接运行脚本（推荐，无需 MCP）**
+```bash
+bun socket                              # 启动 WebSocket
+node scripts/run_weekly_poster.js       # 直接生成海报
+```
+✅ 适合：定期生成周报、批量生成配图、自动化工作流
+❌ 不适合：探索性设计、需要 AI 辅助决策
+
+**模式 2: 配合 Claude Code 使用（需配置 MCP）**
+```bash
+# 在 Claude Code 中用自然语言操作
+"帮我创建一个卡片，标题是XXX，图片是XXX"
+```
+✅ 适合：探索性设计、原型验证、需要 AI 辅助
+❌ 不适合：批量生产、自动化流程
 
 https://github.com/user-attachments/assets/129a14d2-ed73-470f-9a4c-2240b2a4885c
 
 ## 项目结构
 
-- `src/talk_to_figma_mcp/` - TypeScript MCP 服务器（Figma 集成）
-- `src/cursor_mcp_plugin/` - Figma 插件（与 Cursor 通信）
-- `src/socket.ts` - WebSocket 服务器（MCP 服务器与 Figma 插件之间的中继）
-- `scripts/` - 生产级自动化脚本（周报海报、文章配图生成）
-- `config/` - 配置文件（WebSocket、静态服务器、映射规则）
-
-## 快速开始
-
-**详细安装指南请查看 [📖 docs/INSTALLATION.md](docs/INSTALLATION.md)**
-
-### 简要步骤
-
-1. 安装 Bun（如果尚未安装）:
-
-```bash
-curl -fsSL https://bun.sh/install | bash
+```
+cursor-talk-to-figma-mcp/
+├── scripts/                            # 🚀 核心：生产脚本
+│   ├── run_weekly_poster.js            #    周报三海报生成器
+│   ├── run_article_images.js           #    多语言短图生成器
+│   └── figma-ipc.js                    #    共享通信层（可复用）
+│
+├── src/
+│   ├── talk_to_figma_mcp/              # MCP 服务器（57个工具）
+│   ├── cursor_mcp_plugin/              # Figma 插件（已大量修改）
+│   ├── socket.ts                       # WebSocket 中继服务器
+│   ├── config-resolver.js              # 内容路径解析
+│   └── static-server.js                # 静态资源服务器
+│
+└── config/
+    └── server-config.json              # 核心配置文件
 ```
 
-2. 运行安装脚本（会自动安装 MCP 到当前项目）:
+## 快速开始（5 分钟上手）
 
+### 前置要求
+
+- Node.js >= 18
+- Bun >= 1.0
+- Figma Desktop 应用（必须是本地版，不是浏览器）
+
+### 安装步骤
+
+**步骤 1: 克隆项目**
 ```bash
-bun setup
+git clone https://github.com/logicrw/cursor-talk-to-figma-mcp.git
+cd cursor-talk-to-figma-mcp
 ```
 
-3. 启动 WebSocket 服务器:
+**步骤 2: 安装依赖并构建**
+```bash
+bun install
+bun run build
+```
 
+**步骤 3: 导入 Figma 插件（⚠️ 必须本地导入）**
+
+**重要**: 本 Fork 版本对插件做了大量修改，**不能使用** Figma 社区的原版插件。
+
+1. 在 Figma Desktop 中：`Plugins` > `Development` > `Import plugin from manifest...`
+2. 选择文件：`src/cursor_mcp_plugin/manifest.json`
+3. 插件将出现在开发插件列表中
+
+**步骤 4: 启动 WebSocket 服务器**
 ```bash
 bun socket
 ```
+保持此终端运行。
 
-4. **新增** 从 [Figma 社区页面](https://www.figma.com/community/plugin/1485687494525374295/cursor-talk-to-figma-mcp-plugin) 安装插件，或[本地安装](#figma-插件)
+**步骤 5: 运行示例脚本**
+
+打开新终端窗口：
+```bash
+# 在 Figma 中运行插件并加入频道 "test"
+# 然后执行：
+node scripts/run_weekly_poster.js --channel test
+```
+
+🎉 如果看到海报生成，说明安装成功！
+
+---
+
+**详细安装指南**: [📖 docs/INSTALLATION.md](docs/INSTALLATION.md)
+**遇到问题**: [⚠️ docs/PITFALLS.md](docs/PITFALLS.md)
 
 ## 视频教程
 
@@ -208,15 +284,64 @@ curl -I http://127.0.0.1:3056/assets/250818_summer_break/not-exist.png          
 
 ## Documentation / 文档索引
 
-### 中文文档（Fork 版本专属）
+### 🚀 新手必读（按顺序阅读）
+
+1. **先看 README（本文档）** - 理解项目定位与两种使用模式
+2. **[📖 INSTALLATION.md](docs/INSTALLATION.md)** - 5 分钟完成安装
+3. **[⚠️ PITFALLS.md](docs/PITFALLS.md)** - 避免踩 9 个大坑（必读！）
+4. **[🛠️ DEVELOPMENT.md](docs/DEVELOPMENT.md)** - 开发自定义脚本（可选）
+
+### 📚 完整文档列表
 
 | 文档 | 用途 | 适用人群 |
 |------|------|---------|
 | [📖 docs/INSTALLATION.md](docs/INSTALLATION.md) | 安装与快速上手指南 | 新用户、使用者 |
 | [🛠️ docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 开发指南（如何开发自定义脚本） | 开发者 |
 | [⚠️ docs/PITFALLS.md](docs/PITFALLS.md) | 避坑指南（血泪教训总结） | 所有人（强烈推荐） |
-| [📐 docs/ARCHITECTURE-FLOW.md](docs/ARCHITECTURE-FLOW.md) | 架构流程图（完整技术架构） | 开发者 |
+| [📐 docs/ARCHITECTURE_FLOW.md](docs/ARCHITECTURE_FLOW.md) | 架构流程图（完整技术架构） | 开发者 |
 | [📊 docs/OPTIMIZATION_SUMMARY.md](docs/OPTIMIZATION_SUMMARY.md) | 优化记录（Phase 1-2 代码优化） | 开发者 |
+
+### ❓ 常见疑问快速解答
+
+<details>
+<summary><b>Q1: 我需要配置 MCP 吗？</b></summary>
+
+**答**：大多数情况下**不需要**。
+
+- ✅ **不需要 MCP**: 直接运行脚本生成海报（推荐）
+- ❌ **需要 MCP**: 在 Claude Code 中用自然语言操作 Figma
+
+详见 [INSTALLATION.md 第五章](docs/INSTALLATION.md#五配置-mcp-服务器可选---仅-ai-辅助时需要)
+</details>
+
+<details>
+<summary><b>Q2: 能用 Figma 社区的插件吗？</b></summary>
+
+**答**：**不能**。本 Fork 版本对插件做了大量修改，必须本地导入。
+
+详见 [INSTALLATION.md 第三章](docs/INSTALLATION.md#三配置-figma-插件)
+</details>
+
+<details>
+<summary><b>Q3: 这个项目和原作者的有什么区别？</b></summary>
+
+**答**：
+- **原作者**: MCP 工具库（需配合 AI）
+- **本 Fork**: 生产级自动化脚本（独立运行）
+
+详见 README 的 [与原项目的区别](#与原项目的区别)
+</details>
+
+<details>
+<summary><b>Q4: 脚本运行失败怎么办？</b></summary>
+
+**答**：99% 的问题在 [PITFALLS.md](docs/PITFALLS.md) 中有答案。
+
+最常见问题：
+1. flush_layout 时机不对
+2. 海报高度调整时机不对
+3. 插件用错了（用了原版而非 Fork 版）
+</details>
 
 ### English Documentation (Original)
 

@@ -85,23 +85,40 @@ dist/
 
 ## 三、配置 Figma 插件
 
-### 方法 A: 从 Figma Community 安装（推荐）
+### ⚠️ 重要：必须本地导入插件
+
+**本 Fork 版本对 Figma 插件做了大量修改，不兼容原作者发布到 Figma 社区的版本。**
+
+你**必须**使用本地导入方式，**不能**从 Figma Community 安装原版插件。
+
+### 本地导入步骤
 
 1. 打开 Figma Desktop 应用
-2. 访问 [Cursor Talk To Figma MCP Plugin](https://www.figma.com/community/plugin/1485687494525374295/cursor-talk-to-figma-mcp-plugin)
-3. 点击 **Install** 安装插件
-4. 在任意 Figma 文件中右键 > **Plugins** > **Cursor Talk To Figma MCP Plugin** 运行插件
+2. 点击菜单 **Plugins** > **Development** > **Import plugin from manifest...**
+3. 选择项目中的 `src/cursor_mcp_plugin/manifest.json` 文件
+4. 插件将出现在 **Development** 插件列表中，名称为 **Cursor MCP Plugin**
 
-### 方法 B: 本地导入插件（开发者）
-
-1. 在 Figma Desktop 中，点击菜单 **Plugins** > **Development** > **Import plugin from manifest...**
-2. 选择项目中的 `src/cursor_mcp_plugin/manifest.json` 文件
-3. 插件将出现在 **Development** 插件列表中
-
-**本地插件路径示例**:
+**插件路径示例**:
 ```
 /Users/你的用户名/Projects/cursor-talk-to-figma-mcp/src/cursor_mcp_plugin/manifest.json
 ```
+
+### 与原版插件的区别
+
+| 功能 | 原版插件 | 本 Fork 版本插件 |
+|------|---------|----------------|
+| `prepare_card_root` | 基础实现 | 增强：返回详细分离信息 |
+| `clear_card_content` | 不支持 | 新增：智能清理卡片内容 |
+| `resize_poster_to_fit` | 不支持 | 新增：海报高度自适应 |
+| `set_instance_properties_by_base` | 不支持 | 新增：属性模糊匹配 |
+| `fillImage` 策略 | 仅 Base64 | URL-first + Base64 降级 |
+| 频道管理 | 基础 | 增强：持久化频道、UI 改进 |
+
+**如果误用了原版插件，会出现以下问题**：
+- ❌ `resize_poster_to_fit` 命令不存在
+- ❌ `clear_card_content` 命令不存在
+- ❌ `set_instance_properties_by_base` 命令不存在
+- ❌ 脚本无法正常运行
 
 ---
 
@@ -139,9 +156,40 @@ bun socket
 
 ---
 
-## 五、配置 MCP 服务器（可选）
+## 五、配置 MCP 服务器（可选 - 仅 AI 辅助时需要）
 
-如果您想在 **Claude Code** 或 **Cursor** 中使用 MCP 工具，需要配置 MCP 服务器。
+### 什么时候需要配置 MCP？
+
+**简单回答：只有在使用 Claude Code / Cursor 用自然语言操作 Figma 时才需要配置 MCP。**
+
+#### 场景对比
+
+**场景 A: 直接运行脚本（不需要 MCP）**
+```bash
+# 启动 WebSocket
+bun socket
+
+# 在另一个终端直接运行脚本
+node scripts/run_weekly_poster.js --channel test
+```
+✅ **无需配置 MCP**
+✅ 适合：批量生成海报、定期自动化任务
+✅ 脚本直接通过 WebSocket 与 Figma 插件通信
+
+**场景 B: 使用 AI 辅助设计（需要 MCP）**
+```bash
+# 在 Claude Code 中用自然语言
+"帮我在 Figma 中创建一个卡片，标题是XXX"
+"把这个节点的颜色改成红色"
+"导出当前选中的节点为 PNG"
+```
+❌ **需要配置 MCP**
+✅ 适合：探索性设计、原型验证、需要 AI 辅助决策
+✅ Claude Code 通过 MCP 工具调用 Figma 插件
+
+### MCP 配置步骤（仅场景 B 需要）
+
+如果你确定需要使用 Claude Code / Cursor 进行 AI 辅助设计，请继续以下配置：
 
 ### 方法 A: 使用 setup 脚本（推荐）
 
