@@ -455,3 +455,215 @@ export async function findNodes(ctx, rootId, targetNames, options = {}) {
   console.log(`🔍 批量查找完成: ${results.size}/${targetNames.length} 个节点找到`);
   return results;
 }
+
+/**
+ * 强制布局刷新并等待结算（关键操作，避免测量为 0）
+ * @param {Object} ctx - 上下文对象
+ * @param {number} delay - 等待时间（默认 80ms）
+ * @returns {Promise<void>}
+ */
+export async function flushLayout(ctx, delay = 80) {
+  try {
+    await sendCommand(ctx, 'flush_layout', {});
+  } catch (error) {
+    console.warn('⚠️ flush_layout 失败:', error.message || error);
+  }
+  await sleep(delay);
+}
+
+/**
+ * 批量获取节点信息（并行）
+ * @param {Object} ctx - 上下文对象
+ * @param {string[]} nodeIds - 节点 ID 列表
+ * @returns {Promise<Map<string, Object>>} - nodeId → nodeInfo 映射
+ */
+export async function getNodesInfo(ctx, nodeIds) {
+  if (!nodeIds || nodeIds.length === 0) {
+    return new Map();
+  }
+
+  const promises = nodeIds.map(nodeId =>
+    sendCommand(ctx, 'get_node_info', { nodeId })
+      .catch(error => {
+        console.warn(`⚠️ get_node_info 失败 (${nodeId}):`, error.message || error);
+        return null;
+      })
+  );
+
+  const results = await Promise.all(promises);
+  const map = new Map();
+
+  nodeIds.forEach((nodeId, index) => {
+    if (results[index]) {
+      map.set(nodeId, results[index]);
+    }
+  });
+
+  console.log(`📊 批量获取节点信息: ${map.size}/${nodeIds.length} 个成功`);
+  return map;
+}
+
+/**
+ * 设置文本内容并配置自动调整模式
+ * @param {Object} ctx - 上下文对象
+ * @param {string} nodeId - 文本节点 ID
+ * @param {string} text - 文本内容
+ * @param {Object} options - 配置选项
+ * @param {string} options.autoResize - 自动调整模式 ('NONE', 'HEIGHT', 'WIDTH_AND_HEIGHT')
+ * @param {Object} options.layoutSizing - 布局尺寸配置 {layoutSizingHorizontal, layoutSizingVertical}
+ * @param {boolean} options.flush - 是否自动刷新布局（默认 false）
+ * @returns {Promise<void>}
+ */
+export async function setText(ctx, nodeId, text, options = {}) {
+  const { autoResize = null, layoutSizing = null, flush = false } = options;
+
+  // Step 1: 设置文本
+  try {
+    await sendCommand(ctx, 'set_text_content', { nodeId, text });
+  } catch (error) {
+    console.warn(`⚠️ set_text_content 失败 (${nodeId}):`, error.message || error);
+    throw error;
+  }
+
+  // Step 2: 自动调整模式（可选）
+  if (autoResize) {
+    try {
+      await sendCommand(ctx, 'set_text_auto_resize', { nodeId, autoResize });
+    } catch (error) {
+      console.warn(`⚠️ set_text_auto_resize 失败 (${nodeId}):`, error.message || error);
+    }
+  }
+
+  // Step 3: 布局尺寸（可选）
+  if (layoutSizing) {
+    try {
+      await sendCommand(ctx, 'set_layout_sizing', {
+        nodeId,
+        ...layoutSizing
+      });
+    } catch (error) {
+      console.warn(`⚠️ set_layout_sizing 失败 (${nodeId}):`, error.message || error);
+    }
+  }
+
+  // Step 4: 刷新布局（可选）
+  if (flush) {
+    await flushLayout(ctx);
+  }
+
+  console.log(`✅ 文本已设置: ${nodeId} (autoResize=${autoResize || 'none'})`);
+}
+
+/**
+ * 安全执行命令（自动 try-catch）
+ * @param {Object} ctx - 上下文对象
+ * @param {string} command - 命令名称
+ * @param {Object} params - 参数
+ * @param {Object} options - 选项
+ * @param {any} options.fallback - 失败时返回的默认值（默认 null）
+ * @param {boolean} options.silent - 是否静默错误（默认 false）
+ * @param {number} options.retries - 重试次数（默认 0）
+ * @returns {Promise<any>} - 命令结果，失败返回 fallback
+ */
+export async function sendCommandSafe(ctx, command, params = {}, options = {}) {
+  const { fallback = null, silent = false, retries = 0 } = options;
+
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const result = await sendCommand(ctx, command, params);
+      return result;
+    } catch (error) {
+      lastError = error;
+      if (!silent && attempt === retries) {
+        console.warn(`⚠️ ${command} 失败:`, error.message || error);
+      }
+      if (attempt < retries) {
+        await sleep(100 * (attempt + 1)); // 指数退避
+      }
+    }
+  }
+
+  return fallback;
+}
+
+/**
+ * 创建组件实例并设置属性（支持降级策略）
+ * @param {Object} ctx - 上下文对象
+ * @param {Object} options - 配置选项
+ * @param {string} options.componentKey - 组件 Key
+ * @param {string} options.componentId - 组件 ID
+ * @param {string} options.parentId - 父节点 ID
+ * @param {number} options.x - X 位置（默认 0）
+ * @param {number} options.y - Y 位置（默认 0）
+ * @param {Object} options.properties - 实例属性
+ * @param {string} options.seedFallback - Seed 降级模板 ID
+ * @returns {Promise<string>} - 实例 ID
+ */
+export async function createInstance(ctx, options = {}) {
+  const {
+    componentKey,
+    componentId,
+    parentId,
+    x = 0,
+    y = 0,
+    properties = {},
+    seedFallback = null
+  } = options;
+
+  let instanceId = null;
+
+  // 策略 1: 直接创建
+  if (componentKey || componentId) {
+    try {
+      const result = await sendCommand(ctx, 'create_component_instance', {
+        componentKey,
+        componentId,
+        x,
+        y
+      });
+      instanceId = result?.id;
+      if (instanceId) {
+        console.log(`✅ 直接创建实例: ${instanceId}`);
+      }
+    } catch (error) {
+      console.warn('⚠️ 直接创建失败:', error.message || error);
+    }
+  }
+
+  // 策略 2: Seed 降级
+  if (!instanceId && seedFallback && parentId) {
+    try {
+      const result = await sendCommand(ctx, 'append_card_to_container', {
+        containerId: parentId,
+        templateId: seedFallback,
+        insertIndex: -1
+      });
+      instanceId = result?.newCardId;
+      if (instanceId) {
+        console.log(`✅ Seed 降级创建: ${instanceId}`);
+      }
+    } catch (error) {
+      console.warn('⚠️ Seed 降级失败:', error.message || error);
+    }
+  }
+
+  if (!instanceId) {
+    throw new Error('所有实例创建策略均失败');
+  }
+
+  // 设置属性
+  if (Object.keys(properties).length > 0) {
+    try {
+      await sendCommand(ctx, 'set_instance_properties_by_base', {
+        nodeId: instanceId,
+        properties
+      });
+      console.log(`✅ 实例属性已设置: ${instanceId}`);
+    } catch (error) {
+      console.warn('⚠️ 属性设置失败:', error.message || error);
+    }
+  }
+
+  return instanceId;
+}

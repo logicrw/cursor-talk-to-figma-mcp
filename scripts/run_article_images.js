@@ -31,7 +31,9 @@ import {
   normalizeName as normalizeNameUtil,
   findShallowByName as findShallowByNameUtil,
   normalizeToolResult,
-  prepareAndClearCard
+  prepareAndClearCard,
+  fillImage,
+  flushLayout
 } from './figma-ipc.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -368,12 +370,7 @@ class ArticleImageRunner {
 
     await this.applyVisibilityFallbackInternal(rootId, togglesNeedingFallback);
 
-    try {
-      await this.sendCommand('flush_layout', {});
-    } catch (error) {
-      console.warn('⚠️ flush_layout 失败:', error.message || error);
-    }
-    await this.sleep(80);
+    await flushLayout(this);
   }
 
   buildVisibilityTargets({ hasTitle, hasSource, imageCount }) {
@@ -422,7 +419,7 @@ class ArticleImageRunner {
     }
 
     try {
-      await this.sendCommand('flush_layout', {});
+      await flushLayout(this);
     } catch (flushError) {
       console.warn('⚠️ flush_layout 失败:', flushError.message || flushError);
     }
@@ -526,7 +523,7 @@ class ArticleImageRunner {
     });
 
     try {
-      await this.sendCommand('flush_layout', {});
+      await flushLayout(this);
     } catch {}
     await this.sleep(80);
 
@@ -547,8 +544,7 @@ class ArticleImageRunner {
       } catch (error) {
         console.warn('⚠️ hide_nodes_by_name 失败:', error.message || error);
       }
-      try { await this.sendCommand('flush_layout', {}); } catch {}
-      await this.sleep(80);
+      await flushLayout(this);
     }
 
     // 准备根节点并清理内容（使用统一函数）
@@ -572,7 +568,7 @@ class ArticleImageRunner {
             autoResize: 'HEIGHT'
           });
           try {
-            await this.sendCommand('flush_layout', {});
+            await flushLayout(this);
           } catch (error) {
             console.warn('⚠️ 标题 flush 失败:', error.message || error);
           }
@@ -590,7 +586,7 @@ class ArticleImageRunner {
     const sourceResult = await this.fillSource(rootId, formattedSourceText);
 
     try {
-      await this.sendCommand('flush_layout', {});
+      await flushLayout(this);
     } catch (error) {
       console.warn('⚠️ 重排前 flush 失败:', error.message || error);
     }
@@ -612,7 +608,7 @@ class ArticleImageRunner {
     }
 
     try {
-      await this.sendCommand('flush_layout', {});
+      await flushLayout(this);
     } catch (error) {
       console.warn('⚠️ 重排后 flush 失败:', error.message || error);
     }
@@ -644,47 +640,16 @@ class ArticleImageRunner {
         const assetId = imageAssetIds[i];
         const url = `${this.staticUrl}/${assetId}.png`;
 
-        let success = false;
-        let lastError = null;
-
-        // 先尝试 URL 填充
-        try {
-          const res = await this.sendCommand('set_image_fill', {
-            nodeId: slotId,
-            imageUrl: url,
-            scaleMode: 'FIT',
-            opacity: 1
-          });
-          // 检查返回值确认成功
-          success = !res || res.success !== false;
-        } catch (error) {
-          lastError = error;
-        }
-
-        // URL 失败则尝试 Base64
-        if (!success) {
-          try {
-            const base64 = await this.imageToBase64(assetId, contentPath);
-            if (base64) {
-              await this.throttleBase64();
-              const resFallback = await this.sendCommand('set_image_fill', {
-                nodeId: slotId,
-                imageBase64: base64,
-                scaleMode: 'FIT',
-                opacity: 1
-              });
-              success = !resFallback || resFallback.success !== false;
-            } else {
-              console.warn(`⚠️ Base64 降级不可用于槽位 ${slotId}`);
-            }
-          } catch (fallbackError) {
-            lastError = fallbackError;
-          }
-        }
+        // 使用统一的 fillImage API（支持 URL → Base64 降级）
+        const success = await fillImage(this, slotId, url, {
+          scaleMode: 'FIT',
+          opacity: 1,
+          base64Fallback: async (url) => await this.imageToBase64(assetId, contentPath),
+          throttleFn: async () => await this.throttleBase64()
+        });
 
         if (!success) {
-          const reason = lastError ? (lastError.message || lastError) : '未知原因';
-          console.warn(`⚠️ 填充失败于 ${slotId}，尝试下一个槽位: ${reason}`);
+          console.warn(`⚠️ 填充失败于 ${slotId}，尝试下一个槽位`);
           continue;
         }
 
@@ -787,8 +752,7 @@ class ArticleImageRunner {
       }
     }
 
-    try { await this.sendCommand('flush_layout', {}); } catch {}
-    await this.sleep(80);
+    await flushLayout(this);
 
     return { hasSource, nodeId: textNodeId, frameId: sourceFrameId };
   }
@@ -925,7 +889,7 @@ class ArticleImageRunner {
 
     try {
       console.log('🔧 flush_layout before resize_poster_to_fit');
-      await this.sendCommand('flush_layout', {});
+      await flushLayout(this);
     } catch (error) {
       const message = error && error.message ? error.message : error;
       console.warn('⚠️ flush_layout before short resize failed:', message);

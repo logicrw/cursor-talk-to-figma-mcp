@@ -12,7 +12,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { spawn } from 'child_process';
 import http from 'http';
-import { normalizeToolResult, prepareAndClearCard } from './figma-ipc.js';
+import { normalizeToolResult, prepareAndClearCard, fillImage, flushLayout } from './figma-ipc.js';
 import { resolveContentPath, inferDataset, buildAssetUrl, computeStaticServerUrl, getAssetExtension } from '../src/config-resolver.js';
 
 const THROTTLE_MS = 0;
@@ -408,8 +408,7 @@ class WeeklyPosterRunner {
     if (!frameId) return null;
     if (!this.enableAutoExport) return null;
     try {
-      try { await this.sendCommand('flush_layout', {}); } catch {}
-      await this.sleep(160);
+      await flushLayout(this, 160);
 
       const meta = this.content && this.content.doc;
       const dateStr = this.sanitizeFileName(meta && meta.date ? meta.date : 'unknown');
@@ -437,8 +436,7 @@ class WeeklyPosterRunner {
           const stats = await fs.stat(resolved);
           if (stats && stats.isFile() && stats.size) {
             console.log(`📦 Exported poster: ${resolved}`);
-            try { await this.sendCommand('flush_layout', {}); } catch {}
-            await this.sleep(160);
+            await flushLayout(this, 160);
             return resolved;
           }
           console.warn('⚠️ export_frame reported path but verification failed:', resolved);
@@ -463,8 +461,7 @@ class WeeklyPosterRunner {
 
       await this.writeBase64Image(absolutePath, raw);
       console.log(`📦 Exported poster (base64 fallback): ${absolutePath}`);
-      try { await this.sendCommand('flush_layout', {}); } catch {}
-      await this.sleep(160);
+      await flushLayout(this, 160);
       return absolutePath;
     } catch (error) {
       console.warn('⚠️ export_frame failed:', error && error.message ? error.message : error);
@@ -521,8 +518,7 @@ class WeeklyPosterRunner {
     }
 
     await this.clearCardsContainer();
-    try { await this.sendCommand('flush_layout', {}); } catch {}
-    await this.sleep(120);
+    await flushLayout(this, 120);
     const headerMeta = await this.updatePosterMetaFromDoc(posterId);
     if (headerMeta) {
       console.log(`🧾 Poster header applied (${posterName}):`, headerMeta);
@@ -857,33 +853,17 @@ class WeeklyPosterRunner {
         const imgNodeId = candidates[j];
         if (used.has(imgNodeId)) continue;
         const url = buildAssetUrl(this.staticUrl, this.content.assets || [], images[i].asset_id, this.contentPath);
-        let success = false;
-        let lastError = null;
-        try {
-          const res = await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageUrl: url, scaleMode: 'FIT', opacity: 1 });
-          success = !res || res.success !== false;
-        } catch (error) {
-          lastError = error;
-        }
+
+        // 使用统一的 fillImage API（支持 URL → Base64 降级）
+        const success = await fillImage(this, imgNodeId, url, {
+          scaleMode: 'FIT',
+          opacity: 1,
+          base64Fallback: async (url) => await this.imageToBase64(images[i], url),
+          throttleFn: async () => await this.throttleBase64()
+        });
 
         if (!success) {
-          try {
-            const b64 = await this.imageToBase64(images[i], url);
-            if (b64) {
-              await this.throttleBase64();
-              const resFallback = await this.sendCommand('set_image_fill', { nodeId: imgNodeId, imageBase64: b64, scaleMode: 'FIT', opacity: 1 });
-              success = !resFallback || resFallback.success !== false;
-            } else {
-              console.warn(`⚠️ Base64 fallback unavailable for ${imgNodeId}`);
-            }
-          } catch (fallbackError) {
-            lastError = fallbackError;
-          }
-        }
-
-        if (!success) {
-          const reason = lastError ? (lastError.message || lastError) : 'unknown reason';
-          console.warn(`⚠️ Fill failed on ${imgNodeId}, trying next candidate: ${reason}`);
+          console.warn(`⚠️ Fill failed on ${imgNodeId}, trying next candidate`);
           continue;
         }
 
@@ -1051,12 +1031,7 @@ class WeeklyPosterRunner {
   async resizePosterHeightToContent(posterId, posterName) {
     if (!posterId) return;
 
-    try {
-      await this.sendCommand('flush_layout', {});
-    } catch (error) {
-      const message = error && error.message ? error.message : error;
-      console.warn('⚠️ flush_layout before poster resize failed:', message);
-    }
+    await flushLayout(this);
 
     let anchorNames = [];
     try {
@@ -1135,8 +1110,7 @@ class WeeklyPosterRunner {
       console.warn('⚠️ set_poster_title_and_date failed:', error && error.message ? error.message : error);
     }
 
-    try { await this.sendCommand('flush_layout', {}); } catch {}
-    await this.sleep(80);
+    await flushLayout(this);
 
     return headerMeta;
   }
@@ -1161,18 +1135,14 @@ class WeeklyPosterRunner {
     for (const posterName of this.posterNames) {
       const summary = await this.processPoster(posterName, flow);
       if (summary) posterSummaries.push(summary);
-      try { await this.sendCommand('flush_layout', {}); } catch (error) {
-        console.warn('⚠️ flush_layout between posters failed:', error && error.message ? error.message : error);
-      }
-      await this.sleep(500);
+      await flushLayout(this, 500);
     }
 
     // 在所有海报处理完成后统一调整高度
     await this.fitAllPostersAtEnd();
 
     // 最终再 flush 一次确保稳定
-    try { await this.sendCommand('flush_layout', {}); } catch {}
-    await this.sleep(100);
+    await flushLayout(this, 100);
 
     const overall = {
       dataset: this.dataset,
