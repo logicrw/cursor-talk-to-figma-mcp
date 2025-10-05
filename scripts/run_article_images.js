@@ -706,7 +706,8 @@ class ArticleImageRunner {
     if (textNodeId) {
       try {
         await setText(this, textNodeId, sourceText || '', {
-          autoResize: 'HEIGHT'
+          autoResize: 'HEIGHT',
+          flush: true
         });
       } catch (error) {
         console.warn('⚠️ 设置来源文本失败:', error.message || error);
@@ -714,20 +715,14 @@ class ArticleImageRunner {
     }
 
     if (sourceFrameId) {
-      try {
-        await this.sendCommand('set_layout_sizing', {
-          nodeId: sourceFrameId,
-          layoutSizingHorizontal: 'HUG',
-          layoutSizingVertical: 'HUG'
-        });
-      } catch (error) {
-        console.warn('⚠️ set_layout_sizing(slot:SOURCE) 失败:', error.message || error);
-      }
+      // 不修改 slot:SOURCE 的宽度模式，保持组件原有设置（通常是固定宽度）
+      // 这样文本可以在固定宽度的 frame 内左对齐显示
+
       try {
         await this.sendCommand('set_axis_align', {
           nodeId: sourceFrameId,
-          axis: 'HORIZONTAL',
-          align: 'MIN'
+          primaryAxisAlignItems: 'MIN',
+          counterAxisAlignItems: 'MIN'
         });
       } catch (error) {
         console.warn('⚠️ set_axis_align(slot:SOURCE) 失败:', error.message || error);
