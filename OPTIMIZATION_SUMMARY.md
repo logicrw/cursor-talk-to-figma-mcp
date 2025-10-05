@@ -15,18 +15,19 @@
 | **Phase 1.1-1.2** | 添加 flushLayout() 和 getNodesInfo() | figma-ipc.js: +212 行 | - |
 | **Phase 1.3-1.5** | 应用 fillImage() 和 flushLayout() | 两个脚本: -67 行 | 84d307f |
 | **Phase 2.4** | 应用 setText() 统一文本接口 | 两个脚本: -19 行 | 6b6f75f |
-| **总计** | **3 个 commit** | **净减少 -86 行** | **2 commits** |
+| **Bug Fix** | 修复 slot:SOURCE 左对齐问题 | run_article_images.js: -5 行 | 04d4b41 |
+| **总计** | **4 个 commit** | **净减少 -91 行** | **3 commits** |
 
 ### 📊 文件变化统计
 
 | 文件 | 原始行数 | 当前行数 | 变化 |
 |------|----------|----------|------|
 | `scripts/figma-ipc.js` | 457 | 669 | +212 |
-| `scripts/run_article_images.js` | 1166 | 1112 | -54 |
+| `scripts/run_article_images.js` | 1166 | 1107 | -59 |
 | `scripts/run_weekly_poster.js` | 1209 | 1178 | -31 |
-| **总计** | **2832** | **2959** | **+127** |
+| **总计** | **2832** | **2954** | **+122** |
 
-**净效果**: 虽然总行数增加，但**业务逻辑代码减少 86 行**，基础设施代码增加 212 行（可复用）
+**净效果**: 虽然总行数增加，但**业务逻辑代码减少 91 行**，基础设施代码增加 212 行（可复用）
 
 ---
 
@@ -132,24 +133,73 @@ refactor: Phase 2.4 完成 - 应用 setText() 统一文本接口
 - run_weekly_poster.js: 1179 → 1178 行（-1 行）
 ```
 
+### Commit 3: slot:SOURCE 对齐修复（04d4b41）
+```
+fix: 修复 slot:SOURCE 左对齐问题
+
+**问题根因**:
+1. set_axis_align 使用了错误的 API 参数 (axis/align → primaryAxisAlignItems/counterAxisAlignItems)
+2. set_layout_sizing 强制设置为 HUG 导致 frame 宽度等于文本宽度，左对齐失效
+
+**修复内容**:
+- 修正 set_axis_align API 参数为正确格式
+- 移除 set_layout_sizing 调用，保持组件模板原有的固定宽度设置
+- 在 setText 中添加 flush:true，优化布局刷新时序
+
+**影响范围**: scripts/run_article_images.js fillSource 方法
+
+**优化成果**:
+- run_article_images.js: 1112 → 1107 行（-5 行）
+```
+
 ---
 
-## 7. 相关文档
+## 7. 未来优化机会（待评估）
 
-- **迁移指南**: `docs/optimization-migration-guide.md`（已更新状态）
-- **Phase 3 设计**: `docs/phase3-card-engine-design.md`（待实施）
-- **架构流程**: `docs/architecture-flow.md`（可能需要更新）
+### 7.1 refactoring-guide.md 中提到的复用机会
+
+**来源**: `docs/refactoring-guide.md`（此文档为临时分析文档）
+
+#### 机会 1: prepareRoot + clearContent 组合
+- **现状**: `prepare_card_root` + `clear_card_content` 模式在两个脚本中重复 3 次（~90 行）
+- **建议**: 提取 `prepareAndClearCard()` 统一函数
+- **预计收益**: ~85 行代码减少
+- **风险**: 低（纯逻辑封装，不改变行为）
+- **优先级**: 中（Phase 2.6 之后）
+
+#### 机会 2: 节点查找统一 API
+- **现状**: 浅层→深度→选区降级的查找逻辑分散在多处
+- **建议**: 提取 `findNode()` 和 `findNodes()` 统一函数
+- **预计收益**: ~40 行代码减少 + 并行查找性能提升
+- **风险**: 低（不影响查找结果）
+- **优先级**: 低（可选）
+
+#### 机会 3: 其他 API 统一建议
+参见 `docs/refactoring-guide.md` 详细分析，包括：
+- 图片填充策略（已完成 ✅）
+- 布局刷新模式（已完成 ✅）
+- 文本设置接口（已完成 ✅）
 
 ---
 
-## 8. 结论与建议
+## 8. 相关文档
 
-### 8.1 当前成果
-✅ **已完成 Phase 1-2 核心优化**，代码质量和可维护性显著提升  
-✅ **消除 86 行重复业务逻辑**，统一了错误处理和降级策略  
+- **迁移指南**: `docs/optimization-migration-guide.md`（Phase 1-2 实施记录）
+- **重构分析**: `docs/refactoring-guide.md`（临时文档，未来优化机会分析）
+- **Phase 3 设计**: `docs/phase3-card-engine-design.md`（配置驱动引擎，待评估）
+- **架构流程**: `docs/architecture-flow.md`（项目架构参考）
+
+---
+
+## 9. 结论与建议
+
+### 9.1 当前成果
+✅ **已完成 Phase 1-2 核心优化 + Bug 修复**，代码质量和可维护性显著提升
+✅ **消除 91 行重复业务逻辑**，统一了错误处理和降级策略
+✅ **修复 slot:SOURCE 对齐问题**，API 参数使用正确格式
 ✅ **所有变更已测试验证**，可安全部署到生产环境
 
-### 8.2 后续建议
+### 9.2 后续建议
 1. **短期**（可选）: 应用 Phase 2.6（sendCommandSafe + createInstance），额外节省 ~120 行
 2. **中期**（推荐）: 持续使用当前优化成果，积累使用经验
 3. **长期**（可选）: 如果脚本数量增长或维护成本上升，考虑实施 Phase 3 配置驱动引擎
