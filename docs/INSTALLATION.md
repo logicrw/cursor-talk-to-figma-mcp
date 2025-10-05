@@ -54,7 +54,7 @@ git remote -v
 ```
 
 **预期输出**:
-```
+```bash
 origin  https://github.com/logicrw/cursor-talk-to-figma-mcp.git (fetch)
 origin  https://github.com/logicrw/cursor-talk-to-figma-mcp.git (push)
 ```
@@ -72,7 +72,7 @@ bun run build
 ```
 
 **预期输出**:
-```
+```bash
 dist/
 ├── server.js    (MCP 服务器)
 ├── server.d.ts
@@ -99,7 +99,7 @@ dist/
 4. 插件将出现在 **Development** 插件列表中，名称为 **Cursor MCP Plugin**
 
 **插件路径示例**:
-```
+```bash
 /Users/你的用户名/Projects/cursor-talk-to-figma-mcp/src/cursor_mcp_plugin/manifest.json
 ```
 
@@ -108,7 +108,7 @@ dist/
 | 功能 | 原版插件 | 本 Fork 版本插件 |
 |------|---------|----------------|
 | `prepare_card_root` | 基础实现 | 增强：返回详细分离信息 |
-| `clear_card_content` | 不支持 | 新增：智能清理卡片内容 |
+| `clear_card_content` | 不支持 | 新增：自动清理卡片内容 |
 | `resize_poster_to_fit` | 不支持 | 新增：海报高度自适应 |
 | `set_instance_properties_by_base` | 不支持 | 新增：属性模糊匹配 |
 | `fillImage` 策略 | 仅 Base64 | URL-first + Base64 降级 |
@@ -131,7 +131,7 @@ bun socket
 ```
 
 **预期输出**:
-```
+```bash
 WebSocket server listening on ws://localhost:3055
 ```
 
@@ -331,7 +331,7 @@ node scripts/run_article_images.js --channel test-channel
 **功能**: 根据 `config/server-config.json` 中配置的内容文件，自动生成多语言文章配图（shortCard 组件）。
 
 **预期输出**:
-```
+```bash
 ✅ 连接 WebSocket: ws://localhost:3055
 ✅ 加入频道: test-channel
 🔍 查找 shortCard 组件...
@@ -354,7 +354,7 @@ node scripts/run_weekly_poster.js --channel test-channel
 **功能**: 自动生成周报三海报（图文卡 + 纯文本卡），包括标题、日期、来源、正文、图片。
 
 **预期输出**:
-```
+```bash
 ✅ 连接 WebSocket: ws://localhost:3055
 ✅ 加入频道: test-channel
 📁 内容文件: docx2json/250915-单向上行_zh-CN.json
@@ -444,14 +444,14 @@ cursor-talk-to-figma-mcp/
 如果遇到问题：
 
 1. **检查本文档的「常见问题」章节**
-2. **查看 [docs/PITFALLS.md](PITFALLS.md)**（血泪教训总结）
+2. **查看 [docs/PITFALLS.md](PITFALLS.md)**（常见错误总结）
 3. **查看 Git commit 历史**（可能已有类似问题的修复）
 4. **提交 Issue**: [GitHub Issues](https://github.com/logicrw/cursor-talk-to-figma-mcp/issues)
 
 ---
 
-**祝您使用愉快！** 🚀
+---
 
 **文档版本**: v1.0
 **维护者**: logicrw
-**项目状态**: ✅ 稳定运行中
+**项目状态**: 稳定运行中
