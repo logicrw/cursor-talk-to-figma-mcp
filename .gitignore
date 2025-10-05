@@ -6,6 +6,7 @@ node_modules/
 .serena/
 .repomap.tags.cache.v1/
 .cursor/
+docx2json/.grok
 
 # Local MCP configuration (contains absolute paths)
 mcp-config.json

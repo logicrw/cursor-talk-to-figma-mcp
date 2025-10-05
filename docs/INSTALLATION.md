@@ -309,6 +309,42 @@ Claude: [分析节点结构 → 生成代码框架]
 
 ## 六、运行示例脚本
 
+### 插件 UI 参数说明
+
+打开 Figma 插件后，您会看到两个主要参数：
+
+#### 1. WebSocket Server Port（WebSocket 服务器端口）
+
+- **用途**: 指定插件连接到的 WebSocket 中继服务器端口
+- **默认值**: `3055`
+- **何时修改**:
+  - 端口 3055 被其他程序占用
+  - 修改了 `config/server-config.json` 中的 `websocket.port`
+- **匹配规则**: 必须与 `bun socket` 启动的服务器端口一致
+
+**工作原理**:
+```
+脚本 (Node.js) <---> WebSocket Server (端口 3055) <---> Figma 插件
+```
+
+#### 2. Channel（频道）
+
+- **用途**: 频道用于隔离不同任务的通信，防止多个脚本互相干扰
+- **默认值**: 自动生成随机频道名（例如 `abc12xyz`）
+- **何时使用**:
+  - 多人协作时，每个人使用不同频道
+  - 同时运行多个脚本，避免命令混乱
+  - 调试时，使用有意义的频道名（如 `test-channel`）
+
+**重要**: 脚本运行时必须使用 `--channel` 参数指定与插件相同的频道名。
+
+**示例**:
+```bash
+# 插件 UI 中输入频道名: my-weekly-channel
+# 脚本运行时使用相同频道名
+node scripts/run_weekly_poster.js --channel my-weekly-channel
+```
+
 ### 准备工作
 
 1. **启动 WebSocket 服务器**（如果还未启动）:
@@ -318,9 +354,66 @@ bun socket
 
 2. **打开 Figma Desktop** 并运行插件:
    - 右键 > **Plugins** > **Cursor Talk To Figma MCP Plugin**
-   - 在插件 UI 中输入频道名称（例如 `test-channel`）并点击 **Join**
+   - 确认 **WebSocket Server Port** 为 `3055`（与服务器端口匹配）
+   - 在 **Channel** 输入框中输入频道名称（例如 `test-channel`）
+   - 点击 **Connect** 连接到服务器
+   - 点击 **Join** 加入频道
 
 3. **打开新终端窗口**（保持 WebSocket 服务器运行）
+
+### 前置步骤：使用 docx2json 预处理内容
+
+**重要**: 运行 `run_weekly_poster.js` 和 `run_article_images.js` 之前，必须先使用 `docx2json` 子项目将 Word 文档转换为 JSON 格式。
+
+#### 工作流程
+
+1. **准备 Word 文档**:
+   - 繁体中文版（例如 `250915 - 單向上行.docx`）
+   - 英文版（例如 `250915 - Up-Only.docx`）
+
+2. **放置到 docx2json 目录**:
+```bash
+cp "你的文档路径/250915 - 單向上行.docx" docx2json/
+cp "你的文档路径/250915 - Up-Only.docx" docx2json/
+```
+
+3. **运行转换脚本**:
+```bash
+cd docx2json
+python weekly_convert.py \
+  --traditional-doc "250915 - 單向上行.docx" \
+  --english-doc "250915 - Up-Only.docx"
+```
+
+4. **转换产物**:
+```bash
+docx2json/
+├── 250915-单向上行_zh-CN.json  # 简体中文 JSON
+├── 250915-單向上行_zh-HK.json  # 繁体中文 JSON
+├── 250915-up-only_en-US.json   # 英文 JSON
+└── assets/
+    └── 250915_upward/          # 共享图片资源
+        ├── abc123.png
+        ├── def456.png
+        └── ...
+```
+
+5. **配置脚本使用 JSON 文件**:
+   编辑 `config/server-config.json`，指定生成的 JSON 文件路径：
+```json
+{
+  "content": {
+    "path": "docx2json/250915-单向上行_zh-CN.json"
+  }
+}
+```
+
+**提示**: `weekly_convert.py` 会自动：
+- 提取文档中的所有图片到 `assets/` 目录
+- 生成三个语言版本的 JSON（简体、繁体、英文）
+- 所有语言版本共享同一图片资源目录
+
+详细的文档结构要求和转换选项，请参阅 `docx2json/README.md`。
 
 ### 示例 1: 运行文章短图生成器
 
