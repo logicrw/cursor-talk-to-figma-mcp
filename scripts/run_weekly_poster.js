@@ -12,7 +12,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { spawn } from 'child_process';
 import http from 'http';
-import { normalizeToolResult, prepareAndClearCard, fillImage, flushLayout } from './figma-ipc.js';
+import { normalizeToolResult, prepareAndClearCard, fillImage, flushLayout, setText } from './figma-ipc.js';
 import { resolveContentPath, inferDataset, buildAssetUrl, computeStaticServerUrl, getAssetExtension } from '../src/config-resolver.js';
 
 const THROTTLE_MS = 0;
@@ -813,18 +813,17 @@ class WeeklyPosterRunner {
         text = mode === 'inline' ? (prefix + inlineText) : inlineText;
         text = text.replace(/^(?:Source:\s*)+/i, 'Source: ');
       }
-      await this.sendCommand('set_text_content', { nodeId: sourceId, text });
       const resizeMode = this.mapping.source?.resizeMode || this.mapping.source?.auto_size || 'WIDTH_AND_HEIGHT';
       if (resizeMode === 'WIDTH_AND_HEIGHT') {
-        await this.sendCommand('set_text_auto_resize', { nodeId: sourceId, autoResize: 'WIDTH_AND_HEIGHT' });
-        try {
-          await this.sendCommand('set_layout_sizing', { nodeId: sourceId, layoutSizingHorizontal: 'HUG', layoutSizingVertical: 'HUG' });
-          console.log('🧱 Source sizing: horizontal=HUG vertical=HUG');
-        } catch (error) {
-          console.warn('⚠️ set_layout_sizing failed for source:', error.message || error);
-        }
+        await setText(this, sourceId, text, {
+          autoResize: 'WIDTH_AND_HEIGHT',
+          layoutSizing: { layoutSizingHorizontal: 'HUG', layoutSizingVertical: 'HUG' }
+        });
+        console.log('🧱 Source sizing: horizontal=HUG vertical=HUG');
       } else if (resizeMode === 'HEIGHT') {
-        await this.sendCommand('set_text_auto_resize', { nodeId: sourceId, autoResize: 'HEIGHT' });
+        await setText(this, sourceId, text, {
+          autoResize: 'HEIGHT'
+        });
         const containerName = slots.figure?.source || 'slot:SOURCE';
         const containerId = await this.dfsFindChildIdByName(rootId, containerName);
         if (containerId) {

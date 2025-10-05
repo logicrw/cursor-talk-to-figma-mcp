@@ -33,7 +33,8 @@ import {
   normalizeToolResult,
   prepareAndClearCard,
   fillImage,
-  flushLayout
+  flushLayout,
+  setText
 } from './figma-ipc.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -559,19 +560,10 @@ class ArticleImageRunner {
       try {
         titleId = await this.findChildByName(rootId, 'titleText');
         if (titleId) {
-          await this.sendCommand('set_text_content', {
-            nodeId: titleId,
-            text: firstTitle
+          await setText(this, titleId, firstTitle, {
+            autoResize: 'HEIGHT',
+            flush: true
           });
-          await this.sendCommand('set_text_auto_resize', {
-            nodeId: titleId,
-            autoResize: 'HEIGHT'
-          });
-          try {
-            await flushLayout(this);
-          } catch (error) {
-            console.warn('⚠️ 标题 flush 失败:', error.message || error);
-          }
           await this.sleep(120);
           console.log('📝 标题已设置并启用高度自适应');
         }
@@ -713,21 +705,11 @@ class ArticleImageRunner {
 
     if (textNodeId) {
       try {
-        await this.sendCommand('set_text_content', {
-          nodeId: textNodeId,
-          text: sourceText || ''
-        });
-      } catch (error) {
-        console.warn('⚠️ 设置来源文本失败:', error.message || error);
-      }
-
-      try {
-        await this.sendCommand('set_text_auto_resize', {
-          nodeId: textNodeId,
+        await setText(this, textNodeId, sourceText || '', {
           autoResize: 'HEIGHT'
         });
       } catch (error) {
-        console.warn('⚠️ set_text_auto_resize(source) 失败:', error.message || error);
+        console.warn('⚠️ 设置来源文本失败:', error.message || error);
       }
     }
 
