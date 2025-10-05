@@ -1,5 +1,7 @@
 # 海报生成系统架构流程图
 
+> **Fork 说明**: 本文档基于 [grab/cursor-talk-to-figma-mcp](https://github.com/grab/cursor-talk-to-figma-mcp) fork 版本，记录了完整的架构演进历史。自 fork 点 [8513030](https://github.com/grab/cursor-talk-to-figma-mcp/commit/8513030755c4f6fcf43a930f42ba9afcbfab29bd) 以来，本项目经历了多次架构优化与功能扩展。
+>
 > 本文档描述 `run_article_images.js` 和 `run_weekly_poster.js` 的完整执行流程、依赖关系和功能复用点
 
 ## 目录结构
