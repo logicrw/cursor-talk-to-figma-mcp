@@ -184,10 +184,13 @@ fix: 修复 slot:SOURCE 左对齐问题
 
 ## 8. 相关文档
 
-- **迁移指南**: `docs/optimization-migration-guide.md`（Phase 1-2 实施记录）
-- **重构分析**: `docs/refactoring-guide.md`（临时文档，未来优化机会分析）
-- **Phase 3 设计**: `docs/phase3-card-engine-design.md`（配置驱动引擎，待评估）
 - **架构流程**: `docs/architecture-flow.md`（项目架构参考）
+- **项目快速开始**: `docs/project-quickstart.md`（项目使用指南）
+
+**已删除的文档**（内容已整合）：
+- ~~`docs/optimization-migration-guide.md`~~ - 迁移示例已包含在本文档
+- ~~`docs/refactoring-guide.md`~~ - 重构建议已包含在第 7 节「未来优化机会」
+- ~~`docs/phase3-card-engine-design.md`~~ - Phase 3 暂不实施，需要时可重新设计
 
 ---
 
