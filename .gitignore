@@ -1,12 +1,58 @@
+# Dependencies
 node_modules/
+
+# AI/Editor caches
 .claude/
 .serena/
 .repomap.tags.cache.v1/
 .cursor/
+
+# Build output
 dist/
-docs/
 
 # Lock files - use bun.lock only
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.backup
+*.backup
+*.bak
+
+# Environment variables (if any)
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Test coverage
+coverage/
+.nyc_output/
