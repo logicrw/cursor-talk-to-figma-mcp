@@ -30,7 +30,8 @@ import {
   sleep as sleepUtil,
   normalizeName as normalizeNameUtil,
   findShallowByName as findShallowByNameUtil,
-  normalizeToolResult
+  normalizeToolResult,
+  prepareAndClearCard
 } from './figma-ipc.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -550,38 +551,11 @@ class ArticleImageRunner {
       await this.sleep(80);
     }
 
-    // 准备根节点 - 这会改变节点结构
-    let rootId = instanceId;
-    try {
-      const result = await this.sendCommand('prepare_card_root', {
-        nodeId: instanceId
-      });
-      const prep = parsePrepareCardRootResultUtil(result);
-      if (prep && prep.rootId) {
-        rootId = prep.rootId;
-        console.log(`✅ 根节点准备完成: ${prep.rootId}`);
-      }
-    } catch (error) {
-      console.warn('⚠️ prepare_card_root 失败，使用原始 ID');
-    }
-
-    // 清理动态内容（保留品牌元素）
-    try {
-      await this.sendCommand('clear_card_content', {
-        cardId: rootId,
-        mode: 'safe',
-        preserveNames: ['SignalPlus Logo', '背景', 'Logo', 'Background']
-      });
-      console.log('🧹 已清理卡片动态内容');
-    } catch (error) {
-      console.warn('⚠️ 清理内容失败:', error.message);
-    }
-
-    // 强制布局刷新，避免立即填图导致测量为 0
-    try {
-      await this.sendCommand('flush_layout', {});
-    } catch {}
-    await this.sleep(80);
+    // 准备根节点并清理内容（使用统一函数）
+    const rootId = await prepareAndClearCard(this, instanceId, {
+      mode: 'safe',
+      preserveNames: ['SignalPlus Logo', '背景', 'Logo', 'Background']
+    });
 
     // 设置标题文本并自动调整高度
     let titleId = null;

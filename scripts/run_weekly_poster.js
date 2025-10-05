@@ -12,7 +12,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { spawn } from 'child_process';
 import http from 'http';
-import { normalizeToolResult } from './figma-ipc.js';
+import { normalizeToolResult, prepareAndClearCard } from './figma-ipc.js';
 import { resolveContentPath, inferDataset, buildAssetUrl, computeStaticServerUrl, getAssetExtension } from '../src/config-resolver.js';
 
 const THROTTLE_MS = 0;
@@ -794,37 +794,13 @@ class WeeklyPosterRunner {
       console.warn('⚠️ set_instance_properties_by_base failed:', error.message || error);
     }
 
-    let rootId = instanceId;
-    try {
-      const raw = await this.sendCommand('prepare_card_root', { nodeId: instanceId });
-      const prep = this.parsePrepareCardRootResult(raw);
-      if (prep && prep.rootId) {
-        rootId = prep.rootId;
-        const times = typeof prep.detachedTimes === 'number' ? prep.detachedTimes : 'unknown';
-        const deep = typeof prep.descendantDetaches === 'number' ? prep.descendantDetaches : 'unknown';
-        console.log(`[prepare_card_root] figure root prepared rootId=${rootId} detachedTimes=${times} deep=${deep}`);
-      } else {
-        console.warn('⚠️ prepare_card_root returned unexpected payload, using instanceId');
-      }
-    } catch (error) {
-      console.warn('⚠️ prepare_card_root failed, continuing without detach:', error.message || error);
-    }
-
-    try {
-      await this.sendCommand('clear_card_content', {
-        cardId: rootId,
-        mode: 'safe',
-        targetNames: ['ContentContainer', '正文容器', '图文容器'],
-        removeNamePrefixes: ['Item', 'Bullet', 'Chip', 'Tag', 'Dyn', 'Tmp', '临时'],
-        preserveNames: ['ContentAndPlate', 'Odaily固定板', 'EXIO固定板', '干货铺固定板', 'Logo', '水印', '背景', '光效']
-      });
-    } catch (error) {
-      console.warn('⚠️ clear_card_content (figure) failed:', error && error.message ? error.message : error);
-    }
-
-    // 在 clear 后强制布局结算，避免立即填图导致测量为 0
-    try { await this.sendCommand('flush_layout', {}); } catch {}
-    await this.sleep(80);
+    // 准备根节点并清理内容（使用统一函数）
+    const rootId = await prepareAndClearCard(this, instanceId, {
+      mode: 'safe',
+      targetNames: ['ContentContainer', '正文容器', '图文容器'],
+      removeNamePrefixes: ['Item', 'Bullet', 'Chip', 'Tag', 'Dyn', 'Tmp', '临时'],
+      preserveNames: ['ContentAndPlate', 'Odaily固定板', 'EXIO固定板', '干货铺固定板', 'Logo', '水印', '背景', '光效']
+    });
 
     const titleName = slots.figure?.title_text || 'titleText';
     const titleId = await this.dfsFindChildIdByName(rootId, titleName);
@@ -925,37 +901,13 @@ class WeeklyPosterRunner {
   }
 
   async fillBodyCard(instanceId, item) {
-    // Detach card root for body card as well
-    let rootId = instanceId;
-    try {
-      const raw = await this.sendCommand('prepare_card_root', { nodeId: instanceId });
-      const prep = this.parsePrepareCardRootResult(raw);
-      if (prep && prep.rootId) {
-        rootId = prep.rootId;
-        const times = typeof prep.detachedTimes === 'number' ? prep.detachedTimes : 'unknown';
-        const deep = typeof prep.descendantDetaches === 'number' ? prep.descendantDetaches : 'unknown';
-        console.log(`[prepare_card_root] body root prepared rootId=${rootId} detachedTimes=${times} deep=${deep}`);
-      } else {
-        console.warn('⚠️ prepare_card_root returned unexpected payload for body, using instanceId');
-      }
-    } catch (error) {
-      console.warn('⚠️ prepare_card_root failed for body, continuing:', error.message || error);
-    }
-    try {
-      await this.sendCommand('clear_card_content', {
-        cardId: rootId,
-        mode: 'safe',
-        targetNames: ['ContentContainer', '正文容器', '图文容器'],
-        removeNamePrefixes: ['Item', 'Bullet', 'Chip', 'Tag', 'Dyn', 'Tmp', '临时'],
-        preserveNames: ['ContentAndPlate', 'Odaily固定板', 'EXIO固定板', '干货铺固定板', 'Logo', '水印', '背景', '光效']
-      });
-    } catch (error) {
-      console.warn('⚠️ clear_card_content (body) failed:', error && error.message ? error.message : error);
-    }
-
-    // 在 clear 后强制布局结算
-    try { await this.sendCommand('flush_layout', {}); } catch {}
-    await this.sleep(80);
+    // 准备根节点并清理内容（使用统一函数）
+    const rootId = await prepareAndClearCard(this, instanceId, {
+      mode: 'safe',
+      targetNames: ['ContentContainer', '正文容器', '图文容器'],
+      removeNamePrefixes: ['Item', 'Bullet', 'Chip', 'Tag', 'Dyn', 'Tmp', '临时'],
+      preserveNames: ['ContentAndPlate', 'Odaily固定板', 'EXIO固定板', '干货铺固定板', 'Logo', '水印', '背景', '光效']
+    });
 
     const slots = this.mapping.anchors?.slots || {};
     const bodySlot = slots.body?.body || 'slot:BODY';
