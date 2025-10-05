@@ -270,6 +270,14 @@ cursor-talk-to-figma-mcp/
 
 贡献者 [@dusskapark](https://github.com/dusskapark) 的组件实例覆盖传播功能，可将源组件实例的覆盖属性传播到多个目标实例。[演示视频](https://youtu.be/uvuT8LByroI)
 
+**节点聚焦与批量选择（新增功能）**
+
+原仓库最新更新（2025-09-02）新增了节点操作功能：
+- `set_focus`: 聚焦到单个节点（自动选中并滚动到视口）
+- `set_selections`: 批量选中多个节点（自动滚动到视口）
+
+这些功能已集成到本 Fork 版本，可用于调试或批量操作场景。
+
 ### MCP 工具完整列表 (Complete MCP Tools Reference)
 
 <details>
