@@ -631,25 +631,8 @@ export async function createInstance(ctx, options = {}) {
     }
   }
 
-  // 策略 2: Seed 降级
-  if (!instanceId && seedFallback && parentId) {
-    try {
-      const result = await sendCommand(ctx, 'append_card_to_container', {
-        containerId: parentId,
-        templateId: seedFallback,
-        insertIndex: -1
-      });
-      instanceId = result?.newCardId;
-      if (instanceId) {
-        console.log(`✅ Seed 降级创建: ${instanceId}`);
-      }
-    } catch (error) {
-      console.warn('⚠️ Seed 降级失败:', error.message || error);
-    }
-  }
-
   if (!instanceId) {
-    throw new Error('所有实例创建策略均失败');
+    throw new Error('组件实例创建失败');
   }
 
   // 设置属性

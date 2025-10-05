@@ -630,18 +630,7 @@ class WeeklyPosterRunner {
         return { id: direct.id, name: direct.name, method: direct.method || 'direct' };
       }
     }
-    // Fallback to seed cloning
-    const seedId = kind === 'figure' ? this.seeds.figure : this.seeds.body;
-    if (!seedId) throw new Error(`No seed instance id for ${kind}`);
-    const clone = await this.sendCommand('append_card_to_container', {
-      containerId: this.cardsContainerId,
-      templateId: seedId,
-      insertIndex: -1
-    });
-    if (clone?.success && clone.newNodeId) return { id: clone.newNodeId, name: clone.newNodeName || 'Cloned Card', method: 'seed-clone' };
-    // Some builds return text; attempt parse
-    if (clone && clone.containerName && clone.newNodeId) return { id: clone.newNodeId, name: clone.newNodeName || 'Cloned Card', method: 'seed-clone' };
-    throw new Error(`Failed to create card: ${JSON.stringify(clone)}`);
+    throw new Error(`Failed to create component instance`);
   }
 
   async dfsFindChildIdByName(nodeId, name) {
