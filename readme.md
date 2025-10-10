@@ -6,7 +6,7 @@
 >
 > **Fork 起点**: Commit [8513030](https://github.com/grab/cursor-talk-to-figma-mcp/commit/8513030755c4f6fcf43a930f42ba9afcbfab29bd) (2025-08-30)
 >
-> **当前状态**: 160 个提交，包含大量功能改进与代码优化
+> **当前状态**: 161 个提交，包含大量功能改进与代码优化
 >
 > **核心改进**:
 > - 无种子组件创建（Seedless Architecture）- 基于 Figma 官方 `setProperties` API
@@ -80,9 +80,28 @@ node scripts/run_weekly_poster.js --channel test-channel
 
 **步骤 1: 克隆项目**
 
+> **重要**: 本项目包含 Git Submodule（`docx2json/`），需要使用 `--recurse-submodules` 参数才能完整克隆。
+
+**选项 A：一次性克隆（推荐）**
+
+```bash
+git clone --recurse-submodules https://github.com/logicrw/cursor-talk-to-figma-mcp.git
+cd cursor-talk-to-figma-mcp
+```
+
+**选项 B：分步克隆**
+
 ```bash
 git clone https://github.com/logicrw/cursor-talk-to-figma-mcp.git
 cd cursor-talk-to-figma-mcp
+git submodule update --init --recursive  # 初始化子模块
+```
+
+**验证子模块是否克隆成功**：
+
+```bash
+ls -la docx2json/  # 应该看到 to_ncj.py, requirements.txt 等文件
+# 如果目录为空，说明需要执行：git submodule update --init --recursive
 ```
 
 **步骤 2: 安装依赖并构建**
